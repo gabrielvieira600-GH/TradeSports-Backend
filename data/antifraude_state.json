@@ -1,0 +1,33 @@
+{
+  "users": {
+    "1": {
+      "score": 0,
+      "cooldownUntil": 0,
+      "frozenUntil": 0,
+      "last": {},
+      "stats": {
+        "orderCreate": [],
+        "orderCancel": [
+          1774290836275
+        ],
+        "trades": []
+      }
+    }
+  },
+  "ips": {},
+  "clubes": {
+    "19": {
+      "frozenUntil": 0,
+      "last": {},
+      "stats": {
+        "trades": [],
+        "cancels": [
+          1774290836275
+        ],
+        "creates": [],
+        "priceMoves": []
+      }
+    }
+  },
+  "pairs": {}
+}

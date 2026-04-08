@@ -1,0 +1,48 @@
+[
+  {
+    "id": "ftx_1773084017012_0b9df5b51444",
+    "tipo": "DEPOSITO",
+    "usuarioId": "1748465950263",
+    "valorBruto": 100,
+    "taxa": 0,
+    "valorLiquido": 100,
+    "status": "CONFIRMADO",
+    "gateway": "manual",
+    "gatewayReference": null,
+    "reconciliacaoStatus": "RECONCILIADO",
+    "reconciliadoEm": "2026-03-09T19:20:17.126Z",
+    "divergenceReason": null,
+    "ledgerEntryIds": [
+      "je_1773084017025_8ca98bb450f5",
+      "je_1773084017078_8f29f84de665"
+    ],
+    "metadata": {
+      "ip": "::1"
+    },
+    "createdAt": "2026-03-09T19:20:16.997Z",
+    "updatedAt": "2026-03-09T19:20:17.076Z"
+  },
+  {
+    "id": "ftx_1773165135683_0d32535478c9",
+    "tipo": "DEPOSITO",
+    "usuarioId": "1748465950263",
+    "valorBruto": 100,
+    "taxa": 0,
+    "valorLiquido": 100,
+    "status": "CONFIRMADO",
+    "gateway": "manual",
+    "gatewayReference": null,
+    "reconciliacaoStatus": "RECONCILIADO",
+    "reconciliadoEm": "2026-03-10T17:52:15.789Z",
+    "divergenceReason": null,
+    "ledgerEntryIds": [
+      "je_1773165135691_dcf689c6e59d",
+      "je_1773165135744_d36524f114a7"
+    ],
+    "metadata": {
+      "ip": "::1"
+    },
+    "createdAt": "2026-03-10T17:52:15.677Z",
+    "updatedAt": "2026-03-10T17:52:15.741Z"
+  }
+]

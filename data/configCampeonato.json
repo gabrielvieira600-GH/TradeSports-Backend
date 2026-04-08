@@ -1,0 +1,17 @@
+{
+  "campeonato": "Brasileirao",
+  "temporada": 2024,
+  "dispararLiquidacao": false,
+  "liquidado": false,
+  "rodadaAtual": 38,
+  "ultimaRodadaProcessadaDividendos": 38,
+  "dividendos": {
+    "ciclosMinimos": 4,
+    "taxasPorPosicao": {
+      "1": 0.025,
+      "2": 0.018,
+      "3": 0.013,
+      "4": 0.009
+    }
+  }
+}

@@ -1,0 +1,161 @@
+[
+  {
+    "id": 1,
+    "nome": "Palmeiras",
+    "cotasDisponiveis": 957,
+    "ipoEncerrado": false,
+    "preco": 12.63,
+    "cotasEmitidas": 10
+  },
+  {
+    "id": 2,
+    "nome": "Gremio",
+    "cotasDisponiveis": 957,
+    "ipoEncerrado": false,
+    "preco": 12.03
+  },
+  {
+    "id": 117,
+    "nome": "Atletico-MG",
+    "cotasDisponiveis": 989,
+    "ipoEncerrado": false,
+    "preco": 11.46
+  },
+  {
+    "id": 127,
+    "nome": "Flamengo",
+    "cotasDisponiveis": 928,
+    "ipoEncerrado": false,
+    "preco": 10.91
+  },
+  {
+    "id": 5,
+    "nome": "Botafogo",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 10.39
+  },
+  {
+    "id": 6,
+    "nome": "RB Bragantino",
+    "cotasDisponiveis": 999,
+    "ipoEncerrado": false,
+    "preco": 9.9
+  },
+  {
+    "id": 7,
+    "nome": "Fluminense",
+    "cotasDisponiveis": 983,
+    "ipoEncerrado": false,
+    "preco": 9.43
+  },
+  {
+    "id": 8,
+    "nome": "Atletico Paranaense",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 8.98
+  },
+  {
+    "id": 9,
+    "nome": "Internacional",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 8.55
+  },
+  {
+    "id": 10,
+    "nome": "Fortaleza EC",
+    "cotasDisponiveis": 990,
+    "ipoEncerrado": false,
+    "preco": 8.14
+  },
+  {
+    "id": 11,
+    "nome": "Sao Paulo",
+    "cotasDisponiveis": 990,
+    "ipoEncerrado": false,
+    "preco": 7.76
+  },
+  {
+    "id": 12,
+    "nome": "Cuiaba",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 7.39
+  },
+  {
+    "id": 13,
+    "nome": "Corinthians",
+    "cotasDisponiveis": 989,
+    "ipoEncerrado": false,
+    "preco": 7.04
+  },
+  {
+    "id": 14,
+    "nome": "Cruzeiro",
+    "cotasDisponiveis": 798,
+    "ipoEncerrado": false,
+    "preco": 6.7
+  },
+  {
+    "id": 15,
+    "nome": "Vasco da Gama",
+    "cotasDisponiveis": 970,
+    "ipoEncerrado": false,
+    "preco": 6.38
+  },
+  {
+    "id": 16,
+    "nome": "Bahia",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 6.08
+  },
+  {
+    "id": 17,
+    "nome": "Santos",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 5.79
+  },
+  {
+    "id": 18,
+    "nome": "Goias",
+    "cotasDisponiveis": 794,
+    "ipoEncerrado": false,
+    "preco": 5.51
+  },
+  {
+    "id": 19,
+    "nome": "Coritiba",
+    "cotasDisponiveis": 1000,
+    "ipoEncerrado": false,
+    "preco": 1.31,
+    "precoAtual": 2.06,
+    "splitFactorCumulativo": 4,
+    "splits": [
+      {
+        "ratio": 2,
+        "data": "2026-03-23T15:54:05.166Z",
+        "executadoPor": 1,
+        "precoAntes": 8.27,
+        "precoDepois": 4.13
+      },
+      {
+        "ratio": 2,
+        "data": "2026-03-23T18:20:17.848Z",
+        "executadoPor": 1,
+        "precoAntes": 4.13,
+        "precoDepois": 2.06
+      }
+    ]
+  },
+  {
+    "id": 125,
+    "nome": "America Mineiro",
+    "cotasDisponiveis": 0,
+    "ipoEncerrado": false,
+    "preco": 5
+  }
+]

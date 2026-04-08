@@ -1,0 +1,371 @@
+[
+  {
+    "id": 1,
+    "nome": "Gabriel",
+    "sobrenome": "Vieira de Abreu Lima",
+    "nomeUsuario": "gvinvest",
+    "email": "gabrielvieira600@gmail.com",
+    "cpf": "15123365729",
+    "dataNascimento": "1995-10-28",
+    "genero": "Masculino",
+    "senha": "$2b$10$lfT/ZG2fGLP1CE3jSqqjk.6xx3JXh.XnsLETmN.ttZI8RNqVj049e",
+    "saldo": 3119.19,
+    "admin": "true",
+    "carteira": [],
+    "dadosBancarios": null,
+    "aceitesFinanceiros": {
+      "deposito": {
+        "versao": "v1.0",
+        "aceitoEm": "2026-02-11T18:38:17.341Z",
+        "ip": "::1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+      },
+      "saque": {
+        "versao": "v1.0",
+        "aceitoEm": "2026-02-11T23:21:41.811Z",
+        "ip": "::1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+      }
+    },
+    "failedLoginAttempts": 0,
+    "lockUntil": null,
+    "lastLoginAt": "2026-03-24T23:58:30.963Z",
+    "lastLoginIp": "::1",
+    "lastLoginUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+    "loginHistory": [
+      {
+        "at": "2026-03-24T23:58:30.963Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+      },
+      {
+        "at": "2026-03-24T19:47:53.671Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+      },
+      {
+        "at": "2026-03-23T20:03:43.867Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-23T19:57:54.752Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-23T19:47:10.205Z",
+        "ip": "::ffff:127.0.0.1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-23T19:25:56.085Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-23T18:34:47.261Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-23T17:40:17.609Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-23T15:31:10.344Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T21:45:35.220Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T21:25:27.487Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T19:37:26.034Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T14:10:40.463Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T14:10:10.371Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T13:59:39.427Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T13:58:25.127Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-13T15:57:24.805Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T23:21:41.085Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T17:10:27.472Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T16:42:56.028Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      }
+    ],
+    "watchlist": {
+      "clubes": [],
+      "ligas": []
+    },
+    "notificacoes": [],
+    "alertState": {
+      "clubPrices": {}
+    }
+  },
+  {
+    "id": 1748465950263,
+    "nome": "Gabriel",
+    "sobrenome": "Vieira de Abreu Lima",
+    "nomeUsuario": "teste",
+    "email": "teste@gmail.com",
+    "cpf": "15123365728",
+    "dataNascimento": "1995-10-29",
+    "genero": "Masculino",
+    "senha": "$2b$10$TsNNO0iHq7i0KGubpLJ3Aef7qfB3v1QT28nFjRttw5TeRP4ozaYk2",
+    "saldo": 2195.3,
+    "carteira": [
+      {
+        "clubeId": 1,
+        "quantidade": 10,
+        "precoMedio": 12.63
+      }
+    ],
+    "historico": [],
+    "transacoes": [],
+    "failedLoginAttempts": 0,
+    "lockUntil": null,
+    "lastLoginAt": "2026-03-31T18:26:39.216Z",
+    "lastLoginIp": "::1",
+    "lastLoginUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+    "loginHistory": [
+      {
+        "at": "2026-03-31T18:26:39.216Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+      },
+      {
+        "at": "2026-03-24T23:59:00.729Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+      },
+      {
+        "at": "2026-03-24T19:47:32.961Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+      },
+      {
+        "at": "2026-03-23T20:46:51.392Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+      },
+      {
+        "at": "2026-03-23T20:05:36.252Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-20T13:54:08.673Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-17T20:19:05.516Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-17T15:41:04.388Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-16T20:34:09.013Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-16T15:31:23.563Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-13T19:55:08.239Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-13T19:35:44.945Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-13T18:50:00.078Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-13T16:01:31.383Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T23:15:38.847Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T20:21:40.019Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T18:16:17.575Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T17:12:49.313Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T17:08:19.554Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      },
+      {
+        "at": "2026-03-12T16:47:12.695Z",
+        "ip": "::1",
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+      }
+    ],
+    "ledgerMirror": [
+      {
+        "at": "2026-03-09T19:20:17.078Z",
+        "entryId": "je_1773084017078_8f29f84de665",
+        "action": "DEPOSIT_CONFIRMED",
+        "delta": 100,
+        "saldoAntes": 538.6,
+        "saldoDepois": 638.6
+      },
+      {
+        "at": "2026-03-10T17:52:15.744Z",
+        "entryId": "je_1773165135744_d36524f114a7",
+        "action": "DEPOSIT_CONFIRMED",
+        "delta": 100,
+        "saldoAntes": 638.6,
+        "saldoDepois": 738.6
+      }
+    ],
+    "watchlist": {
+      "clubes": [
+        {
+          "id": "2",
+          "nome": "Gremio",
+          "ligaId": "brasileirao-a",
+          "ligaNome": "Brasileirão Série A",
+          "createdAt": "2026-03-13T19:55:27.877Z"
+        },
+        {
+          "id": "19",
+          "nome": "Coritiba",
+          "ligaId": "brasileirao-a",
+          "ligaNome": "Brasileirão Série A",
+          "createdAt": "2026-03-13T20:58:27.632Z"
+        }
+      ],
+      "ligas": []
+    },
+    "notificacoes": [
+      {
+        "id": "abb87a1c12cff088b303",
+        "key": "club-price:19:2.06",
+        "title": "Coritiba caiu 75.1%",
+        "body": "Novo preço de mercado: R$ 2.06.",
+        "type": "PRICE_DOWN",
+        "entityType": "clube",
+        "entityId": "19",
+        "read": true,
+        "createdAt": "2026-03-23T20:06:06.323Z",
+        "meta": {
+          "price": 2.06,
+          "pct": -75.09
+        }
+      },
+      {
+        "id": "521ab1f47142f862b7fa",
+        "key": "fav-clube:19",
+        "title": "Coritiba adicionado aos favoritos",
+        "body": "Você receberá alertas importantes sobre este clube.",
+        "type": "WATCHLIST_CLUBE_ADDED",
+        "entityType": "clube",
+        "entityId": "19",
+        "read": true,
+        "createdAt": "2026-03-13T20:58:27.632Z",
+        "meta": {}
+      },
+      {
+        "id": "cfaec4d86c325e73aac9",
+        "key": "fav-clube:2",
+        "title": "Gremio adicionado aos favoritos",
+        "body": "Você receberá alertas importantes sobre este clube.",
+        "type": "WATCHLIST_CLUBE_ADDED",
+        "entityType": "clube",
+        "entityId": "2",
+        "read": true,
+        "createdAt": "2026-03-13T19:55:27.877Z",
+        "meta": {}
+      },
+      {
+        "id": "5111d126eda10084eb75",
+        "key": "fav-clube:1",
+        "title": "Palmeiras adicionado aos favoritos",
+        "body": "Você receberá alertas importantes sobre este clube.",
+        "type": "WATCHLIST_CLUBE_ADDED",
+        "entityType": "clube",
+        "entityId": "1",
+        "read": true,
+        "createdAt": "2026-03-13T19:55:12.753Z",
+        "meta": {}
+      }
+    ],
+    "alertState": {
+      "clubPrices": {
+        "1": 12.63,
+        "2": 12.03,
+        "19": 2.06
+      }
+    }
+  }
+]

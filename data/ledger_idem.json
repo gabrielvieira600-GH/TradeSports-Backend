@@ -1,0 +1,32 @@
+{
+  "trade:1773068984761-betf6al8q35:1773069014707-ffsi3ewfvvq:10:8.25": {
+    "entryId": "je_1773069014713_upgriw3b7h",
+    "at": "2026-03-09T15:10:14.714Z",
+    "action": "TRADE_EXEC"
+  },
+  "deposit:pending:ftx_1773084017012_0b9df5b51444": {
+    "entryId": "je_1773084017025_8ca98bb450f5",
+    "at": "2026-03-09T19:20:17.025Z",
+    "action": "DEPOSIT_PENDING"
+  },
+  "deposit:confirm:ftx_1773084017012_0b9df5b51444": {
+    "entryId": "je_1773084017078_8f29f84de665",
+    "at": "2026-03-09T19:20:17.078Z",
+    "action": "DEPOSIT_CONFIRMED"
+  },
+  "deposit:pending:ftx_1773165135683_0d32535478c9": {
+    "entryId": "je_1773165135691_dcf689c6e59d",
+    "at": "2026-03-10T17:52:15.691Z",
+    "action": "DEPOSIT_PENDING"
+  },
+  "deposit:confirm:ftx_1773165135683_0d32535478c9": {
+    "entryId": "je_1773165135744_d36524f114a7",
+    "at": "2026-03-10T17:52:15.744Z",
+    "action": "DEPOSIT_CONFIRMED"
+  },
+  "liq:Brasileirao:2023:1748465950263:117": {
+    "entryId": "je_1774290611601_d3dwjs1qpw",
+    "at": "2026-03-23T18:30:11.601Z",
+    "action": "LIQUIDACAO_FINAL"
+  }
+}

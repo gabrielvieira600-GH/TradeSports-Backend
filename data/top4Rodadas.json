@@ -1,0 +1,24 @@
+[
+  {
+    "rodada": 38,
+    "clubes": [
+      {
+        "clubeId": 1,
+        "posicao": 1
+      },
+      {
+        "clubeId": 2,
+        "posicao": 2
+      },
+      {
+        "clubeId": 117,
+        "posicao": 3
+      },
+      {
+        "clubeId": 127,
+        "posicao": 4
+      }
+    ],
+    "data": "2026-03-23T18:31:36.235Z"
+  }
+]

@@ -1,0 +1,169 @@
+[
+  {
+    "id": "je_1773069014713_upgriw3b7h",
+    "at": "2026-03-09T15:10:14.714Z",
+    "action": "TRADE_EXEC",
+    "lines": [
+      {
+        "account": "user:1748465950263",
+        "debit": 0,
+        "credit": 82.5
+      },
+      {
+        "account": "user:1",
+        "debit": 82.5,
+        "credit": 0
+      }
+    ],
+    "meta": {
+      "buyerId": 1748465950263,
+      "sellerId": 1,
+      "clubeId": 19,
+      "qty": 10,
+      "price": 8.25,
+      "total": 82.5,
+      "fee": 0,
+      "feeSide": "none"
+    }
+  },
+  {
+    "id": "je_1773084017025_8ca98bb450f5",
+    "at": "2026-03-09T19:20:17.025Z",
+    "action": "DEPOSIT_PENDING",
+    "lines": [
+      {
+        "account": "platform:deposits:pending",
+        "debit": 100,
+        "credit": 0
+      },
+      {
+        "account": "platform:equity",
+        "debit": 0,
+        "credit": 100
+      }
+    ],
+    "meta": {
+      "userId": 1748465950263,
+      "amount": 100,
+      "provider": "manual",
+      "txId": "ftx_1773084017012_0b9df5b51444"
+    }
+  },
+  {
+    "id": "je_1773084017078_8f29f84de665",
+    "at": "2026-03-09T19:20:17.078Z",
+    "action": "DEPOSIT_CONFIRMED",
+    "lines": [
+      {
+        "account": "platform:cash",
+        "debit": 100,
+        "credit": 0
+      },
+      {
+        "account": "user:1748465950263",
+        "debit": 100,
+        "credit": 0
+      },
+      {
+        "account": "platform:deposits:pending",
+        "debit": 0,
+        "credit": 100
+      },
+      {
+        "account": "platform:liability:users",
+        "debit": 0,
+        "credit": 100
+      }
+    ],
+    "meta": {
+      "userId": 1748465950263,
+      "amount": 100,
+      "provider": "manual",
+      "txId": "ftx_1773084017012_0b9df5b51444"
+    }
+  },
+  {
+    "id": "je_1773165135691_dcf689c6e59d",
+    "at": "2026-03-10T17:52:15.691Z",
+    "action": "DEPOSIT_PENDING",
+    "lines": [
+      {
+        "account": "platform:deposits:pending",
+        "debit": 100,
+        "credit": 0
+      },
+      {
+        "account": "platform:equity",
+        "debit": 0,
+        "credit": 100
+      }
+    ],
+    "meta": {
+      "userId": 1748465950263,
+      "amount": 100,
+      "provider": "manual",
+      "txId": "ftx_1773165135683_0d32535478c9"
+    }
+  },
+  {
+    "id": "je_1773165135744_d36524f114a7",
+    "at": "2026-03-10T17:52:15.744Z",
+    "action": "DEPOSIT_CONFIRMED",
+    "lines": [
+      {
+        "account": "platform:cash",
+        "debit": 100,
+        "credit": 0
+      },
+      {
+        "account": "user:1748465950263",
+        "debit": 100,
+        "credit": 0
+      },
+      {
+        "account": "platform:deposits:pending",
+        "debit": 0,
+        "credit": 100
+      },
+      {
+        "account": "platform:liability:users",
+        "debit": 0,
+        "credit": 100
+      }
+    ],
+    "meta": {
+      "userId": 1748465950263,
+      "amount": 100,
+      "provider": "manual",
+      "txId": "ftx_1773165135683_0d32535478c9"
+    }
+  },
+  {
+    "id": "je_1774290611601_d3dwjs1qpw",
+    "at": "2026-03-23T18:30:11.601Z",
+    "action": "LIQUIDACAO_FINAL",
+    "lines": [
+      {
+        "account": "passivo.usuarios.1748465950263.saldo",
+        "debit": 11.46,
+        "credit": 0
+      },
+      {
+        "account": "passivo.carteira_liquidacao.117",
+        "debit": 0,
+        "credit": 11.46
+      }
+    ],
+    "meta": {
+      "campeonato": "Brasileirao",
+      "temporada": 2023,
+      "usuarioId": 1748465950263,
+      "clubeId": 117,
+      "quantidade": 1,
+      "valorUnitario": 11.46,
+      "valorUnitarioBase": 11.46,
+      "splitFactorCumulativo": 1,
+      "totalPago": 11.46
+    }
+  }
+]

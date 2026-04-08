@@ -1,0 +1,975 @@
+[
+  {
+    "id": "1772048328339-ymqtkzcgyut",
+    "ts": "2026-02-25T19:38:48.339Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772048356378-mfs7u8ts7ck",
+    "ts": "2026-02-25T19:39:16.378Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "SPOOFING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "ordemId": "1772048343313-g5nwxy528r6",
+    "seconds": 13,
+    "scoreUser": 10,
+    "scoreIp": 5
+  },
+  {
+    "id": "1772048356928-1eaoy0ay60n",
+    "ts": "2026-02-25T19:39:16.928Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "SPOOFING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "ordemId": "1772048351013-j82vfbojmbl",
+    "seconds": 6,
+    "scoreUser": 20,
+    "scoreIp": 10
+  },
+  {
+    "id": "1772051862593-kpof5re6x5o",
+    "ts": "2026-02-25T20:37:42.593Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772051968023-d9i1t0ajki7",
+    "ts": "2026-02-25T20:39:28.023Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772053015225-tavy0ml3nj",
+    "ts": "2026-02-25T20:56:55.225Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "SPOOFING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "ordemId": "1772053007974-6yecixu95y",
+    "seconds": 7,
+    "scoreUser": 30,
+    "scoreIp": 15
+  },
+  {
+    "id": "1772053015894-exsmxga2596",
+    "ts": "2026-02-25T20:56:55.894Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "SPOOFING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "ordemId": "1772053008478-b9kyjmnyles",
+    "seconds": 7,
+    "scoreUser": 40,
+    "scoreIp": 20
+  },
+  {
+    "id": "1772053016540-1ex0rjh2kyy",
+    "ts": "2026-02-25T20:56:56.540Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 29354,
+    "reason": "muito cancelamento rápido"
+  },
+  {
+    "id": "1772055995636-uar6qbdsr9",
+    "ts": "2026-02-25T21:46:35.636Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772056012479-0kbta88l9j3l",
+    "ts": "2026-02-25T21:46:52.479Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772129896525-3mtjkz18qau",
+    "ts": "2026-02-26T18:18:16.526Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772133790255-tbx410nxy8t",
+    "ts": "2026-02-26T19:23:10.255Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772134138971-80q30vwh2bs",
+    "ts": "2026-02-26T19:28:58.971Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772575564039-7l4elrvj88j",
+    "ts": "2026-03-03T22:06:04.039Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772575769058-se31ftgxkyj",
+    "ts": "2026-03-03T22:09:29.058Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772642288273-8cuiczo1bs",
+    "ts": "2026-03-04T16:38:08.273Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772642924179-8xe80ksacpx",
+    "ts": "2026-03-04T16:48:44.179Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772642971818-w0sw6x0o38b",
+    "ts": "2026-03-04T16:49:31.818Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772650900888-vr80bre8kss",
+    "ts": "2026-03-04T19:01:40.888Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772813091029-2rqjatzivr4",
+    "ts": "2026-03-06T16:04:51.029Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772813129940-1js9kce7buhh",
+    "ts": "2026-03-06T16:05:29.940Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772813203331-1xxhz9wrtl2",
+    "ts": "2026-03-06T16:06:43.331Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772814006132-desdp1lv8j",
+    "ts": "2026-03-06T16:20:06.132Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772814281305-awvwzkm7tql",
+    "ts": "2026-03-06T16:24:41.305Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1772814411999-fss9xyw2uot",
+    "ts": "2026-03-06T16:26:51.999Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773068958765-8b3xyp7adk",
+    "ts": "2026-03-09T15:09:18.765Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773068970177-zrx5n20qw7k",
+    "ts": "2026-03-09T15:09:30.177Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773068984759-yfnwovlf8jn",
+    "ts": "2026-03-09T15:09:44.759Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773068999162-l1tirj5pdz",
+    "ts": "2026-03-09T15:09:59.163Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773069014706-lzfmxj4cuh",
+    "ts": "2026-03-09T15:10:14.706Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773069014731-7nrzevbbcbb",
+    "ts": "2026-03-09T15:10:14.731Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "WASH_TRADING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "scoreUser": 20
+  },
+  {
+    "id": "1773075226608-a56id96rhb",
+    "ts": "2026-03-09T16:53:46.608Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773075241701-qwycze1ens",
+    "ts": "2026-03-09T16:54:01.701Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075242186-znl4upo3kfi",
+    "ts": "2026-03-09T16:54:02.186Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075242588-l0gvsiqjf7e",
+    "ts": "2026-03-09T16:54:02.588Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075243114-hkcrg2i3w4g",
+    "ts": "2026-03-09T16:54:03.114Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075243487-yebmy7cb9q9",
+    "ts": "2026-03-09T16:54:03.487Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075243914-ycokea2xeni",
+    "ts": "2026-03-09T16:54:03.914Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075244308-n6ljhhdbmqd",
+    "ts": "2026-03-09T16:54:04.308Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075244700-212x5zljx0q",
+    "ts": "2026-03-09T16:54:04.700Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075245067-rl2l2z1wwxj",
+    "ts": "2026-03-09T16:54:05.067Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075245438-6iymhxdssr4",
+    "ts": "2026-03-09T16:54:05.438Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075245856-5duo4geikvw",
+    "ts": "2026-03-09T16:54:05.856Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773075249757-qq2rbqmr6uq",
+    "ts": "2026-03-09T16:54:09.757Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "SPOOFING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "ordemId": "1773075241702-qrl0r6jvjdd",
+    "seconds": 8,
+    "notional": 8,
+    "scoreUser": 30,
+    "scoreIp": 25
+  },
+  {
+    "id": "1773075249874-cjswvqov9y5",
+    "ts": "2026-03-09T16:54:09.874Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "SPOOFING_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "ordemId": "1773075242188-cvywteqblvu",
+    "seconds": 8,
+    "notional": 8,
+    "scoreUser": 40,
+    "scoreIp": 30
+  },
+  {
+    "id": "1773075250103-coewwg8pn5t",
+    "ts": "2026-03-09T16:54:10.103Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 29769,
+    "reason": "cancelamento rápido"
+  },
+  {
+    "id": "1773075253055-v3w9k2ufeb",
+    "ts": "2026-03-09T16:54:13.055Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 26817,
+    "reason": "cancelamento rápido"
+  },
+  {
+    "id": "1773075253070-6gp7vmi9sx4",
+    "ts": "2026-03-09T16:54:13.070Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 26801,
+    "reason": "cancelamento rápido"
+  },
+  {
+    "id": "1773075253081-t6t71sgfl1p",
+    "ts": "2026-03-09T16:54:13.081Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 26791,
+    "reason": "cancelamento rápido"
+  },
+  {
+    "id": "1773075253413-15afc50z465",
+    "ts": "2026-03-09T16:54:13.413Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 26460,
+    "reason": "cancelamento rápido"
+  },
+  {
+    "id": "1773083253763-1pk22m6sla8",
+    "ts": "2026-03-09T19:07:33.763Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773084166491-w04bq2el9x8",
+    "ts": "2026-03-09T19:22:46.491Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773158445168-yw1ibe4ezz",
+    "ts": "2026-03-10T16:00:45.168Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773168061013-rukgm0if38",
+    "ts": "2026-03-10T18:41:01.013Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773251530302-owb36ihkrjg",
+    "ts": "2026-03-11T17:52:10.302Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773253531239-gxsqjf3nv2v",
+    "ts": "2026-03-11T18:25:31.240Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "CANCEL_RATIO_SIGNAL",
+    "decision": "ALLOW",
+    "clubeId": "19",
+    "creates": 11,
+    "cancels": 8,
+    "ratio": 0.7272727272727273,
+    "scoreUser": 55
+  },
+  {
+    "id": "1773253532363-ofvn0tb5onr",
+    "ts": "2026-03-11T18:25:32.363Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "COOLDOWN_BLOCK",
+    "decision": "BLOCK",
+    "cooldownMs": 118873,
+    "reason": "cancel ratio alto"
+  },
+  {
+    "id": "1773253556637-k1gb1f9kdwo",
+    "ts": "2026-03-11T18:25:56.637Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773253586582-e9y4uj0701c",
+    "ts": "2026-03-11T18:26:26.582Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773253706925-ub47n6r182k",
+    "ts": "2026-03-11T18:28:26.925Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773257315084-fmo4ch8bx8w",
+    "ts": "2026-03-11T19:28:35.084Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773257324178-5ppdej2s7c9",
+    "ts": "2026-03-11T19:28:44.178Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773257338277-yejgbbg9q6",
+    "ts": "2026-03-11T19:28:58.277Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773333400879-g2i1hcloag",
+    "ts": "2026-03-12T16:36:40.879Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773333610142-czejwky77mb",
+    "ts": "2026-03-12T16:40:10.142Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773333776031-aejhv6fc4s",
+    "ts": "2026-03-12T16:42:56.031Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773333996910-sdwl865horb",
+    "ts": "2026-03-12T16:46:36.910Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773334032697-ypsiizqoh5a",
+    "ts": "2026-03-12T16:47:12.698Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773335299567-42eztgt61dj",
+    "ts": "2026-03-12T17:08:19.567Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773335357823-on9gk4xizn",
+    "ts": "2026-03-12T17:09:17.823Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773335427476-d8a1alfkgqt",
+    "ts": "2026-03-12T17:10:27.476Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773335541266-hiq1tbanyrf",
+    "ts": "2026-03-12T17:12:21.267Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773335569317-3cikgloj8c5",
+    "ts": "2026-03-12T17:12:49.317Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773339377582-r43z1kh4ty",
+    "ts": "2026-03-12T18:16:17.582Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773346900023-ebgkehmkj24",
+    "ts": "2026-03-12T20:21:40.024Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773357338858-ftpyjlig3rb",
+    "ts": "2026-03-12T23:15:38.858Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773357631142-jklaw604pdk",
+    "ts": "2026-03-12T23:20:31.142Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773357701089-9n0zb38wrbt",
+    "ts": "2026-03-12T23:21:41.089Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773357725519-11xu73nyl35",
+    "ts": "2026-03-12T23:22:05.519Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773357895880-5zsava211p",
+    "ts": "2026-03-12T23:24:55.881Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1773417444809-62nwjvr5i3c",
+    "ts": "2026-03-13T15:57:24.809Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773417691389-9ieg22v6m8s",
+    "ts": "2026-03-13T16:01:31.389Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773427800083-yqoqw1ggsqm",
+    "ts": "2026-03-13T18:50:00.083Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773430544950-0dyh57qem3d",
+    "ts": "2026-03-13T19:35:44.951Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773431708242-h1ya6zwrel5",
+    "ts": "2026-03-13T19:55:08.242Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773675083570-5twbwtem3nf",
+    "ts": "2026-03-16T15:31:23.570Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773693249024-vmczlm9apu8",
+    "ts": "2026-03-16T20:34:09.024Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773762064397-e39h7sxqa6w",
+    "ts": "2026-03-17T15:41:04.397Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1773778745524-l1wz2wr9fjj",
+    "ts": "2026-03-17T20:19:05.525Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774014848682-cq6l2m38688",
+    "ts": "2026-03-20T13:54:08.682Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774015105131-uvr2amoy7qq",
+    "ts": "2026-03-20T13:58:25.131Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774015179434-naflzo245gl",
+    "ts": "2026-03-20T13:59:39.434Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774015810376-egxxw9o9i9e",
+    "ts": "2026-03-20T14:10:10.376Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774015840467-25fb4ty7e5a",
+    "ts": "2026-03-20T14:10:40.467Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774017826688-oj7i6cilruh",
+    "ts": "2026-03-20T14:43:46.688Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "ORDER_CREATE_STAT",
+    "decision": "ALLOW",
+    "clubeId": "19"
+  },
+  {
+    "id": "1774035446044-e2ttq7k7xp",
+    "ts": "2026-03-20T19:37:26.044Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774041927504-6fb0w1dnfeo",
+    "ts": "2026-03-20T21:25:27.506Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774043135234-vwqzozcxqr8",
+    "ts": "2026-03-20T21:45:35.235Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774279870350-1vc3zsi2117",
+    "ts": "2026-03-23T15:31:10.350Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774287617620-dds7q7pnp9h",
+    "ts": "2026-03-23T17:40:17.620Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774290887271-tha2c8ca0eg",
+    "ts": "2026-03-23T18:34:47.272Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774293956131-o9udtwwp8e9",
+    "ts": "2026-03-23T19:25:56.131Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774295230209-2at5o7m0vlm",
+    "ts": "2026-03-23T19:47:10.209Z",
+    "userId": "1",
+    "ip": "::ffff:127.0.0.1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774295874755-ey1bzo764ih",
+    "ts": "2026-03-23T19:57:54.756Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774296223873-qynt74ad3q8",
+    "ts": "2026-03-23T20:03:43.873Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774296336258-kua52vjtlcj",
+    "ts": "2026-03-23T20:05:36.258Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774298811401-ta9s76tox2a",
+    "ts": "2026-03-23T20:46:51.401Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774381652969-r1w5h8l78pp",
+    "ts": "2026-03-24T19:47:32.970Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774381673674-towyezw2148",
+    "ts": "2026-03-24T19:47:53.675Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774396710967-pfq73sf2wql",
+    "ts": "2026-03-24T23:58:30.967Z",
+    "userId": "1",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774396740732-v793i88m4d",
+    "ts": "2026-03-24T23:59:00.733Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  },
+  {
+    "id": "1774981599220-ajiyzytsahr",
+    "ts": "2026-03-31T18:26:39.220Z",
+    "userId": "1748465950263",
+    "ip": "::1",
+    "action": "LOGIN_SUCCESS",
+    "decision": "ALLOW"
+  }
+]

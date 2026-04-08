@@ -1,0 +1,829 @@
+[
+  {
+    "id": 1751470642959,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-02T15:37:22.959Z"
+  },
+  {
+    "id": 1751471177301,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-02T15:46:17.301Z"
+  },
+  {
+    "id": 1751560376285,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-03T16:32:56.285Z"
+  },
+  {
+    "id": 1751562145191,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-03T17:02:25.191Z"
+  },
+  {
+    "id": 1751566241470,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-03T18:10:41.470Z"
+  },
+  {
+    "id": 1751568403977,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-03T18:46:43.978Z"
+  },
+  {
+    "id": 1751577878106,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-03T21:24:38.106Z"
+  },
+  {
+    "id": 1751927258078,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-07-07T22:27:38.078Z"
+  },
+  {
+    "id": 1751927812671,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-07T22:36:52.671Z"
+  },
+  {
+    "id": 1751929867855,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-07T23:11:07.855Z"
+  },
+  {
+    "id": 1751990760422,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-08T16:06:00.422Z"
+  },
+  {
+    "id": 1751993440359,
+    "clubeId": 125,
+    "quantidade": 100,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-08T16:50:40.359Z"
+  },
+  {
+    "id": 1751998011496,
+    "clubeId": 125,
+    "quantidade": 100,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-08T18:06:51.496Z"
+  },
+  {
+    "id": 1751998089449,
+    "clubeId": 125,
+    "quantidade": 100,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-08T18:08:09.449Z"
+  },
+  {
+    "id": 1751998237540,
+    "clubeId": 125,
+    "quantidade": 100,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-08T18:10:37.540Z"
+  },
+  {
+    "id": 1752011160345,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-08T21:46:00.345Z"
+  },
+  {
+    "id": 1752012298632,
+    "clubeId": 18,
+    "quantidade": 1,
+    "precoUnitario": 5.51,
+    "tipo": "IPO",
+    "data": "2025-07-08T22:04:58.632Z"
+  },
+  {
+    "id": 1752180753702,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-10T20:52:33.702Z"
+  },
+  {
+    "id": 1752180880703,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-10T20:54:40.703Z"
+  },
+  {
+    "id": 1752264264298,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-11T20:04:24.298Z"
+  },
+  {
+    "id": 1752264406314,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-11T20:06:46.314Z"
+  },
+  {
+    "id": 1752264475651,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-11T20:07:55.651Z"
+  },
+  {
+    "id": 1752265986158,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-11T20:33:06.158Z"
+  },
+  {
+    "id": 1752523994232,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-14T20:13:14.232Z"
+  },
+  {
+    "id": 1752524045422,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-14T20:14:05.422Z"
+  },
+  {
+    "id": 1752524178085,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-14T20:16:18.085Z"
+  },
+  {
+    "id": 1752524432037,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-14T20:20:32.037Z"
+  },
+  {
+    "id": 1752524540270,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-14T20:22:20.270Z"
+  },
+  {
+    "id": 1752526365349,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-14T20:52:45.349Z"
+  },
+  {
+    "id": 1752541362719,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-15T01:02:42.719Z"
+  },
+  {
+    "id": 1752543410145,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-15T01:36:50.145Z"
+  },
+  {
+    "id": 1752546194272,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-15T02:23:14.272Z"
+  },
+  {
+    "id": 1752765978984,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 5,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-17T15:26:18.984Z"
+  },
+  {
+    "id": 1752767687458,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 2,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-17T15:54:47.458Z"
+  },
+  {
+    "id": 1752767772248,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-17T15:56:12.248Z"
+  },
+  {
+    "id": 1752782241416,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-17T19:57:21.416Z"
+  },
+  {
+    "id": 1752784089084,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-07-17T20:28:09.084Z"
+  },
+  {
+    "id": 1752785860935,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-17T20:57:40.935Z"
+  },
+  {
+    "id": 1752872785943,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-18T21:06:25.943Z"
+  },
+  {
+    "id": 1752872947592,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-07-18T21:09:07.592Z"
+  },
+  {
+    "id": 1752873589809,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-18T21:19:49.809Z"
+  },
+  {
+    "id": 1752873711345,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-07-18T21:21:51.345Z"
+  },
+  {
+    "id": 1753226586944,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-22T23:23:06.944Z"
+  },
+  {
+    "id": 1753230023669,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 10,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-23T00:20:23.669Z"
+  },
+  {
+    "id": 1753230303188,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 3,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-23T00:25:03.188Z"
+  },
+  {
+    "id": 1753231252712,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-07-23T00:40:52.712Z"
+  },
+  {
+    "id": 1761334127046,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 1,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-10-24T19:28:47.046Z"
+  },
+  {
+    "id": 1762393432403,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 2,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-11-06T01:43:52.403Z"
+  },
+  {
+    "id": 1762396129798,
+    "usuarioId": 1,
+    "clubeId": 127,
+    "quantidade": 2,
+    "precoUnitario": 10.91,
+    "tipo": "IPO",
+    "data": "2025-11-06T02:28:49.798Z"
+  },
+  {
+    "id": 1762402247445,
+    "usuarioId": 1,
+    "clubeId": 13,
+    "quantidade": 1,
+    "precoUnitario": 7.04,
+    "tipo": "IPO",
+    "data": "2025-11-06T04:10:47.445Z"
+  },
+  {
+    "id": 1762451488884,
+    "usuarioId": 1,
+    "clubeId": 125,
+    "quantidade": 407,
+    "precoUnitario": 5,
+    "tipo": "IPO",
+    "data": "2025-11-06T17:51:28.884Z"
+  },
+  {
+    "id": 1763499763312,
+    "usuarioId": 1,
+    "clubeId": 13,
+    "quantidade": 10,
+    "precoUnitario": 7.04,
+    "tipo": "IPO",
+    "data": "2025-11-18T21:02:43.312Z"
+  },
+  {
+    "id": 1763499798350,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 10,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-11-18T21:03:18.350Z"
+  },
+  {
+    "id": 1763499845099,
+    "usuarioId": 1,
+    "clubeId": 2,
+    "quantidade": 10,
+    "precoUnitario": 12.03,
+    "tipo": "IPO",
+    "data": "2025-11-18T21:04:05.099Z"
+  },
+  {
+    "id": 1764268810147,
+    "usuarioId": 1,
+    "clubeId": 14,
+    "quantidade": 1,
+    "precoUnitario": 6.7,
+    "tipo": "IPO",
+    "data": "2025-11-27T18:40:10.147Z"
+  },
+  {
+    "id": 1764288947796,
+    "usuarioId": 1,
+    "clubeId": 15,
+    "quantidade": 10,
+    "precoUnitario": 6.38,
+    "tipo": "IPO",
+    "data": "2025-11-28T00:15:47.796Z"
+  },
+  {
+    "id": "1764289020756-hnm6icjdz29",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 125,
+    "clubeNome": "America Mineiro",
+    "quantidade": 411,
+    "valorUnitario": 5,
+    "totalPago": 2055,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-rvro06cwqj",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 127,
+    "clubeNome": "Flamengo",
+    "quantidade": 2,
+    "valorUnitario": 10.91,
+    "totalPago": 21.82,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-ow9rihi98k",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 13,
+    "clubeNome": "Corinthians",
+    "quantidade": 11,
+    "valorUnitario": 7.04,
+    "totalPago": 77.44,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-agtu9ozrnyq",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 1,
+    "clubeNome": "Palmeiras",
+    "quantidade": 10,
+    "valorUnitario": 12.63,
+    "totalPago": 126.3,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-tv7ip7ax9da",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 2,
+    "clubeNome": "Gremio",
+    "quantidade": 10,
+    "valorUnitario": 12.03,
+    "totalPago": 120.3,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-yl1bzndszg",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 14,
+    "clubeNome": "Cruzeiro",
+    "quantidade": 1,
+    "valorUnitario": 6.7,
+    "totalPago": 6.7,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-yd473frcud",
+    "usuarioId": 1,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 15,
+    "clubeNome": "Vasco da Gama",
+    "quantidade": 10,
+    "valorUnitario": 6.38,
+    "totalPago": 63.8,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": "1764289020757-v3zkagc8rap",
+    "usuarioId": 1748465950263,
+    "tipo": "LIQUIDACAO",
+    "clubeId": 125,
+    "clubeNome": "",
+    "quantidade": 3,
+    "valorUnitario": 5,
+    "totalPago": 15,
+    "data": "2025-11-28T00:17:00.756Z"
+  },
+  {
+    "id": 1764289074683,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-11-28T00:17:54.683Z"
+  },
+  {
+    "id": "1764294235120-6pxbdf0z9vh",
+    "usuarioId": 1,
+    "tipo": "Liquidação",
+    "clubeId": 1,
+    "clubeNome": "Palmeiras",
+    "quantidade": 1,
+    "valorUnitario": 12.63,
+    "totalPago": 12.63,
+    "data": "2025-11-28T01:43:55.118Z"
+  },
+  {
+    "id": 1764298377414,
+    "usuarioId": 1748465950263,
+    "clubeId": 19,
+    "quantidade": 100,
+    "precoUnitario": 5.25,
+    "tipo": "IPO",
+    "data": "2025-11-28T02:52:57.414Z"
+  },
+  {
+    "id": "1764301862897-nb3qw88hdl",
+    "usuarioId": 1,
+    "tipo": "COMPRA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 10,
+    "valorUnitario": 6.25,
+    "totalPago": 62.5,
+    "data": "2025-11-28T03:51:02.897Z"
+  },
+  {
+    "id": "1764301862897-fip8ah3c7s",
+    "usuarioId": 1748465950263,
+    "tipo": "VENDA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 10,
+    "valorUnitario": 6.25,
+    "totalPago": 62.5,
+    "data": "2025-11-28T03:51:02.897Z"
+  },
+  {
+    "id": "1764303441877-nx011gu1ls",
+    "usuarioId": 1748465950263,
+    "tipo": "COMPRA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 20,
+    "valorUnitario": 6.25,
+    "totalPago": 125,
+    "data": "2025-11-28T04:17:21.876Z"
+  },
+  {
+    "id": "1764303441877-z3mgwlxzqz",
+    "usuarioId": 1,
+    "tipo": "VENDA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 20,
+    "valorUnitario": 6.25,
+    "totalPago": 125,
+    "data": "2025-11-28T04:17:21.876Z"
+  },
+  {
+    "id": "1764358709390-8x92pb3bhxf",
+    "usuarioId": 1,
+    "tipo": "COMPRA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 10,
+    "valorUnitario": 8.25,
+    "totalPago": 82.5,
+    "data": "2025-11-28T19:38:29.389Z"
+  },
+  {
+    "id": "1764358709390-9hbv9406i05",
+    "usuarioId": 1748465950263,
+    "tipo": "VENDA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 10,
+    "valorUnitario": 8.25,
+    "totalPago": 82.5,
+    "data": "2025-11-28T19:38:29.389Z"
+  },
+  {
+    "id": 1764363852140,
+    "usuarioId": 1,
+    "clubeId": 127,
+    "quantidade": 10,
+    "precoUnitario": 10.91,
+    "tipo": "IPO",
+    "data": "2025-11-28T21:04:12.140Z"
+  },
+  {
+    "id": 1764717910213,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 15,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2025-12-02T23:25:10.213Z"
+  },
+  {
+    "id": 1764720803872,
+    "usuarioId": 1,
+    "clubeId": 2,
+    "quantidade": 22,
+    "precoUnitario": 12.03,
+    "tipo": "IPO",
+    "data": "2025-12-03T00:13:23.872Z"
+  },
+  {
+    "id": 1764721457447,
+    "usuarioId": 1,
+    "clubeId": 117,
+    "quantidade": 10,
+    "precoUnitario": 11.46,
+    "tipo": "IPO",
+    "data": "2025-12-03T00:24:17.447Z"
+  },
+  {
+    "id": 1764725060126,
+    "usuarioId": 1,
+    "clubeId": 10,
+    "quantidade": 10,
+    "precoUnitario": 8.14,
+    "tipo": "IPO",
+    "data": "2025-12-03T01:24:20.126Z"
+  },
+  {
+    "id": 1764725096977,
+    "usuarioId": 1,
+    "clubeId": 127,
+    "quantidade": 30,
+    "precoUnitario": 10.91,
+    "tipo": "IPO",
+    "data": "2025-12-03T01:24:56.977Z"
+  },
+  {
+    "id": 1764989267420,
+    "usuarioId": 1,
+    "clubeId": 7,
+    "quantidade": 17,
+    "precoUnitario": 9.43,
+    "tipo": "IPO",
+    "data": "2025-12-06T02:47:47.420Z"
+  },
+  {
+    "id": 1765215832053,
+    "usuarioId": 1,
+    "clubeId": 11,
+    "quantidade": 10,
+    "precoUnitario": 7.76,
+    "tipo": "IPO",
+    "data": "2025-12-08T17:43:52.053Z"
+  },
+  {
+    "id": 1768525604848,
+    "usuarioId": 1,
+    "clubeId": 14,
+    "quantidade": 1,
+    "precoUnitario": 6.7,
+    "tipo": "IPO",
+    "data": "2026-01-16T01:06:44.848Z"
+  },
+  {
+    "id": 1770852009517,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2026-02-11T23:20:09.517Z"
+  },
+  {
+    "id": 1770852013065,
+    "usuarioId": 1,
+    "clubeId": 1,
+    "quantidade": 1,
+    "precoUnitario": 12.63,
+    "tipo": "IPO",
+    "data": "2026-02-11T23:20:13.065Z"
+  },
+  {
+    "id": 1771614752989,
+    "usuarioId": 1,
+    "clubeId": 2,
+    "quantidade": 10,
+    "precoUnitario": 12.03,
+    "tipo": "IPO",
+    "data": "2026-02-20T19:12:32.989Z"
+  },
+  {
+    "id": "1771614813644-9gjlcxwu7g",
+    "usuarioId": 1,
+    "tipo": "COMPRA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 10,
+    "valorUnitario": 8.25,
+    "totalPago": 82.5,
+    "data": "2026-02-20T19:13:33.644Z"
+  },
+  {
+    "id": "1771614813644-je2fewithar",
+    "usuarioId": 1,
+    "tipo": "VENDA",
+    "clubeId": 19,
+    "clubeNome": "Coritiba",
+    "quantidade": 10,
+    "valorUnitario": 8.25,
+    "totalPago": 82.5,
+    "data": "2026-02-20T19:13:33.644Z"
+  },
+  {
+    "id": 1772052730379,
+    "usuarioId": 1,
+    "clubeId": 2,
+    "quantidade": 1,
+    "precoUnitario": 12.03,
+    "tipo": "IPO",
+    "data": "2026-02-25T20:52:10.379Z"
+  },
+  {
+    "id": 1772052868058,
+    "usuarioId": 1,
+    "clubeId": 18,
+    "quantidade": 205,
+    "precoUnitario": 5.51,
+    "tipo": "IPO",
+    "data": "2026-02-25T20:54:28.058Z"
+  },
+  {
+    "id": 1772133830582,
+    "usuarioId": 1748465950263,
+    "clubeId": 14,
+    "quantidade": 200,
+    "precoUnitario": 6.7,
+    "tipo": "IPO",
+    "data": "2026-02-26T19:23:50.582Z"
+  }
+]
