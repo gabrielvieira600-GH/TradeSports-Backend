@@ -339,7 +339,7 @@ router.get('/tabela-brasileirao', async (req, res) => {
       method: 'get',
       url: 'https://v3.football.api-sports.io/standings',
       headers: {
-        'x-apisports-key': 'a3118e9a451a60bae40400fa6b255037',
+        'x-apisports-key': process.env.API_FOOTBALL_KEY,
         'Accept': 'application/json'
       },
       params: {
