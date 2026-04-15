@@ -131,10 +131,22 @@ app.use((req, res, next) => {
 });
 
 // CORS (mantenha o origin do seu frontend)
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+const allowedOrigins = [
+  process.env.FRONTEND_ORIGIN,
+  'http://localhost:3000',
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS bloqueado para origin: ${origin}`));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
     credentials: false,
@@ -900,5 +912,5 @@ app.post('/notifications/:id/read', auth, (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log(`Servidor rodando em process.env.NEXT_PUBLIC_API_URL`);
 });
