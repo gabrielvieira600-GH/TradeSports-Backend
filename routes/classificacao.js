@@ -339,16 +339,24 @@ router.get('/tabela-brasileirao', async (req, res) => {
       method: 'get',
       url: 'https://v3.football.api-sports.io/standings',
       headers: {
-        'x-apisports-key': process.env.API_FOOTBALL_KEY,
-        'Accept': 'application/json'
-      },
+      'x-apisports-key': process.env.API_FOOTBALL_KEY,
+       Accept: 'application/json',
+       },
       params: {
         league: 71,
         season: 2023
       }
     });
 
-    const standings = response.data.response[0].league.standings[0];
+    const standings = response?.data?.response?.[0]?.league?.standings?.[0];
+
+if (!Array.isArray(standings)) {
+  console.error('[API-Football] Resposta inesperada:', response?.data);
+  return res.status(502).json({
+    erro: 'Resposta inválida da API-Football.',
+    detalhes: response?.data || null,
+  });
+}
 
     // ===================== RODADA ATUAL (via jogos disputados) =====================
     // A API de standings não traz "rodada" diretamente. Uma forma consistente aqui é
