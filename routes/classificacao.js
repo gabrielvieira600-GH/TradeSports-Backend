@@ -343,8 +343,8 @@ router.get('/tabela-brasileirao', async (req, res) => {
        Accept: 'application/json',
        },
       params: {
-        league: 71,
-        season: 2023
+        league: 140,
+        season: 2025
       }
     });
 
@@ -437,9 +437,14 @@ if (!Array.isArray(standings)) {
     });
 
   } catch (error) {
-    console.error('[API-Football] Erro ao buscar tabela:', error.response?.data || error.message);
-    res.status(500).json({ erro: 'Erro ao buscar tabela da API-Football.' });
-  }
+  const detalhes = error.response?.data || error.message || null;
+  console.error('[API-Football] Erro ao buscar tabela:', detalhes);
+
+  return res.status(500).json({
+    erro: 'Erro ao buscar tabela da API-Football.',
+    detalhes,
+  });
+}
 });
 
 router.get('/tabela-laliga', async (req, res) => {
