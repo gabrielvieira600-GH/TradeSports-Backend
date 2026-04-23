@@ -133,6 +133,8 @@ app.use((req, res, next) => {
 // CORS (mantenha o origin do seu frontend)
 const allowedOrigins = [
   process.env.FRONTEND_ORIGIN,
+ 'https://www.tradesports.com.br',
+  'https://tradesports.com.br',
   'https://trade-sports-frontend-ok.vercel.app',
   'https://trade-sports-frontend-ok-om3a.vercel.app',
   'http://localhost:3000',
