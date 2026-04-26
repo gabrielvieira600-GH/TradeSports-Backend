@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+  "mongo:migrate": "node scripts/migrate-json-to-mongo.js"
   },
   "keywords": [],
   "author": "",

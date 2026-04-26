@@ -1,17 +1,15 @@
-// routes/usuario.js
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Dividendo = require('../models/dividendos');
 const Liquidacao = require('../models/Liquidacao');
-const Usuario = require('../models/Usuario'); // ✅ Import necessário
+const User = require('../models/User');
+const Investment = require('../models/Investment');
+const Club = require('../models/Club');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 
-// caminhos dos arquivos de dados
-const invPath = path.join(__dirname, '../data/investimentos.json');
-const usuariosPath = path.join(__dirname, '../data/usuarios.json');
 const antifraudeLogsPath = path.join(__dirname, '../data/antifraude_logs.json');
 const antifraudeStatePath = path.join(__dirname, '../data/antifraude_state.json');
 
@@ -23,33 +21,6 @@ function lerJSONSeguro(relPath, fallback = []) {
     return fallback;
   }
 }
-
-// helpers específicos para usuários e investimentos
-function lerUsuarios() {
-  try {
-    return JSON.parse(fs.readFileSync(usuariosPath, 'utf8') || '[]');
-  } catch (e) {
-    return [];
-  }
-}
-
-function salvarUsuarios(lista) {
-  fs.writeFileSync(usuariosPath, JSON.stringify(lista, null, 2));
-}
-
-function lerInvestimentos() {
-  try {
-    return JSON.parse(fs.readFileSync(invPath, 'utf8') || '[]');
-  } catch (e) {
-    return [];
-  }
-}
-
-function salvarInvestimentos(lista) {
-  fs.writeFileSync(invPath, JSON.stringify(lista, null, 2));
-}
-
-// ===================== ROTAS =====================
 
 router.get('/atual', async (req, res) => {
   try {
@@ -63,16 +34,16 @@ router.get('/atual', async (req, res) => {
       return res.status(200).json(null);
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET; // ✅ Corrigido para vir do .env
-
+    const JWT_SECRET = process.env.JWT_SECRET;
     const decoded = jwt.verify(token, JWT_SECRET);
-    const usuario = Usuario.buscarUsuarioPorId(decoded.id);
+
+    const usuario = await User.findById(decoded.id).lean();
 
     if (!usuario) {
       return res.status(200).json({ usuario: null });
     }
 
-    res.json(usuario);
+    return res.json(usuario);
   } catch (err) {
     if (err.name === 'JsonWebTokenError') {
       console.warn('Token JWT inválido:', err.message);
@@ -86,7 +57,7 @@ router.get('/atual', async (req, res) => {
 
 router.get('/', auth, async (req, res) => {
   try {
-    const usuario = req.usuario;
+    const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
       return res.status(404).json({ erro: 'Usuário não encontrado.' });
     }
@@ -99,7 +70,17 @@ router.get('/', auth, async (req, res) => {
 
 router.get('/dividendos', auth, async (req, res) => {
   try {
-    const dividendos = await Dividendo.find({ usuarioId: req.usuario.id })
+    const usuario = await User.findById(req.usuario.id).lean();
+    if (!usuario) {
+      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    }
+
+    const dividendos = await Dividendo.find({
+      $or: [
+        { usuarioId: req.usuario.id },
+        { usuarioId: usuario.legacyId ?? null },
+      ],
+    })
       .populate('clubeId', 'nome')
       .sort({ data: -1 });
 
@@ -111,11 +92,19 @@ router.get('/dividendos', auth, async (req, res) => {
 
 router.get('/historico', auth, async (req, res) => {
   try {
-    const usuarioId = req.usuario.id;
+    const usuario = await User.findById(req.usuario.id).lean();
+    if (!usuario) {
+      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    }
 
-    const inv = JSON.parse(fs.readFileSync(invPath, 'utf-8') || '[]')
-      .filter((i) => String(i.usuarioId) === String(usuarioId))
-      .sort((a, b) => new Date(b.data) - new Date(a.data));
+    const inv = await Investment.find({
+      $or: [
+        { usuarioId: req.usuario.id },
+        { usuarioLegacyId: usuario.legacyId ?? null },
+      ],
+    })
+      .sort({ data: -1 })
+      .lean();
 
     const formatado = inv.map((i) => {
       const unit =
@@ -135,7 +124,7 @@ router.get('/historico', auth, async (req, res) => {
       return {
         tipo: i.tipo || 'OPERACAO',
         clubeNome: i.clubeNome || '',
-        clubeId: i.clubeId ?? null, // 🔹 incluímos o clubeId para cálculo de P/L realizado
+        clubeId: i.clubeLegacyId ?? null,
         quantidade: i.quantidade,
         valorUnitario: unit,
         totalPago: total,
@@ -152,20 +141,22 @@ router.get('/historico', auth, async (req, res) => {
 
 router.get('/carteira', auth, async (req, res) => {
   try {
-    const usuario = await Usuario.buscarUsuarioPorId(req.usuario.id);
+    const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
       return res.status(404).json({ erro: 'Usuário não encontrado' });
     }
-    const clubesPath = path.join(__dirname, '..', 'data', 'clubes.json');
-    const clubesData = JSON.parse(fs.readFileSync(clubesPath, 'utf8') || '[]');
-    const carteiraUsuario = Array.isArray(usuario.carteira)
-      ? usuario.carteira
-      : [];
+
+    const carteiraUsuario = Array.isArray(usuario.carteira) ? usuario.carteira : [];
+    const clubesData = await Club.find({}).lean();
+
     const carteiraDetalhada = carteiraUsuario.map((ativo) => {
-      const clube = clubesData.find((c) => c.id === ativo.clubeId);
+      const clube = clubesData.find(
+        (c) => Number(c.legacyId) === Number(ativo.clubeId)
+      );
+
       return {
         ...ativo,
-        nome: clube?.nome || 'Desconhecido',
+        nome: clube?.nome || ativo?.nomeClube || 'Desconhecido',
         escudo: clube?.escudo || '',
       };
     });
@@ -175,12 +166,11 @@ router.get('/carteira', auth, async (req, res) => {
     console.error('Erro ao buscar carteira:', err);
     res.status(500).json({ erro: 'Erro interno ao buscar carteira' });
   }
-  console.log('Rota de carteira ativa');
 });
 
 router.get('/saldo', auth, async (req, res) => {
   try {
-    const usuario = await Usuario.buscarUsuarioPorId(req.usuario.id);
+    const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
       return res.status(404).json({ erro: 'Usuário não encontrado' });
     }
@@ -193,10 +183,6 @@ router.get('/saldo', auth, async (req, res) => {
   }
 });
 
-/**
- * POST /usuario/deposito
- * Registra depósito em saldo + histórico (investimentos.json)
- */
 router.post('/deposito', auth, async (req, res) => {
   try {
     const valor = Number(req.body.valor);
@@ -205,47 +191,45 @@ router.post('/deposito', auth, async (req, res) => {
       return res.status(400).json({ erro: 'Valor de depósito inválido.' });
     }
 
-    const usuarioId = req.usuario.id;
-    const usuarios = lerUsuarios();
-    const idx = usuarios.findIndex((u) => String(u.id) === String(usuarioId));
-
-    if (idx === -1) {
+    const usuario = await User.findById(req.usuario.id);
+    if (!usuario) {
       return res.status(404).json({ erro: 'Usuário não encontrado.' });
     }
 
-    const usuario = usuarios[idx];
     const saldoAtual = Number(usuario.saldo || 0);
-    const novoSaldo = saldoAtual + valor;
+    const novoSaldo = Number((saldoAtual + valor).toFixed(2));
+
     usuario.saldo = novoSaldo;
+    await usuario.save();
 
-    usuarios[idx] = usuario;
-    salvarUsuarios(usuarios);
-
-    // registra no histórico (investimentos.json)
-    const investimentos = lerInvestimentos();
-    investimentos.push({
-      tipo: 'DEPOSITO',
-      usuarioId,
+    await Investment.create({
+      usuarioId: usuario._id,
+      usuarioLegacyId: usuario.legacyId ?? null,
       clubeId: null,
+      clubeLegacyId: null,
       clubeNome: '',
       quantidade: 0,
+      precoUnitario: valor,
       valorUnitario: valor,
       totalPago: valor,
-      data: new Date().toISOString(),
+      tipo: 'DEPOSITO',
+      data: new Date(),
     });
-    salvarInvestimentos(investimentos);
 
-    return res.json({ usuario });
+    return res.json({
+      usuario: {
+        id: String(usuario._id),
+        legacyId: usuario.legacyId ?? null,
+        nomeUsuario: usuario.nomeUsuario,
+        saldo: usuario.saldo,
+      },
+    });
   } catch (err) {
     console.error('Erro ao processar depósito:', err);
     return res.status(500).json({ erro: 'Erro interno ao processar depósito.' });
   }
 });
 
-/**
- * POST /usuario/saque
- * Registra saque em saldo + histórico (investimentos.json)
- */
 router.post('/saque', auth, async (req, res) => {
   try {
     const valor = Number(req.body.valor);
@@ -254,15 +238,11 @@ router.post('/saque', auth, async (req, res) => {
       return res.status(400).json({ erro: 'Valor de saque inválido.' });
     }
 
-    const usuarioId = req.usuario.id;
-    const usuarios = lerUsuarios();
-    const idx = usuarios.findIndex((u) => String(u.id) === String(usuarioId));
-
-    if (idx === -1) {
+    const usuario = await User.findById(req.usuario.id);
+    if (!usuario) {
       return res.status(404).json({ erro: 'Usuário não encontrado.' });
     }
 
-    const usuario = usuarios[idx];
     const saldoAtual = Number(usuario.saldo || 0);
 
     if (valor > saldoAtual) {
@@ -271,51 +251,46 @@ router.post('/saque', auth, async (req, res) => {
         .json({ erro: 'Saldo insuficiente para realizar o saque.' });
     }
 
-    const novoSaldo = saldoAtual - valor;
+    const novoSaldo = Number((saldoAtual - valor).toFixed(2));
     usuario.saldo = novoSaldo;
+    await usuario.save();
 
-    usuarios[idx] = usuario;
-    salvarUsuarios(usuarios);
-
-    // registra no histórico (investimentos.json)
-    const investimentos = lerInvestimentos();
-    investimentos.push({
-      tipo: 'SAQUE',
-      usuarioId,
+    await Investment.create({
+      usuarioId: usuario._id,
+      usuarioLegacyId: usuario.legacyId ?? null,
       clubeId: null,
+      clubeLegacyId: null,
       clubeNome: '',
       quantidade: 0,
+      precoUnitario: valor,
       valorUnitario: valor,
       totalPago: valor,
-      data: new Date().toISOString(),
+      tipo: 'SAQUE',
+      data: new Date(),
     });
-    salvarInvestimentos(investimentos);
 
-    return res.json({ usuario });
+    return res.json({
+      usuario: {
+        id: String(usuario._id),
+        legacyId: usuario.legacyId ?? null,
+        nomeUsuario: usuario.nomeUsuario,
+        saldo: usuario.saldo,
+      },
+    });
   } catch (err) {
     console.error('Erro ao processar saque:', err);
     return res.status(500).json({ erro: 'Erro interno ao processar saque.' });
   }
 });
 
-/**
- * GET /usuario/extrato
- * Extrato de movimentações do SALDO (depósitos, saques, compras, vendas, liquidação etc)
- *
- * Query params opcionais:
- *  - from=YYYY-MM-DD (data inicial)
- *  - to=YYYY-MM-DD (data final)
- *  - tipos=DEPOSITO,SAQUE,COMPRA,VENDA (lista separada por vírgula)
- */
 router.get('/extrato', auth, async (req, res) => {
   try {
-    const usuarioId = req.usuario.id;
+    const usuario = await User.findById(req.usuario.id).lean();
+    if (!usuario) {
+      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    }
 
-    // pega saldo atual (para sincronizar caso existam operações antigas sem registro)
-    const usuarioAtual = await Usuario.buscarUsuarioPorId(usuarioId);
-    const saldoAtual = Number(usuarioAtual?.saldo || 0);
-
-    // filtros
+    const saldoAtual = Number(usuario?.saldo || 0);
     const { from, to, tipos } = req.query;
 
     let tiposFiltro = null;
@@ -329,9 +304,16 @@ router.get('/extrato', auth, async (req, res) => {
     const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : null;
     const toDate = to ? new Date(`${to}T23:59:59.999Z`) : null;
 
-    // carrega operações do investimentos.json (mesma fonte do /historico)
-    let movimentos = JSON.parse(fs.readFileSync(invPath, 'utf-8') || '[]')
-      .filter((i) => String(i.usuarioId) === String(usuarioId))
+    let movimentos = await Investment.find({
+      $or: [
+        { usuarioId: req.usuario.id },
+        { usuarioLegacyId: usuario.legacyId ?? null },
+      ],
+    })
+      .sort({ data: 1 })
+      .lean();
+
+    movimentos = movimentos
       .map((i) => {
         const unit =
           i.precoUnitario != null
@@ -351,50 +333,43 @@ router.get('/extrato', auth, async (req, res) => {
 
         return {
           tipo,
-          clubeId: i.clubeId ?? null,
+          clubeId: i.clubeLegacyId ?? null,
           clubeNome: i.clubeNome || '',
           quantidade: Number(i.quantidade || 0),
-          valor: Number(total || 0), // valor da movimentação (absoluto)
+          valor: Number(total || 0),
           valorUnitario: unit,
           data: i.data ? new Date(i.data) : new Date(0),
         };
       })
-      // ordena do mais antigo -> mais novo pra calcular saldo acumulado
-      .sort((a, b) => a.data - b.data);
+      .filter((m) => {
+        if (fromDate && m.data < fromDate) return false;
+        if (toDate && m.data > toDate) return false;
+        if (tiposFiltro && !tiposFiltro.includes(m.tipo)) return false;
+        return true;
+      });
 
-    // aplica filtro de datas/tipos (se houver)
-    movimentos = movimentos.filter((m) => {
-      if (fromDate && m.data < fromDate) return false;
-      if (toDate && m.data > toDate) return false;
-      if (tiposFiltro && !tiposFiltro.includes(m.tipo)) return false;
-      return true;
-    });
-
-    // define se cada tipo soma ou subtrai saldo
     function calcularDelta(m) {
       const t = m.tipo;
 
-      // créditos
       if (t === 'DEPOSITO') return +m.valor;
       if (t === 'VENDA') return +m.valor;
       if (t === 'LIQUIDACAO' || t === 'LIQUIDAÇÃO') return +m.valor;
       if (t === 'DIVIDENDO' || t === 'DIVIDENDOS') return +m.valor;
 
-      // débitos
       if (t === 'SAQUE') return -m.valor;
 
-      // compras (IPO/mercado)
-      // Aceita variações comuns sem quebrar:
       if (t.includes('COMPRA')) return -m.valor;
       if (t === 'IPO') return -m.valor;
 
-      // padrão: não altera saldo
       return 0;
     }
 
     function descricaoMov(m) {
       const nome = m.clubeNome ? ` - ${m.clubeNome}` : '';
-      const qtd = m.quantidade ? ` (${m.quantidade} cota${m.quantidade > 1 ? 's' : ''})` : '';
+      const qtd = m.quantidade
+        ? ` (${m.quantidade} cota${m.quantidade > 1 ? 's' : ''})`
+        : '';
+
       if (m.tipo === 'DEPOSITO') return 'Depósito';
       if (m.tipo === 'SAQUE') return 'Saque';
       if (m.tipo.includes('COMPRA') || m.tipo === 'IPO') return `Compra${nome}${qtd}`;
@@ -405,7 +380,6 @@ router.get('/extrato', auth, async (req, res) => {
       return `${m.tipo}${nome}${qtd}`;
     }
 
-    // calcula saldo acumulado
     let saldo = 0;
     const linhas = movimentos.map((m) => {
       const delta = calcularDelta(m);
@@ -416,12 +390,11 @@ router.get('/extrato', auth, async (req, res) => {
         tipo: m.tipo,
         descricao: descricaoMov(m),
         valor: Number(Math.abs(delta).toFixed(2)),
-        direcao: delta >= 0 ? 'C' : 'D', // C=crédito, D=débito
+        direcao: delta >= 0 ? 'C' : 'D',
         saldoApos: saldo,
       };
     });
 
-    // sincronização com saldo atual (caso existam “saldos antigos” sem registro no histórico)
     const saldoCalcFinal = saldo;
     const diff = Number((saldoAtual - saldoCalcFinal).toFixed(2));
 
@@ -429,7 +402,6 @@ router.get('/extrato', auth, async (req, res) => {
       const dataAjuste =
         linhas.length > 0 ? linhas[0].data : new Date().toISOString();
 
-      // insere um AJUSTE no início e recalcula saldos para ficar profissional/consistente
       const linhasComAjuste = [
         {
           data: dataAjuste,
@@ -437,7 +409,7 @@ router.get('/extrato', auth, async (req, res) => {
           descricao: 'Ajuste de saldo (sincronização)',
           valor: Math.abs(diff),
           direcao: diff >= 0 ? 'C' : 'D',
-          saldoApos: 0, // recalcula abaixo
+          saldoApos: 0,
         },
         ...linhas,
       ];
@@ -452,14 +424,14 @@ router.get('/extrato', auth, async (req, res) => {
       return res.json({
         saldoAtual,
         saldoCalculadoFinal: Number(s.toFixed(2)),
-        itens: recalculado.sort((a, b) => new Date(b.data) - new Date(a.data)), // entrega desc
+        itens: recalculado.sort((a, b) => new Date(b.data) - new Date(a.data)),
       });
     }
 
     return res.json({
       saldoAtual,
       saldoCalculadoFinal: Number(saldoCalcFinal.toFixed(2)),
-      itens: linhas.sort((a, b) => new Date(b.data) - new Date(a.data)), // entrega desc
+      itens: linhas.sort((a, b) => new Date(b.data) - new Date(a.data)),
     });
   } catch (err) {
     console.error('Erro ao gerar extrato:', err);
@@ -467,32 +439,29 @@ router.get('/extrato', auth, async (req, res) => {
   }
 });
 
-
-// Registrar aceite de documentos (termos/políticas) - por tipo + versão
-router.post('/aceites', auth, (req, res) => {
+router.post('/aceites', auth, async (req, res) => {
   try {
     const { tipo, versao } = req.body || {};
     if (!tipo || !versao) {
       return res.status(400).json({ erro: 'tipo e versao são obrigatórios' });
     }
 
-    const usuarios = lerUsuarios();
-    const idx = usuarios.findIndex((u) => String(u.id) === String(req.usuario.id));
-    if (idx === -1) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    const usuario = await User.findById(req.usuario.id);
+    if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
     const nowIso = new Date().toISOString();
     const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip;
     const userAgent = req.headers['user-agent'] || '';
 
-    usuarios[idx].aceites = usuarios[idx].aceites || {};
-    usuarios[idx].aceites[tipo] = {
+    if (!usuario.aceites) usuario.aceites = {};
+    usuario.aceites[tipo] = {
       versao,
       aceitoEm: nowIso,
       ip,
       userAgent,
     };
 
-    salvarUsuarios(usuarios);
+    await usuario.save();
     return res.json({ ok: true, tipo, versao, aceitoEm: nowIso });
   } catch (err) {
     console.error('Erro ao registrar aceite:', err);
@@ -500,12 +469,6 @@ router.post('/aceites', auth, (req, res) => {
   }
 });
 
-
-/**
- * GET /usuario/admin/antifraude/logs
- * Retorna logs de antifraude (apenas admin)
- * Query: limit (max 1000, default 200)
- */
 router.get('/admin/antifraude/logs', auth, (req, res) => {
   try {
     const usuario = req.usuario;
@@ -534,10 +497,6 @@ router.get('/admin/antifraude/logs', auth, (req, res) => {
   }
 });
 
-/**
- * GET /usuario/admin/antifraude/state
- * Retorna o estado antifraude (scores/cooldowns) - apenas admin
- */
 router.get('/admin/antifraude/state', auth, (req, res) => {
   try {
     const usuario = req.usuario;
@@ -557,10 +516,6 @@ router.get('/admin/antifraude/state', auth, (req, res) => {
   }
 });
 
-
-/**
- * POST /usuario/admin/freeze-user
- */
 router.post('/admin/freeze-user', auth, (req, res) => {
   if (req.usuario.role !== 'admin') return res.status(403).json({ erro: 'Admin only' });
   const { userId, minutos = 10, motivo = 'freeze manual' } = req.body;
@@ -581,11 +536,6 @@ router.post('/admin/unfreeze-user', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-
-/**
- * GET /usuario/admin/dashboard/antifraude
- * Resumo (Camada 5): top users por score, congelados, sinais recentes
- */
 router.get('/admin/dashboard/antifraude', auth, (req, res) => {
   try {
     const usuario = req.usuario;
@@ -639,10 +589,6 @@ router.get('/admin/dashboard/antifraude', auth, (req, res) => {
   }
 });
 
-/**
- * GET /usuario/admin/dashboard/mercado
- * Resumo (Camada 5): clubes travados/circuit breaker, ordens abertas por clube, etc.
- */
 router.get('/admin/dashboard/mercado', auth, (req, res) => {
   try {
     const usuario = req.usuario;
@@ -683,4 +629,3 @@ router.get('/admin/dashboard/mercado', auth, (req, res) => {
 });
 
 module.exports = router;
-

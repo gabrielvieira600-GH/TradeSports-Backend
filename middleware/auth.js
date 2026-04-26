@@ -1,22 +1,9 @@
-// middleware/auth.js
-
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
-const path = require('path');
+const User = require('../models/User');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const USERS_PATH = path.join(__dirname, '..', 'data', 'usuarios.json');
 
-function carregarUsuarios() {
-  try {
-    return JSON.parse(fs.readFileSync(USERS_PATH, 'utf8'));
-  } catch (err) {
-    console.error('[AUTH] Erro ao ler usuarios.json:', err.message);
-    return [];
-  }
-}
-
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -33,29 +20,28 @@ module.exports = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
 
-    const usuarios = carregarUsuarios();
+    const usuarioDB = await User.findById(decoded.id);
 
-    const usuarioDB = usuarios.find(
-      (u) => String(u.id) === String(decoded.id)
-    );
+    if (!usuarioDB) {
+      return res.status(401).json({ erro: 'Usuário do token não encontrado.' });
+    }
 
     const isAdmin =
-      usuarioDB?.admin === 'true' ||
       usuarioDB?.admin === true ||
+      usuarioDB?.role === 'admin' ||
       decoded.role === 'admin' ||
       decoded.perfil === 'admin' ||
       decoded.tipo === 'admin';
 
     req.usuario = {
-      id: decoded.id,
-      email: decoded.email || usuarioDB?.email || null,
-      nomeUsuario: decoded.nomeUsuario || usuarioDB?.nomeUsuario || null,
-      role: isAdmin ? 'admin' : (decoded.role || decoded.perfil || decoded.tipo || 'user'),
+      id: String(usuarioDB._id),
+      legacyId: usuarioDB.legacyId ?? null,
+      email: usuarioDB.email || decoded.email || null,
+      nomeUsuario: usuarioDB.nomeUsuario || decoded.nomeUsuario || null,
+      role: isAdmin ? 'admin' : 'user',
       admin: isAdmin,
     };
-    
-    console.log('[AUTH] req.usuario =', req.usuario);
-    
+
     next();
   } catch (e) {
     if (e?.name === 'TokenExpiredError') {
