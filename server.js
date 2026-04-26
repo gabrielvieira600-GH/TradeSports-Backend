@@ -9,7 +9,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const path = require('path');
-
+const { connectDB } = require('./config/db');
 const audit = require('./utils/audit');
 const antifraude = require('./utils/antifraude');
 const { runSystemCheck, buildHealthPayload } = require('./utils/operationalChecks');
@@ -48,6 +48,15 @@ const PORT = process.env.PORT || 4001;
 // Em produção, atrás de proxy (Vercel/Render/Nginx), isso ajuda IP correto no rate-limit
 app.set('trust proxy', 1);
 
+connectDB()
+  .then(() => {
+    console.log('Mongo inicializado.');
+  })
+  .catch((err) => {
+    console.error('Erro ao conectar no Mongo:', err);
+    process.exit(1);
+  });
+  
 // Helmet (hardening de headers)
 let helmet;
 try {
