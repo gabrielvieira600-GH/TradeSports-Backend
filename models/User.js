@@ -73,7 +73,14 @@ const UserSchema = new mongoose.Schema(
     nome: { type: String, required: true },
     sobrenome: { type: String, default: '' },
     nomeUsuario: { type: String, required: true, unique: true, index: true },
-    email: { type: String, required: true, unique: true, index: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      lowercase: true,
+      trim: true,
+    },
     cpf: { type: String, unique: true, sparse: true, index: true },
     dataNascimento: { type: String, default: null },
     genero: { type: String, default: null },
@@ -86,12 +93,33 @@ const UserSchema = new mongoose.Schema(
     admin: { type: Boolean, default: false },
 
     carteira: { type: [CarteiraAtivoSchema], default: [] },
+
+    historico: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    transacoes: { type: [mongoose.Schema.Types.Mixed], default: [] },
+
     dadosBancarios: { type: DadosBancariosSchema, default: null },
+
+    aceites: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
 
     aceitesFinanceiros: {
       deposito: { type: AceiteSchema, default: () => ({}) },
       saque: { type: AceiteSchema, default: () => ({}) },
     },
+
+    aceitouTermos: { type: Boolean, default: false },
+    aceitouTermosEm: { type: Date, default: null },
+    versaoTermosAceita: { type: String, default: null },
+
+    emailVerificado: { type: Boolean, default: false },
+    tokenVerificacao: { type: String, default: null, index: true },
+    emailVerificadoEm: { type: Date, default: null },
+
+    resetSenhaToken: { type: String, default: null, index: true },
+    resetSenhaExpiraEm: { type: Number, default: null },
+    senhaAlteradaEm: { type: Date, default: null },
 
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
@@ -130,6 +158,11 @@ UserSchema.pre('save', function (next) {
     this.role = 'user';
     this.admin = false;
   }
+
+  if (this.email) {
+    this.email = String(this.email).trim().toLowerCase();
+  }
+
   next();
 });
 

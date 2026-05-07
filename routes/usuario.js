@@ -7,19 +7,30 @@ const User = require('../models/User');
 const Investment = require('../models/Investment');
 const Club = require('../models/Club');
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
-const path = require('path');
+const Order = require('../models/Order');
+const antifraude = require('../utils/antifraude');
 
-const antifraudeLogsPath = path.join(__dirname, '../data/antifraude_logs.json');
-const antifraudeStatePath = path.join(__dirname, '../data/antifraude_state.json');
-
-function lerJSONSeguro(relPath, fallback = []) {
-  try {
-    const p = path.join(__dirname, '..', relPath);
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch (e) {
-    return fallback;
+async function obterAntifraudeState() {
+  if (typeof antifraude.getStateSnapshot === 'function') {
+    return antifraude.getStateSnapshot();
   }
+  if (typeof antifraude.loadState === 'function') {
+    return antifraude.loadState();
+  }
+  return { users: {}, ips: {}, clubes: {} };
+}
+
+async function obterAntifraudeLogs(limit = 200) {
+  if (typeof antifraude.getLogs === 'function') {
+    return antifraude.getLogs({ limit });
+  }
+  if (typeof antifraude.listLogs === 'function') {
+    return antifraude.listLogs({ limit });
+  }
+  if (typeof antifraude.getRecentLogs === 'function') {
+    return antifraude.getRecentLogs(limit);
+  }
+  return [];
 }
 
 router.get('/atual', async (req, res) => {
@@ -469,7 +480,7 @@ router.post('/aceites', auth, async (req, res) => {
   }
 });
 
-router.get('/admin/antifraude/logs', auth, (req, res) => {
+router.get('/admin/antifraude/logs', auth, async (req, res) => {
   try {
     const usuario = req.usuario;
 
@@ -478,110 +489,105 @@ router.get('/admin/antifraude/logs', auth, (req, res) => {
     }
 
     const limit = Math.min(Number(req.query.limit || 200), 1000);
+    const logs = await obterAntifraudeLogs(limit);
 
-    if (!fs.existsSync(antifraudeLogsPath)) {
-      return res.json({ total: 0, logs: [] });
-    }
-
-    const logs = JSON.parse(fs.readFileSync(antifraudeLogsPath, 'utf8') || '[]');
-
-    const recentes = logs
+    const recentes = (Array.isArray(logs) ? logs : [])
       .slice()
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .sort((a, b) => new Date(b.ts || b.createdAt || b.data || 0) - new Date(a.ts || a.createdAt || a.data || 0))
       .slice(0, limit);
 
-    return res.json({ total: logs.length, logs: recentes });
+    return res.json({ total: recentes.length, logs: recentes });
   } catch (err) {
     console.error('Erro ao buscar logs antifraude:', err);
     return res.status(500).json({ erro: 'Erro interno ao buscar logs antifraude.' });
   }
 });
 
-router.get('/admin/antifraude/state', auth, (req, res) => {
+router.get('/admin/antifraude/state', auth, async (req, res) => {
   try {
     const usuario = req.usuario;
     if (!usuario || usuario.role !== 'admin') {
       return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
     }
 
-    if (!fs.existsSync(antifraudeStatePath)) {
-      return res.json({ users: {}, ips: {} });
-    }
-
-    const state = JSON.parse(fs.readFileSync(antifraudeStatePath, 'utf8') || '{}');
-    return res.json(state);
+    const state = await obterAntifraudeState();
+    return res.json(state || { users: {}, ips: {}, clubes: {} });
   } catch (err) {
     console.error('Erro ao buscar antifraude state:', err);
     return res.status(500).json({ erro: 'Erro interno ao buscar antifraude state.' });
   }
 });
 
-router.post('/admin/freeze-user', auth, (req, res) => {
+router.post('/admin/freeze-user', auth, async (req, res) => {
   if (req.usuario.role !== 'admin') return res.status(403).json({ erro: 'Admin only' });
   const { userId, minutos = 10, motivo = 'freeze manual' } = req.body;
-  const antifraude = require('../utils/antifraude');
-  const state = antifraude.loadState();
+  const state = await obterAntifraudeState();
   antifraude.freezeUser(state, userId, Number(minutos) * 60_000, motivo);
   antifraude.logEvent({ userId: String(userId), action: 'ADMIN_FREEZE', decision: 'BLOCK', reason: motivo });
   res.json({ ok: true });
 });
 
-router.post('/admin/unfreeze-user', auth, (req, res) => {
+router.post('/admin/unfreeze-user', auth, async (req, res) => {
   if (req.usuario.role !== 'admin') return res.status(403).json({ erro: 'Admin only' });
   const { userId } = req.body;
-  const antifraude = require('../utils/antifraude');
-  const state = antifraude.loadState();
+  const state = await obterAntifraudeState();
   antifraude.unfreezeUser(state, userId);
   antifraude.logEvent({ userId: String(userId), action: 'ADMIN_UNFREEZE', decision: 'ALLOW' });
   res.json({ ok: true });
 });
 
-router.get('/admin/dashboard/antifraude', auth, (req, res) => {
+router.get('/admin/dashboard/antifraude', auth, async (req, res) => {
   try {
     const usuario = req.usuario;
     if (!usuario || usuario.role !== 'admin') {
       return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
     }
 
-    const state = fs.existsSync(antifraudeStatePath)
-      ? JSON.parse(fs.readFileSync(antifraudeStatePath, 'utf8') || '{}')
-      : { users: {}, ips: {}, clubes: {} };
+    const state = (await obterAntifraudeState()) || { users: {}, ips: {}, clubes: {} };
 
     const usersArr = Object.entries(state.users || {}).map(([userId, u]) => ({
       userId,
       score: Number(u.score || 0),
       cooldownUntil: Number(u.cooldownUntil || 0),
       frozenUntil: Number(u.frozenUntil || 0),
-      last: u.last || {}
+      last: u.last || {},
     }));
 
     usersArr.sort((a, b) => b.score - a.score);
 
-    const frozenUsers = usersArr.filter(u => u.frozenUntil > Date.now()).slice(0, 50);
+    const frozenUsers = usersArr.filter((u) => u.frozenUntil > Date.now()).slice(0, 50);
 
     const clubesArr = Object.entries(state.clubes || {}).map(([clubeId, c]) => ({
       clubeId,
       frozenUntil: Number(c.frozenUntil || 0),
       last: c.last || {},
       trades5m: Array.isArray(c.stats?.trades) ? c.stats.trades.length : null,
-      cancels10m: Array.isArray(c.stats?.cancels) ? c.stats.cancels.length : null
+      cancels10m: Array.isArray(c.stats?.cancels) ? c.stats.cancels.length : null,
     }));
-    const frozenClubes = clubesArr.filter(c => c.frozenUntil > Date.now());
+    const frozenClubes = clubesArr.filter((c) => c.frozenUntil > Date.now());
 
-    const logs = fs.existsSync(antifraudeLogsPath)
-      ? JSON.parse(fs.readFileSync(antifraudeLogsPath, 'utf8') || '[]')
-      : [];
-    const recent = logs
+    const logs = await obterAntifraudeLogs(500);
+    const recent = (Array.isArray(logs) ? logs : [])
       .slice()
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
-      .filter(l => ['CANCEL_RATIO_SIGNAL','CLUBE_VOLUME_SPIKE','ADMIN_FREEZE','ADMIN_FREEZE_CLUBE','WASH_TRADING_SIGNAL','SPOOFING_SIGNAL','SELF_TRADE_BLOCK'].includes(String(l.action || '')))
+      .sort((a, b) => new Date(b.ts || b.createdAt || b.data || 0) - new Date(a.ts || a.createdAt || a.data || 0))
+      .filter((l) =>
+        [
+          'CANCEL_RATIO_SIGNAL',
+          'CLUBE_VOLUME_SPIKE',
+          'ADMIN_FREEZE',
+          'ADMIN_FREEZE_CLUBE',
+          'WASH_TRADING_SIGNAL',
+          'SPOOFING_SIGNAL',
+          'SELF_TRADE_BLOCK',
+        ].includes(String(l.action || ''))
+      )
       .slice(0, 100);
 
     return res.json({
       topUsers: usersArr.slice(0, 20),
       frozenUsers,
       frozenClubes,
-      recentSignals: recent
+      recentSignals: recent,
     });
   } catch (err) {
     console.error('Erro dashboard antifraude:', err);
@@ -589,38 +595,52 @@ router.get('/admin/dashboard/antifraude', auth, (req, res) => {
   }
 });
 
-router.get('/admin/dashboard/mercado', auth, (req, res) => {
+router.get('/admin/dashboard/mercado', auth, async (req, res) => {
   try {
     const usuario = req.usuario;
     if (!usuario || usuario.role !== 'admin') {
       return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
     }
 
-    const clubesPath = path.join(__dirname, '..', 'data', 'clubes.json');
-    const ordensPath = path.join(__dirname, '..', 'data', 'ordens.json');
+    const agora = new Date();
 
-    const clubes = fs.existsSync(clubesPath) ? JSON.parse(fs.readFileSync(clubesPath, 'utf8') || '[]') : [];
-    const ordens = fs.existsSync(ordensPath) ? JSON.parse(fs.readFileSync(ordensPath, 'utf8') || '[]') : [];
+    const clubesTravados = await Club.find({ travadoAte: { $gt: Date.now() } })
+      .select('legacyId nome travadoAte precoAtual preco')
+      .lean();
 
-    const agora = Date.now();
-    const travados = clubes
-      .filter(c => Number(c.travadoAte || 0) > agora)
-      .map(c => ({ clubeId: c.id, nome: c.nome, travadoAte: c.travadoAte, precoAtual: c.precoAtual }));
+    const travados = clubesTravados.map((c) => ({
+      clubeId: c.legacyId,
+      nome: c.nome,
+      travadoAte: c.travadoAte,
+      precoAtual: c.precoAtual ?? c.preco ?? 0,
+    }));
 
-    const ordensAbertasPorClube = {};
-    ordens.filter(o => Number(o.restante || 0) > 0).forEach(o => {
-      const k = String(o.clubeId);
-      ordensAbertasPorClube[k] = (ordensAbertasPorClube[k] || 0) + 1;
-    });
+    const agrupadas = await Order.aggregate([
+      {
+        $match: {
+          status: { $in: ['aberta', 'parcial'] },
+          restante: { $gt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: '$clubeLegacyId',
+          ordensAbertas: { $sum: 1 },
+        },
+      },
+      { $sort: { ordensAbertas: -1 } },
+      { $limit: 20 },
+    ]);
 
-    const topClubesPorOrdens = Object.entries(ordensAbertasPorClube)
-      .map(([clubeId, count]) => ({ clubeId, ordensAbertas: count }))
-      .sort((a, b) => b.ordensAbertas - a.ordensAbertas)
-      .slice(0, 20);
+    const topClubesPorOrdens = agrupadas.map((item) => ({
+      clubeId: item._id,
+      ordensAbertas: item.ordensAbertas,
+    }));
 
     return res.json({
+      data: agora.toISOString(),
       travadosCircuitBreaker: travados,
-      topClubesPorOrdens
+      topClubesPorOrdens,
     });
   } catch (err) {
     console.error('Erro dashboard mercado:', err);

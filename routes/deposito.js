@@ -1,32 +1,108 @@
 const express = require('express');
-const path = require('path');
 const router = express.Router();
 
 const auth = require('../middleware/auth');
 const antifraude = require('../utils/antifraude');
 const audit = require('../utils/audit');
-const storage = require('../utils/storage');
 const ledger = require('../utils/ledger');
+const { runTx, round2 } = require('../utils/tx');
 
-const usuariosPath = path.join(__dirname, '../data/usuarios.json');
-const idempotencyPath = path.join(__dirname, '../data/idempotency.json');
+const User = require('../models/User');
+const Investment = require('../models/Investment');
 
 function getIdempotencyKey(req) {
-  return req.headers['idempotency-key'] || req.headers['Idempotency-Key'] || (req.body && (req.body.idempotencyKey || req.body.idempotency_key)) || null;
+  return (
+    req.headers['idempotency-key'] ||
+    req.headers['Idempotency-Key'] ||
+    (req.body && (req.body.idempotencyKey || req.body.idempotency_key)) ||
+    null
+  );
 }
-function prune(list, ttlMs = 10 * 60 * 1000) {
-  const cutoff = Date.now() - ttlMs;
-  return (Array.isArray(list) ? list : []).filter((x) => Number(x.ts || 0) >= cutoff);
+
+async function registrarDepositoNoHistorico({ userDoc, txDoc, valor, gateway, gatewayReference, session }) {
+  await Investment.create(
+    [
+      {
+        legacyId: `dep_${userDoc.legacyId || userDoc._id}_${Date.now()}`,
+        usuarioId: userDoc._id,
+        usuarioLegacyId: userDoc.legacyId ?? null,
+        clubeId: null,
+        clubeLegacyId: null,
+        clubeNome: '',
+        quantidade: 0,
+        precoUnitario: round2(valor),
+        valorUnitario: round2(valor),
+        totalPago: round2(valor),
+        tipo: 'DEPOSITO',
+        origem: 'FINANCEIRO',
+        data: new Date(),
+        metadata: {
+          financialTransactionId: txDoc.id,
+          gateway,
+          gatewayReference,
+        },
+      },
+    ],
+    { session }
+  );
 }
-async function findCached(key, usuarioId) {
-  const list = prune(storage.readJSON(idempotencyPath, []));
-  return list.find((x) => x.key === key && String(x.usuarioId) === String(usuarioId)) || null;
-}
-async function saveCached(key, usuarioId, status, body) {
-  let list = prune(storage.readJSON(idempotencyPath, []));
-  list.push({ key, usuarioId, ts: Date.now(), status, body });
-  if (list.length > 3000) list = list.slice(list.length - 3000);
-  await storage.writeJSON(idempotencyPath, list);
+
+async function confirmarDeposito({ tx, session, gatewayReference = null }) {
+  if (tx.status === 'CONFIRMADO') return tx;
+
+  const userDoc = await User.findById(tx.usuarioId).session(session);
+  if (!userDoc) {
+    const err = new Error('Usuário não encontrado.');
+    err.status = 404;
+    throw err;
+  }
+
+  const confirmed = ledger.buildDepositConfirmEntry({
+    userId: tx.usuarioId,
+    amount: tx.valorBruto,
+    provider: tx.gateway,
+    txId: tx.id,
+    gatewayReference: gatewayReference || tx.gatewayReference || null,
+  });
+
+  const confirmedResult = await ledger.postJournal({
+    action: confirmed.action,
+    lines: confirmed.lines,
+    meta: confirmed.meta,
+    idemKey: `deposit:confirm:${tx.id}`,
+    session,
+  });
+
+  userDoc.saldo = round2(Number(userDoc.saldo || 0) + Number(tx.valorBruto || 0));
+  await userDoc.save({ session });
+
+  const ledgerEntryIds = confirmedResult?.entry?.id
+    ? Array.from(new Set([...(tx.ledgerEntryIds || []), confirmedResult.entry.id]))
+    : tx.ledgerEntryIds || [];
+
+  const txDoc = await ledger.updateFinancialTx(
+    tx.id,
+    (prev) => ({
+      ...prev,
+      status: 'CONFIRMADO',
+      gatewayReference: gatewayReference || prev.gatewayReference || null,
+      reconciliacaoStatus: 'RECONCILIADO',
+      reconciliadoEm: new Date(),
+      ledgerEntryIds,
+    }),
+    session
+  );
+
+  await registrarDepositoNoHistorico({
+    userDoc,
+    txDoc,
+    valor: tx.valorBruto,
+    gateway: tx.gateway,
+    gatewayReference: gatewayReference || tx.gatewayReference || null,
+    session,
+  });
+
+  return { ...txDoc, saldo: round2(userDoc.saldo || 0) };
 }
 
 router.post('/', auth, async (req, res) => {
@@ -37,16 +113,18 @@ router.post('/', auth, async (req, res) => {
     const autoConfirmar = req.body?.autoConfirmar !== false;
     const gatewayReference = req.body?.gatewayReference || null;
 
-    if (!Number.isFinite(valor) || valor <= 0) return res.status(400).json({ erro: 'valor inválido' });
+    if (!Number.isFinite(valor) || valor <= 0) {
+      return res.status(400).json({ erro: 'valor inválido' });
+    }
 
-    const ENABLE_DEPOSITS = String(process.env.ENABLE_DEPOSITS ?? 'true').toLowerCase();
-    if (!['1', 'true', 'yes', 'on'].includes(ENABLE_DEPOSITS)) {
+    const enableDeposits = String(process.env.ENABLE_DEPOSITS ?? 'true').toLowerCase();
+    if (!['1', 'true', 'yes', 'on'].includes(enableDeposits)) {
       return res.status(503).json({ erro: 'Depósitos temporariamente desabilitados.' });
     }
 
-    const MAX_DEPOSIT_VALUE = Number(process.env.MAX_DEPOSIT_VALUE || 0);
-    if (MAX_DEPOSIT_VALUE > 0 && valor > MAX_DEPOSIT_VALUE) {
-      return res.status(400).json({ erro: `Valor máximo de depósito excedido. Limite atual: R$ ${MAX_DEPOSIT_VALUE.toFixed(2)}.` });
+    const maxDeposit = Number(process.env.MAX_DEPOSIT_VALUE || 0);
+    if (maxDeposit > 0 && valor > maxDeposit) {
+      return res.status(400).json({ erro: `Valor máximo de depósito excedido. Limite atual: R$ ${maxDeposit.toFixed(2)}.` });
     }
 
     const cd = antifraude.evaluateCooldown({ req, userId: usuario.id });
@@ -54,66 +132,90 @@ router.post('/', auth, async (req, res) => {
 
     const ip = antifraude.getClientIp(req);
     const vUser = antifraude.checkVelocity({ key: `uid:${usuario.id}`, action: 'DEPOSITO', limit: 10, windowMs: 60_000 });
-    if (!vUser.ok) return res.status(429).json({ error: 'BLOQUEADO_ANTIFRAUDE', motivo: 'muitos depósitos em pouco tempo', cooldownMs: vUser.retryAfterMs });
+    if (!vUser.ok) {
+      return res.status(429).json({ error: 'BLOQUEADO_ANTIFRAUDE', motivo: 'muitos depósitos em pouco tempo', cooldownMs: vUser.retryAfterMs });
+    }
+
     const vIp = antifraude.checkVelocity({ key: `ip:${ip}`, action: 'DEPOSITO', limit: 30, windowMs: 60_000 });
-    if (!vIp.ok) return res.status(429).json({ error: 'BLOQUEADO_ANTIFRAUDE', motivo: 'muitos depósitos (IP) em pouco tempo', cooldownMs: vIp.retryAfterMs });
+    if (!vIp.ok) {
+      return res.status(429).json({ error: 'BLOQUEADO_ANTIFRAUDE', motivo: 'muitos depósitos (IP) em pouco tempo', cooldownMs: vIp.retryAfterMs });
+    }
 
     const idemKey = getIdempotencyKey(req);
     if (idemKey) {
-      const cached = await findCached(String(idemKey), usuario.id);
-      if (cached) return res.status(cached.status).json(cached.body);
+      const cached = await ledger.getHttpIdempotency({ key: String(idemKey), userId: usuario.id });
+      if (cached?.body) return res.status(Number(cached.status || 200)).json(cached.body);
     }
 
-    const tx = ledger.createFinancialTx({
-      tipo: 'DEPOSITO',
-      usuarioId: usuario.id,
-      valorBruto: valor,
-      taxa: 0,
-      gateway,
-      gatewayReference,
-      status: 'PENDENTE',
-      metadata: { ip },
+    const body = await runTx({
+      action: 'DEPOSITO_ROUTE',
+      meta: { userId: usuario.id, valor, gateway, autoConfirmar },
+      mutate: async (session) => {
+        const userDoc = await User.findById(usuario.id).session(session);
+        if (!userDoc) {
+          const err = new Error('Usuário não encontrado.');
+          err.status = 404;
+          throw err;
+        }
+
+        let txDoc = await ledger.createFinancialTx({
+          tipo: 'DEPOSITO',
+          usuarioId: usuario.id,
+          valorBruto: round2(valor),
+          taxa: 0,
+          gateway,
+          gatewayReference,
+          status: 'PENDENTE',
+          metadata: { ip },
+          session,
+        });
+
+        const pending = ledger.buildDepositPendingEntry({ userId: usuario.id, amount: valor, provider: gateway, txId: txDoc.id });
+        const pendingResult = await ledger.postJournal({
+          action: pending.action,
+          lines: pending.lines,
+          meta: pending.meta,
+          idemKey: `deposit:pending:${txDoc.id}`,
+          session,
+        });
+
+        txDoc = await ledger.updateFinancialTx(
+          txDoc.id,
+          (prev) => ({
+            ...prev,
+            status: autoConfirmar ? 'PROCESSANDO' : 'PENDENTE',
+            ledgerEntryIds: pendingResult?.entry?.id
+              ? [...(prev.ledgerEntryIds || []), pendingResult.entry.id]
+              : prev.ledgerEntryIds || [],
+          }),
+          session
+        );
+
+        let saldo = round2(userDoc.saldo || 0);
+        if (autoConfirmar) {
+          txDoc = await confirmarDeposito({ tx: txDoc, session, gatewayReference });
+          saldo = round2(txDoc.saldo || 0);
+        }
+
+        const responseBody = { ok: true, transacao: txDoc, saldo };
+
+        if (idemKey) {
+          await ledger.saveHttpIdempotency({ key: String(idemKey), userId: usuario.id, status: 200, body: responseBody, session });
+        }
+
+        await audit.logEvent(
+          { kind: 'FINANCE', action: autoConfirmar ? 'DEPOSITO_CONFIRMADO' : 'DEPOSITO_PENDENTE', userId: usuario.id, valor, txId: txDoc.id, gatewayReference },
+          session
+        );
+
+        return responseBody;
+      },
     });
 
-    const financeiro = ledger.readFinancialTx();
-    financeiro.push(tx);
-
-    const pending = ledger.buildDepositPendingEntry({ userId: usuario.id, amount: valor, provider: gateway, txId: tx.id });
-    const pendingResult = await ledger.postJournal({
-      action: pending.action, lines: pending.lines, meta: pending.meta, idemKey: `deposit:pending:${tx.id}`,
-    });
-    const pendingId = pendingResult.entry?.id || pendingResult.entryId;
-    if (pendingId) tx.ledgerEntryIds.push(pendingId);
-    tx.status = autoConfirmar ? 'PROCESSANDO' : 'PENDENTE';
-    tx.updatedAt = new Date().toISOString();
-
-    if (autoConfirmar) {
-      const confirmed = ledger.buildDepositConfirmEntry({ userId: usuario.id, amount: valor, provider: gateway, txId: tx.id });
-      const confirmedResult = await ledger.postJournal({
-        action: confirmed.action,
-        lines: confirmed.lines,
-        meta: confirmed.meta,
-        idemKey: `deposit:confirm:${tx.id}`,
-        applyToUsuarios: { usuariosPath },
-      });
-      const confirmedId = confirmedResult.entry?.id || confirmedResult.entryId;
-      if (confirmedId) tx.ledgerEntryIds.push(confirmedId);
-      tx.status = 'CONFIRMADO';
-      tx.reconciliacaoStatus = 'RECONCILIADO';
-      tx.reconciliadoEm = new Date().toISOString();
-    }
-
-    await ledger.writeFinancialTx(financeiro);
-
-    const saldo = autoConfirmar ? storage.readJSON(usuariosPath, []).find(u => String(u.id) === String(usuario.id))?.saldo : undefined;
-    const body = { ok: true, transacao: tx, saldo };
-
-    audit.logEvent({ kind: 'FINANCE', action: autoConfirmar ? 'DEPOSITO_CONFIRMADO' : 'DEPOSITO_PENDENTE', userId: usuario.id, valor, txId: tx.id });
-    if (idemKey) await saveCached(String(idemKey), usuario.id, 200, body);
     return res.json(body);
   } catch (e) {
-    audit.logEvent({ kind: 'FINANCE', action: 'DEPOSITO_FAIL', userId: req.usuario?.id || null, error: String(e) });
-    return res.status(500).json({ erro: 'Erro interno ao processar depósito.' });
+    await audit.logEvent({ kind: 'FINANCE', action: 'DEPOSITO_FAIL', userId: req.usuario?.id || null, error: String(e) });
+    return res.status(Number(e.status || 500)).json({ erro: e.status ? e.message : 'Erro interno ao processar depósito.' });
   }
 });
 
@@ -121,45 +223,40 @@ router.post('/confirmar', auth, async (req, res) => {
   try {
     const role = String(req.usuario?.role || '').toLowerCase();
     if (role !== 'admin') return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+
     const { transacaoId } = req.body || {};
     if (!transacaoId) return res.status(400).json({ erro: 'transacaoId é obrigatório.' });
 
-    const financeiro = ledger.readFinancialTx();
-    const ix = financeiro.findIndex(t => String(t.id) === String(transacaoId));
-    if (ix < 0) return res.status(404).json({ erro: 'Transação não encontrada.' });
-
-    const tx = financeiro[ix];
-    if (tx.tipo !== 'DEPOSITO') return res.status(400).json({ erro: 'Tipo inválido.' });
-    if (tx.status === 'CONFIRMADO') return res.json({ ok: true, transacao: tx });
-
-    const confirmed = ledger.buildDepositConfirmEntry({ userId: tx.usuarioId, amount: tx.valorBruto, provider: tx.gateway, txId: tx.id });
-    const confirmedResult = await ledger.postJournal({
-      action: confirmed.action,
-      lines: confirmed.lines,
-      meta: confirmed.meta,
-      idemKey: `deposit:confirm:${tx.id}`,
-      applyToUsuarios: { usuariosPath },
+    const body = await runTx({
+      action: 'DEPOSITO_CONFIRMAR_ADMIN',
+      meta: { transacaoId, adminUserId: req.usuario.id },
+      mutate: async (session) => {
+        const tx = await ledger.findFinancialTxById(transacaoId, session);
+        if (!tx) {
+          const err = new Error('Transação não encontrada.');
+          err.status = 404;
+          throw err;
+        }
+        if (tx.tipo !== 'DEPOSITO') {
+          const err = new Error('Tipo inválido.');
+          err.status = 400;
+          throw err;
+        }
+        const txDoc = await confirmarDeposito({ tx, session });
+        return { ok: true, transacao: txDoc, saldo: txDoc.saldo };
+      },
     });
-    const confirmedId = confirmedResult.entry?.id || confirmedResult.entryId;
-    if (confirmedId) tx.ledgerEntryIds.push(confirmedId);
-    tx.status = 'CONFIRMADO';
-    tx.reconciliacaoStatus = 'RECONCILIADO';
-    tx.reconciliadoEm = new Date().toISOString();
-    tx.updatedAt = new Date().toISOString();
 
-    await ledger.writeFinancialTx(financeiro);
-    return res.json({ ok: true, transacao: tx });
+    return res.json(body);
   } catch (e) {
-    return res.status(500).json({ erro: 'Erro interno ao confirmar depósito.' });
+    return res.status(Number(e.status || 500)).json({ erro: e.status ? e.message : 'Erro interno ao confirmar depósito.' });
   }
 });
-
-
 
 router.get('/gateway/:gatewayReference', auth, async (req, res) => {
   try {
     const { gatewayReference } = req.params;
-    const tx = ledger.findFinancialTxByGatewayReference(gatewayReference);
+    const tx = await ledger.findFinancialTxByGatewayReference(gatewayReference);
     if (!tx) return res.status(404).json({ erro: 'Transação não encontrada.' });
 
     const role = String(req.usuario?.role || '').toLowerCase();
@@ -168,7 +265,7 @@ router.get('/gateway/:gatewayReference', auth, async (req, res) => {
     }
 
     return res.json({ ok: true, transacao: tx });
-  } catch (e) {
+  } catch (_) {
     return res.status(500).json({ erro: 'Erro interno ao consultar transação.' });
   }
 });
@@ -186,107 +283,88 @@ router.post('/webhook', async (req, res) => {
       return res.status(400).json({ erro: 'gatewayReference e status são obrigatórios.' });
     }
 
-    let tx = ledger.findFinancialTxByGatewayReference(gatewayReference);
-
-    if (!tx && String(status).toUpperCase() === 'APPROVED' && usuarioId && Number(valor) > 0) {
-      tx = ledger.createFinancialTx({
-        tipo: 'DEPOSITO',
-        usuarioId,
-        valorBruto: Number(valor),
-        taxa: 0,
-        gateway: provider,
-        gatewayReference,
-        status: 'PROCESSANDO',
-        metadata: { webhookCreated: true },
-      });
-      const financeiro = ledger.readFinancialTx();
-      financeiro.push(tx);
-      await ledger.writeFinancialTx(financeiro);
-
-      const pending = ledger.buildDepositPendingEntry({ userId: tx.usuarioId, amount: tx.valorBruto, provider, txId: tx.id });
-      const pendingResult = await ledger.postJournal({
-        action: pending.action,
-        lines: pending.lines,
-        meta: pending.meta,
-        idemKey: `deposit:pending:${tx.id}`,
-      });
-      const pendingId = pendingResult.entry?.id || pendingResult.entryId;
-      if (pendingId) {
-        tx = await ledger.updateFinancialTx(tx.id, (prev) => ({
-          ...prev,
-          status: 'PROCESSANDO',
-          ledgerEntryIds: [...(prev.ledgerEntryIds || []), pendingId]
-        }));
-      }
-    }
-
-    if (!tx) return res.status(404).json({ erro: 'Transação não encontrada.' });
-
     const normalized = String(status).toUpperCase();
 
-    if (normalized === 'APPROVED' || normalized === 'CONFIRMED') {
-      const confirmed = ledger.buildDepositConfirmEntry({
-        userId: tx.usuarioId,
-        amount: tx.valorBruto,
-        provider: tx.gateway,
-        txId: tx.id,
-        gatewayReference,
-      });
-      const confirmedResult = await ledger.postJournal({
-        action: confirmed.action,
-        lines: confirmed.lines,
-        meta: confirmed.meta,
-        idemKey: `deposit:confirm:${tx.id}`,
-        applyToUsuarios: { usuariosPath },
-      });
-      const confirmedId = confirmedResult.entry?.id || confirmedResult.entryId;
-      tx = await ledger.updateFinancialTx(tx.id, (prev) => ({
-        ...prev,
-        status: 'CONFIRMADO',
-        gatewayReference,
-        reconciliacaoStatus: 'RECONCILIADO',
-        reconciliadoEm: new Date().toISOString(),
-        ledgerEntryIds: confirmedId ? [...(prev.ledgerEntryIds || []), confirmedId] : (prev.ledgerEntryIds || [])
-      }));
-    } else if (normalized === 'REFUNDED' || normalized === 'CHARGEBACK' || normalized === 'REVERSED') {
-      const reversed = ledger.buildDepositReversalEntry({
-        userId: tx.usuarioId,
-        amount: tx.valorBruto,
-        provider: tx.gateway,
-        txId: tx.id,
-        gatewayReference,
-      });
-      const reversedResult = await ledger.postJournal({
-        action: reversed.action,
-        lines: reversed.lines,
-        meta: reversed.meta,
-        idemKey: `deposit:reverse:${tx.id}`,
-      });
-      const reversedId = reversedResult.entry?.id || reversedResult.entryId;
-      tx = await ledger.updateFinancialTx(tx.id, (prev) => ({
-        ...prev,
-        status: 'ESTORNADO',
-        gatewayReference,
-        reconciliacaoStatus: 'RECONCILIADO',
-        reconciliadoEm: new Date().toISOString(),
-        ledgerEntryIds: reversedId ? [...(prev.ledgerEntryIds || []), reversedId] : (prev.ledgerEntryIds || [])
-      }));
-    } else if (normalized === 'FAILED' || normalized === 'CANCELLED') {
-      tx = await ledger.updateFinancialTx(tx.id, {
-        status: normalized === 'FAILED' ? 'FALHOU' : 'CANCELADO',
-        gatewayReference,
-        reconciliacaoStatus: 'RECONCILIADO',
-        reconciliadoEm: new Date().toISOString(),
-      });
-    } else {
-      return res.status(400).json({ erro: 'status de webhook não suportado.' });
-    }
+    const body = await runTx({
+      action: 'DEPOSITO_WEBHOOK',
+      meta: { gatewayReference, status: normalized },
+      mutate: async (session) => {
+        let tx = await ledger.findFinancialTxByGatewayReference(gatewayReference, session);
 
-    audit.logEvent({ kind: 'FINANCE', action: 'DEPOSITO_WEBHOOK', gatewayReference, status: normalized, txId: tx.id });
-    return res.json({ ok: true, transacao: tx });
+        if (!tx && ['APPROVED', 'CONFIRMED', 'PAID', 'COMPLETED'].includes(normalized) && usuarioId && Number(valor) > 0) {
+          tx = await ledger.createFinancialTx({
+            tipo: 'DEPOSITO',
+            usuarioId,
+            valorBruto: round2(valor),
+            taxa: 0,
+            gateway: provider,
+            gatewayReference,
+            status: 'PROCESSANDO',
+            metadata: { webhookCreated: true },
+            session,
+          });
+
+          const pending = ledger.buildDepositPendingEntry({ userId: tx.usuarioId, amount: tx.valorBruto, provider, txId: tx.id });
+          const pendingResult = await ledger.postJournal({
+            action: pending.action,
+            lines: pending.lines,
+            meta: pending.meta,
+            idemKey: `deposit:pending:${tx.id}`,
+            session,
+          });
+
+          tx = await ledger.updateFinancialTx(
+            tx.id,
+            (prev) => ({
+              ...prev,
+              status: 'PROCESSANDO',
+              ledgerEntryIds: pendingResult?.entry?.id
+                ? [...(prev.ledgerEntryIds || []), pendingResult.entry.id]
+                : prev.ledgerEntryIds || [],
+            }),
+            session
+          );
+        }
+
+        if (!tx) {
+          const err = new Error('Transação não encontrada.');
+          err.status = 404;
+          throw err;
+        }
+
+        if (['APPROVED', 'CONFIRMED', 'PAID', 'COMPLETED'].includes(normalized)) {
+          tx = await confirmarDeposito({ tx, session, gatewayReference });
+        } else if (['FAILED', 'CANCELLED', 'CANCELED', 'REJECTED', 'EXPIRED'].includes(normalized)) {
+          tx = await ledger.updateFinancialTx(
+            tx.id,
+            (prev) => ({
+              ...prev,
+              status: 'CANCELADO',
+              gatewayReference,
+              reconciliacaoStatus: 'RECONCILIADO',
+              reconciliadoEm: new Date(),
+            }),
+            session
+          );
+        } else if (['PENDING', 'PROCESSING', 'IN_PROCESS'].includes(normalized)) {
+          tx = await ledger.updateFinancialTx(
+            tx.id,
+            (prev) => ({ ...prev, status: 'PROCESSANDO', gatewayReference }),
+            session
+          );
+        } else {
+          const err = new Error('status de webhook não suportado.');
+          err.status = 400;
+          throw err;
+        }
+
+        return { ok: true, transacao: tx, saldo: tx.saldo };
+      },
+    });
+
+    return res.json(body);
   } catch (e) {
-    console.error('[DEPOSITO WEBHOOK] erro:', e);
-    return res.status(500).json({ erro: 'Erro interno no webhook de depósito.' });
+    return res.status(Number(e.status || 500)).json({ erro: e.status ? e.message : 'Erro interno no webhook de depósito.' });
   }
 });
 

@@ -4,7 +4,7 @@
 // Depois: você troca o conteúdo das funções por chamadas do gateway (SendGrid, SES, etc.)
 
 async function enviarEmailVerificacao(para, token) {
-  const link = `http://localhost:3000/verificar-email?token=${token}`;
+  const FRONTEND_URL = process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 
   console.log('================= EMAIL DE VERIFICAÇÃO (STUB) =================');
   console.log(`Para: ${para}`);
@@ -15,7 +15,7 @@ async function enviarEmailVerificacao(para, token) {
 }
 
 async function enviarEmailResetSenha(para, token) {
-  const link = `http://localhost:3000/resetar-senha?token=${token}`;
+  const FRONTEND_URL = process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 
   console.log('================= EMAIL DE RESET DE SENHA (STUB) ===============');
   console.log(`Para: ${para}`);

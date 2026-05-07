@@ -14,6 +14,7 @@ const ClubSchema = new mongoose.Schema(
     legacyId: { type: Number, unique: true, index: true, required: true },
 
     nome: { type: String, required: true, index: true },
+    nomeApi: { type: String, default: '', index: true },
     escudo: { type: String, default: '' },
 
     posicao: { type: Number, default: null },
@@ -37,5 +38,13 @@ const ClubSchema = new mongoose.Schema(
     collection: 'clubs',
   }
 );
+
+ClubSchema.pre('save', function (next) {
+  if (!this.nomeApi) this.nomeApi = this.nome;
+  next();
+});
+
+ClubSchema.index({ nomeApi: 1 });
+ClubSchema.index({ posicao: 1 });
 
 module.exports = mongoose.models.Club || mongoose.model('Club', ClubSchema);

@@ -1,21 +1,16 @@
-const fs = require('fs');
-const path = require('path');
-const storage = require('./storage');
+// utils/operationalChecks.js
+const mongoose = require('mongoose');
+
+const User = require('../models/User');
+const Club = require('../models/Club');
+const Order = require('../models/Order');
+const Investment = require('../models/Investment');
+
 const ledger = require('./ledger');
 const antifraude = require('./antifraude');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-
-function readJson(file, fallback) {
-  return storage.readJSON(path.join(DATA_DIR, file), fallback);
-}
-
-function exists(file) {
-  return fs.existsSync(path.join(DATA_DIR, file));
-}
-
-function safeArray(v) {
-  return Array.isArray(v) ? v : [];
+function round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100;
 }
 
 function envBool(name, defaultValue = false) {
@@ -23,136 +18,305 @@ function envBool(name, defaultValue = false) {
   return ['1', 'true', 'yes', 'on'].includes(v);
 }
 
-function runSystemCheck() {
+function isMongoConnected() {
+  return mongoose.connection.readyState === 1;
+}
+
+async function getAntifraudeResumo() {
+  try {
+    const stateDoc = await antifraude.loadState();
+    const state = stateDoc?.toObject ? stateDoc.toObject() : stateDoc || {};
+
+    const frozenUsers = Object.entries(state.users || {})
+      .filter(([, v]) => Number(v?.frozenUntil || 0) > Date.now())
+      .length;
+
+    const frozenClubes = Object.entries(state.clubes || {})
+      .filter(([, v]) => Number(v?.frozenUntil || 0) > Date.now())
+      .length;
+
+    return { frozenUsers, frozenClubes };
+  } catch (_) {
+    return { frozenUsers: 0, frozenClubes: 0 };
+  }
+}
+
+async function getFinanceiroResumo() {
+  try {
+    if (typeof ledger.readFinancialTx === 'function') {
+      const txs = await ledger.readFinancialTx();
+      const arr = Array.isArray(txs) ? txs : [];
+
+      return {
+        transacoesFinanceiras: arr.length,
+        transacoesPendentes: arr.filter((t) =>
+          ['PENDENTE', 'PROCESSANDO'].includes(String(t?.status || ''))
+        ).length,
+        financeiro: arr,
+      };
+    }
+
+    if (ledger.FinancialTransaction) {
+      const total = await ledger.FinancialTransaction.countDocuments();
+      const pendentes = await ledger.FinancialTransaction.countDocuments({
+        status: { $in: ['PENDENTE', 'PROCESSANDO'] },
+      });
+
+      return {
+        transacoesFinanceiras: total,
+        transacoesPendentes: pendentes,
+        financeiro: [],
+      };
+    }
+
+    return { transacoesFinanceiras: 0, transacoesPendentes: 0, financeiro: [] };
+  } catch (_) {
+    return { transacoesFinanceiras: 0, transacoesPendentes: 0, financeiro: [] };
+  }
+}
+
+async function getLedgerResumo() {
+  try {
+    if (ledger.LedgerEntry) {
+      const total = await ledger.LedgerEntry.countDocuments();
+      return { lancamentosLedger: total };
+    }
+
+    if (typeof ledger.readJournal === 'function') {
+      const journal = await ledger.readJournal();
+      return { lancamentosLedger: Array.isArray(journal) ? journal.length : 0 };
+    }
+
+    return { lancamentosLedger: 0 };
+  } catch (_) {
+    return { lancamentosLedger: 0 };
+  }
+}
+
+async function runSystemCheck() {
   const problemasCriticos = [];
   const problemasMedios = [];
   const avisos = [];
 
-  const usuarios = readJson('usuarios.json', []);
-  const ordens = readJson('ordens.json', []);
-  const clubes = readJson('clubes.json', []);
-  const investimentos = readJson('investimentos.json', []);
-  const journal = readJson(path.basename(ledger.paths.JOURNAL_PATH), []);
-  const financeiro = ledger.readFinancialTx ? ledger.readFinancialTx() : [];
-  const antifraudeState = antifraude.loadState ? antifraude.loadState() : { users: {}, ips: {}, clubes: {} };
-
-  const requiredFiles = [
-    'usuarios.json',
-    'ordens.json',
-    'clubes.json',
-    'investimentos.json',
-    'ledger_journal.json',
-    'ledger_idem.json',
-    'financeiro_transacoes.json',
-    'idempotency.json'
-  ];
-
-  for (const f of requiredFiles) {
-    if (!exists(f)) problemasCriticos.push({ tipo: 'ARQUIVO_AUSENTE', arquivo: f });
+  if (!isMongoConnected()) {
+    problemasCriticos.push({
+      tipo: 'MONGO_DESCONECTADO',
+      readyState: mongoose.connection.readyState,
+    });
   }
 
-  for (const u of safeArray(usuarios)) {
+  const [
+    usuarios,
+    ordens,
+    clubes,
+    investimentosCount,
+    financeiroResumo,
+    ledgerResumo,
+    antifraudeResumo,
+  ] = await Promise.all([
+    User.find({}, { saldo: 1, carteira: 1, legacyId: 1, nomeUsuario: 1 }).lean(),
+    Order.find({}, {
+      usuarioId: 1,
+      usuarioLegacyId: 1,
+      clubeId: 1,
+      clubeLegacyId: 1,
+      tipo: 1,
+      preco: 1,
+      quantidade: 1,
+      restante: 1,
+      status: 1,
+    }).lean(),
+    Club.find({}, {
+      legacyId: 1,
+      nome: 1,
+      preco: 1,
+      precoAtual: 1,
+      cotasDisponiveis: 1,
+      cotasEmitidas: 1,
+      ipoEncerrado: 1,
+    }).lean(),
+    Investment.countDocuments(),
+    getFinanceiroResumo(),
+    getLedgerResumo(),
+    getAntifraudeResumo(),
+  ]);
+
+  const usuariosById = new Map(usuarios.map((u) => [String(u._id), u]));
+  const clubesById = new Map(clubes.map((c) => [String(c._id), c]));
+  const clubesByLegacy = new Map(clubes.map((c) => [String(c.legacyId), c]));
+
+  for (const u of usuarios) {
     if (Number(u?.saldo || 0) < 0) {
-      problemasCriticos.push({ tipo: 'SALDO_NEGATIVO', usuarioId: u.id, saldo: Number(u.saldo || 0) });
+      problemasCriticos.push({
+        tipo: 'SALDO_NEGATIVO',
+        usuarioId: String(u._id),
+        usuarioLegacyId: u.legacyId ?? null,
+        saldo: Number(u.saldo || 0),
+      });
     }
 
-    const carteira = safeArray(u?.carteira);
+    const carteira = Array.isArray(u?.carteira) ? u.carteira : [];
+
     for (const ativo of carteira) {
       if (Number(ativo?.quantidade || 0) < 0) {
         problemasCriticos.push({
           tipo: 'CARTEIRA_NEGATIVA',
-          usuarioId: u.id,
+          usuarioId: String(u._id),
+          usuarioLegacyId: u.legacyId ?? null,
           clubeId: ativo?.clubeId,
-          quantidade: Number(ativo?.quantidade || 0)
+          quantidade: Number(ativo?.quantidade || 0),
+        });
+      }
+
+      if (Number(ativo?.totalInvestido || 0) < 0) {
+        problemasCriticos.push({
+          tipo: 'CARTEIRA_TOTAL_INVESTIDO_NEGATIVO',
+          usuarioId: String(u._id),
+          usuarioLegacyId: u.legacyId ?? null,
+          clubeId: ativo?.clubeId,
+          totalInvestido: Number(ativo?.totalInvestido || 0),
+        });
+      }
+
+      if (!clubesByLegacy.has(String(ativo?.clubeId))) {
+        problemasMedios.push({
+          tipo: 'CARTEIRA_CLUBE_NAO_ENCONTRADO',
+          usuarioId: String(u._id),
+          clubeId: ativo?.clubeId,
         });
       }
     }
   }
 
-  for (const o of safeArray(ordens)) {
-    if (!o?.id) problemasMedios.push({ tipo: 'ORDEM_SEM_ID' });
-    if (!o?.clubeId) problemasMedios.push({ tipo: 'ORDEM_SEM_CLUBE', ordemId: o?.id || null });
-    if (!o?.usuarioId) problemasMedios.push({ tipo: 'ORDEM_SEM_USUARIO', ordemId: o?.id || null });
-    if (Number(o?.quantidade || 0) <= 0) problemasCriticos.push({ tipo: 'ORDEM_QTD_INVALIDA', ordemId: o?.id || null });
-    if (Number(o?.preco || 0) <= 0) problemasCriticos.push({ tipo: 'ORDEM_PRECO_INVALIDO', ordemId: o?.id || null });
-    if (Number(o?.restante || 0) < 0) problemasCriticos.push({ tipo: 'ORDEM_RESTANTE_NEGATIVO', ordemId: o?.id || null });
+  for (const o of ordens) {
+    if (!o?._id) problemasMedios.push({ tipo: 'ORDEM_SEM_ID' });
 
-    if (String(o?.tipo) === 'venda') {
-      const user = safeArray(usuarios).find((u) => String(u.id) === String(o.usuarioId));
-      const pos = safeArray(user?.carteira).find((a) => String(a.clubeId) === String(o.clubeId));
+    if (!o?.clubeId && !o?.clubeLegacyId) {
+      problemasMedios.push({ tipo: 'ORDEM_SEM_CLUBE', ordemId: String(o?._id || '') });
+    }
+
+    if (!o?.usuarioId && !o?.usuarioLegacyId) {
+      problemasMedios.push({ tipo: 'ORDEM_SEM_USUARIO', ordemId: String(o?._id || '') });
+    }
+
+    if (Number(o?.quantidade || 0) <= 0) {
+      problemasCriticos.push({ tipo: 'ORDEM_QTD_INVALIDA', ordemId: String(o?._id || '') });
+    }
+
+    if (Number(o?.preco || 0) <= 0) {
+      problemasCriticos.push({ tipo: 'ORDEM_PRECO_INVALIDO', ordemId: String(o?._id || '') });
+    }
+
+    if (Number(o?.restante || 0) < 0) {
+      problemasCriticos.push({ tipo: 'ORDEM_RESTANTE_NEGATIVO', ordemId: String(o?._id || '') });
+    }
+
+    if (o?.usuarioId && !usuariosById.has(String(o.usuarioId))) {
+      problemasCriticos.push({
+        tipo: 'ORDEM_USUARIO_INEXISTENTE',
+        ordemId: String(o._id),
+        usuarioId: String(o.usuarioId),
+      });
+    }
+
+    if (o?.clubeId && !clubesById.has(String(o.clubeId))) {
+      problemasCriticos.push({
+        tipo: 'ORDEM_CLUBE_INEXISTENTE',
+        ordemId: String(o._id),
+        clubeId: String(o.clubeId),
+      });
+    }
+
+    if (String(o?.tipo) === 'venda' && ['aberta', 'parcial'].includes(String(o?.status))) {
+      const user = usuariosById.get(String(o.usuarioId));
+      const pos = (Array.isArray(user?.carteira) ? user.carteira : [])
+        .find((a) => Number(a.clubeId) === Number(o.clubeLegacyId));
+
       const qtdDisponivel = Number(pos?.quantidade || 0);
+
       if (Number(o?.restante || 0) > qtdDisponivel) {
         problemasCriticos.push({
           tipo: 'VENDA_EXCEDE_POSICAO',
-          ordemId: o.id,
-          usuarioId: o.usuarioId,
-          clubeId: o.clubeId,
+          ordemId: String(o._id),
+          usuarioId: o.usuarioId ? String(o.usuarioId) : null,
+          clubeId: o.clubeLegacyId ?? null,
           restante: Number(o.restante || 0),
-          disponivel: qtdDisponivel
+          disponivel: qtdDisponivel,
         });
       }
     }
 
-    if (String(o?.tipo) === 'compra') {
-      const user = safeArray(usuarios).find((u) => String(u.id) === String(o.usuarioId));
-      const total = Math.round(Number(o?.restante || 0) * Number(o?.preco || 0) * 100) / 100;
+    if (String(o?.tipo) === 'compra' && ['aberta', 'parcial'].includes(String(o?.status))) {
+      const user = usuariosById.get(String(o.usuarioId));
+      const total = round2(Number(o?.restante || 0) * Number(o?.preco || 0));
+
       if (Number(user?.saldo || 0) + 0.0001 < total) {
         problemasMedios.push({
-          tipo: 'COMPRA_ACIMA_SALDO_ATUAL',
-          ordemId: o.id,
-          usuarioId: o.usuarioId,
+          tipo: 'COMPRA_ABERTA_ACIMA_SALDO_ATUAL',
+          ordemId: String(o._id),
+          usuarioId: o.usuarioId ? String(o.usuarioId) : null,
           custo: total,
-          saldoAtual: Number(user?.saldo || 0)
+          saldoAtual: Number(user?.saldo || 0),
         });
       }
     }
   }
 
-  const journalById = new Map(safeArray(journal).map((j) => [String(j.id), j]));
-  for (const tx of safeArray(financeiro)) {
-    const finalStatuses = ['CONFIRMADO', 'ESTORNADO', 'CANCELADO', 'FALHOU'];
-    if (finalStatuses.includes(String(tx?.status || ''))) {
-      const ids = safeArray(tx?.ledgerEntryIds);
-      const found = ids.filter((id) => journalById.has(String(id)));
-      if (found.length === 0) {
-        problemasCriticos.push({
-          tipo: 'FIN_TX_FINAL_SEM_LEDGER',
-          transacaoId: tx.id,
-          status: tx.status,
-          gatewayReference: tx.gatewayReference || null
-        });
-      }
+  for (const c of clubes) {
+    if (Number(c?.cotasDisponiveis || 0) < 0) {
+      problemasCriticos.push({
+        tipo: 'CLUBE_COTAS_DISPONIVEIS_NEGATIVAS',
+        clubeId: c.legacyId,
+        cotasDisponiveis: c.cotasDisponiveis,
+      });
+    }
+
+    if (Number(c?.cotasEmitidas || 0) < 0) {
+      problemasCriticos.push({
+        tipo: 'CLUBE_COTAS_EMITIDAS_NEGATIVAS',
+        clubeId: c.legacyId,
+        cotasEmitidas: c.cotasEmitidas,
+      });
+    }
+
+    if (Number(c?.precoAtual ?? c?.preco ?? 0) < 0) {
+      problemasCriticos.push({
+        tipo: 'CLUBE_PRECO_NEGATIVO',
+        clubeId: c.legacyId,
+        precoAtual: c.precoAtual,
+        preco: c.preco,
+      });
     }
   }
 
-  const frozenUsers = Object.entries(antifraudeState?.users || {})
-    .filter(([, v]) => Number(v?.frozenUntil || 0) > Date.now())
-    .length;
-  const frozenClubes = Object.entries(antifraudeState?.clubes || {})
-    .filter(([, v]) => Number(v?.frozenUntil || 0) > Date.now())
-    .length;
-
-  if (safeArray(financeiro).filter((t) => ['PENDENTE', 'PROCESSANDO'].includes(String(t?.status || ''))).length > 50) {
+  if (financeiroResumo.transacoesPendentes > 50) {
     avisos.push({ tipo: 'MUITAS_TRANSACOES_PENDENTES' });
   }
 
+  const ordensAbertas = ordens.filter((o) =>
+    ['aberta', 'parcial'].includes(String(o?.status || '')) &&
+    Number(o?.restante || 0) > 0
+  ).length;
+
   const statusGeral =
-    problemasCriticos.length > 0 ? 'CRITICO' :
-    problemasMedios.length > 0 ? 'ATENCAO' :
-    'OK';
+    problemasCriticos.length > 0
+      ? 'CRITICO'
+      : problemasMedios.length > 0
+        ? 'ATENCAO'
+        : 'OK';
 
   return {
     statusGeral,
     resumo: {
-      usuarios: safeArray(usuarios).length,
-      ordensAbertas: safeArray(ordens).filter((o) => Number(o?.restante || 0) > 0).length,
-      clubes: safeArray(clubes).length,
-      investimentos: safeArray(investimentos).length,
-      lancamentosLedger: safeArray(journal).length,
-      transacoesFinanceiras: safeArray(financeiro).length,
-      transacoesPendentes: safeArray(financeiro).filter((t) => ['PENDENTE', 'PROCESSANDO'].includes(String(t?.status || ''))).length,
-      frozenUsers,
-      frozenClubes
+      usuarios: usuarios.length,
+      ordensAbertas,
+      clubes: clubes.length,
+      investimentos: investimentosCount,
+      lancamentosLedger: ledgerResumo.lancamentosLedger,
+      transacoesFinanceiras: financeiroResumo.transacoesFinanceiras,
+      transacoesPendentes: financeiroResumo.transacoesPendentes,
+      frozenUsers: antifraudeResumo.frozenUsers,
+      frozenClubes: antifraudeResumo.frozenClubes,
     },
     problemasCriticos,
     problemasMedios,
@@ -160,13 +324,15 @@ function runSystemCheck() {
     flags: {
       betaMode: envBool('BETA_MODE', true),
       depositsEnabled: envBool('ENABLE_DEPOSITS', true),
-      withdrawalsEnabled: envBool('ENABLE_WITHDRAWALS', true)
-    }
+      withdrawalsEnabled: envBool('ENABLE_WITHDRAWALS', true),
+      mongoConnected: isMongoConnected(),
+    },
   };
 }
 
-function buildHealthPayload() {
-  const check = runSystemCheck();
+async function buildHealthPayload() {
+  const check = await runSystemCheck();
+
   return {
     ok: check.statusGeral !== 'CRITICO',
     status: check.statusGeral,
@@ -176,11 +342,11 @@ function buildHealthPayload() {
     flags: check.flags,
     criticos: check.problemasCriticos.length,
     medios: check.problemasMedios.length,
-    avisos: check.avisos.length
+    avisos: check.avisos.length,
   };
 }
 
 module.exports = {
   runSystemCheck,
-  buildHealthPayload
+  buildHealthPayload,
 };
