@@ -1,192 +1,333 @@
-const fs = require('fs');
-const path = require('path');
-const storage = require('../utils/storage');
-const audit = require('../utils/audit');
-const { runTx } = require('../utils/tx');
+const mongoose = require('mongoose');
 
-const clubesPath = path.join(__dirname, '../data/clubes.json');
-const investimentosPath = path.join(__dirname, '../data/investimentos.json');
+const User = require('../models/User');
 
-// -------- CAMADA 5: Limites econômicos (IPO também) --------
-const TOTAL_COTAS_CLUBE = 1000;
-const MAX_PCT_COTAS_CLUBE = 0.20; // 20% do float
-const MAX_EXPOSICAO_CLUBE = 0.30; // 30% do patrimônio
+const Club = require('../models/Club');
 
+const Investment = require('../models/Investment');
 
-// Funções auxiliares
-function salvarJSON(caminho, dados) {
-  // escrita atômica
-  return storage.writeJSON(caminho, dados);
+function round2(n) {
+
+  return Number(Number(n || 0).toFixed(2));
+
 }
 
-function lerJSON(caminho) {
-  if (!fs.existsSync(caminho)) return [];
-  return JSON.parse(fs.readFileSync(caminho, 'utf-8'));
-}
+function upsertCarteiraAtivo(carteira, { clubeId, nomeClube, quantidade, precoUnitario }) {
 
-function buscarClubePorId(id) {
-  const clubes = lerJSON(clubesPath);
-  // Converta ambos para número para garantir comparação correta
-  const idNum = Number(id);
-  return clubes.find(c => Number(c.id) === idNum);
-}
+  const idx = carteira.findIndex((a) => Number(a.clubeId) === Number(clubeId));
 
-function atualizarClube(clubeAtualizado) {
-  const clubes = lerJSON(clubesPath);
-  const index = clubes.findIndex(c => String(c.id) === String(clubeAtualizado.id));
-  if (index !== -1) {
-    clubes[index] = clubeAtualizado;
-    salvarJSON(clubesPath, clubes);
+  if (idx === -1) {
+
+    carteira.push({
+
+      clubeId: Number(clubeId),
+
+      nomeClube,
+
+      quantidade: Number(quantidade),
+
+      precoMedio: round2(precoUnitario),
+
+      totalInvestido: round2(Number(quantidade) * Number(precoUnitario)),
+
+    });
+
+    return carteira;
+
   }
+
+  const atual = carteira[idx];
+
+  const qtdAtual = Number(atual.quantidade || 0);
+
+  const totalAtual = round2(Number(atual.totalInvestido || 0));
+
+  const qtdNova = qtdAtual + Number(quantidade);
+
+  const totalNovo = round2(totalAtual + Number(quantidade) * Number(precoUnitario));
+
+  const precoMedioNovo = qtdNova > 0 ? round2(totalNovo / qtdNova) : 0;
+
+  carteira[idx] = {
+
+    ...atual,
+
+    nomeClube,
+
+    quantidade: qtdNova,
+
+    totalInvestido: totalNovo,
+
+    precoMedio: precoMedioNovo,
+
+  };
+
+  return carteira;
+
 }
 
-async function comprarCota(req, res) {
+exports.comprarCota = async (req, res) => {
+
+  const session = await mongoose.startSession();
+
   try {
-    const { clubeId, quantidade, usuarioId } = req.body;
 
-    console.log('BODY RECEBIDO:', req.body);
+    const userId = req.usuario?.id;
 
-    if (!clubeId || !quantidade || quantidade <= 0 || !usuarioId) {
-      return res.status(400).json({ erro: 'Dados inválidos para compra.' });
+    const legacyClubeId = Number(req.body.clubeId);
+
+    const quantidade = Number(req.body.quantidade || 0);
+
+    const precoInformado = req.body.preco != null ? Number(req.body.preco) : null;
+
+    if (!userId) {
+
+      return res.status(401).json({ erro: 'Usuário não autenticado.' });
+
     }
 
-    const clube = buscarClubePorId(clubeId);
-    if (!clube) {
-      return res.status(404).json({ erro: 'Clube não encontrado.' });
-    }
-    const preco = clube.preco;
+    if (!Number.isInteger(legacyClubeId) || legacyClubeId <= 0) {
 
-    if (clube.cotasDisponiveis < quantidade) {
-      return res.status(400).json({ erro: 'Cotas insuficientes no IPO.' });
+      return res.status(400).json({ erro: 'clubeId inválido.' });
+
     }
 
-    const usuariosPath = path.join(__dirname, '../data/usuarios.json');
-    const dataDir = path.join(__dirname, '../data');
+    if (!Number.isFinite(quantidade) || quantidade <= 0) {
 
-    const meta = { usuarioId, clubeId: clube.id, quantidade, preco };
+      return res.status(400).json({ erro: 'Quantidade inválida.' });
 
-    const result = await runTx({
-      files: [clubesPath, usuariosPath, investimentosPath],
-      dataDir,
-      action: 'IPO_COMPRA',
-      meta,
-      fallbacks: { clubes: [], usuarios: [], investimentos: [] },
-      mutate: (state) => {
-        const clubesAll = state.clubes;
-        const usuarios = state.usuarios;
-        const investimentos = state.investimentos;
+    }
 
-        const idxClube = clubesAll.findIndex(c => Number(c.id) === Number(clube.id));
-        if (idxClube < 0) { const e = new Error('Clube não encontrado.'); e.code='CLUBE_NAO_ENCONTRADO'; throw e; }
+    let payloadResposta = null;
 
-        if (Number(clubesAll[idxClube].cotasDisponiveis || 0) < quantidade) { const e = new Error('Cotas insuficientes no IPO.'); e.code='COTAS_INSUF'; throw e; }
+    await session.withTransaction(async () => {
 
-        const usuarioIndex = usuarios.findIndex(u => String(u.id) === String(usuarioId));
-        if (usuarioIndex === -1) { const e = new Error('Usuário não encontrado.'); e.code='USER_NAO_ENCONTRADO'; throw e; }
+      const usuario = await User.findById(userId).session(session);
 
-        // Limites econômicos (Camada 5)
-        if (!usuarios[usuarioIndex].carteira) usuarios[usuarioIndex].carteira = [];
-        const carteira = usuarios[usuarioIndex].carteira;
-        const cotaExistente = carteira.find(c => String(c.clubeId) === String(clube.id));
-        const qtdAtual = Number(cotaExistente?.quantidade || 0);
-        const qtdApos = qtdAtual + Number(quantidade);
-        const LIMITE_QTD = TOTAL_COTAS_CLUBE * MAX_PCT_COTAS_CLUBE;
-        if (qtdApos > LIMITE_QTD) { const e = new Error('Limite de concentração atingido.'); e.code='CAP_HOLDING'; throw e; }
+      if (!usuario) {
 
-        const total = quantidade * preco;
-        const saldoAtual = Number(usuarios[usuarioIndex].saldo || 0);
-        if (saldoAtual < total) { const e = new Error('Saldo insuficiente.'); e.code='SALDO_INSUF'; throw e; }
+        throw new Error('USUARIO_NAO_ENCONTRADO');
 
-        const patrimonio = saldoAtual + carteira.reduce((s, a) => s + Number(a.totalInvestido || 0), 0);
-        const exposicaoAtual = Number(cotaExistente?.totalInvestido || 0);
-        const exposicaoApos = exposicaoAtual + total;
-        if (patrimonio > 0 && (exposicaoApos / patrimonio) > MAX_EXPOSICAO_CLUBE) { const e = new Error('Limite de exposição atingido.'); e.code='CAP_EXPOSURE'; throw e; }
-
-        // Debita saldo
-        usuarios[usuarioIndex].saldo = saldoAtual - total;
-
-        // Carteira
-        if (cotaExistente) {
-          cotaExistente.quantidade += quantidade;
-          cotaExistente.totalInvestido = Number(cotaExistente.totalInvestido || 0) + total;
-        } else {
-          carteira.push({
-            clubeId: clubesAll[idxClube].id,
-            nomeClube: clubesAll[idxClube].nome,
-            quantidade,
-            precoMedio: preco,
-            totalInvestido: total
-          });
-        }
-
-        // Clube: decrementa cotas
-        clubesAll[idxClube].cotasDisponiveis = Number(clubesAll[idxClube].cotasDisponiveis || 0) - quantidade;
-        if (Number(clubesAll[idxClube].cotasDisponiveis) <= 0) {
-          clubesAll[idxClube].cotasDisponiveis = 0;
-          clubesAll[idxClube].ipoEncerrado = true;
-        }
-
-        investimentos.push({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          usuarioId,
-          clubeId: clubesAll[idxClube].id,
-          quantidade,
-          precoUnitario: preco,
-          tipo: 'IPO',
-          data: new Date().toISOString()
-        });
-
-        state.clubes = clubesAll;
-        state.usuarios = usuarios;
-        state.investimentos = investimentos;
-        return state;
       }
+
+      const clube = await Club.findOne({ legacyId: legacyClubeId }).session(session);
+
+      if (!clube) {
+
+        throw new Error('CLUBE_NAO_ENCONTRADO');
+
+      }
+
+      if (clube.ipoEncerrado || Number(clube.cotasDisponiveis || 0) <= 0) {
+
+        throw new Error('IPO_ENCERRADO');
+
+      }
+
+      if (Number(clube.cotasDisponiveis || 0) < quantidade) {
+
+        throw new Error('COTAS_INSUFICIENTES');
+
+      }
+
+      const precoUnitario = round2(
+
+        precoInformado != null && Number.isFinite(precoInformado)
+
+          ? precoInformado
+
+          : clube.precoAtual != null
+
+          ? clube.precoAtual
+
+          : clube.preco
+
+      );
+
+      if (!Number.isFinite(precoUnitario) || precoUnitario <= 0) {
+
+        throw new Error('PRECO_INVALIDO');
+
+      }
+
+      const total = round2(precoUnitario * quantidade);
+
+      const saldoAtual = round2(usuario.saldo || 0);
+
+      if (saldoAtual < total) {
+
+        throw new Error('SALDO_INSUFICIENTE');
+
+      }
+
+      usuario.saldo = round2(saldoAtual - total);
+
+      usuario.carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
+
+      upsertCarteiraAtivo(usuario.carteira, {
+
+        clubeId: clube.legacyId,
+
+        nomeClube: clube.nome,
+
+        quantidade,
+
+        precoUnitario,
+
+      });
+
+      clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
+
+      clube.cotasEmitidas = Number(clube.cotasEmitidas || 0) + quantidade;
+
+      clube.precoAtual = precoUnitario;
+
+      if (Number(clube.cotasDisponiveis || 0) <= 0) {
+
+        clube.cotasDisponiveis = 0;
+
+        clube.ipoEncerrado = true;
+
+      }
+
+      await usuario.save({ session });
+
+      await clube.save({ session });
+
+      const investimento = await Investment.create(
+
+        [
+
+          {
+
+            legacyId: `ipo_${usuario.legacyId || usuario._id}_${clube.legacyId}_${Date.now()}`,
+
+            usuarioId: usuario._id,
+
+            usuarioLegacyId: usuario.legacyId ?? null,
+
+            clubeId: clube._id,
+
+            clubeLegacyId: clube.legacyId,
+
+            clubeNome: clube.nome,
+
+            quantidade,
+
+            precoUnitario,
+
+            valorUnitario: precoUnitario,
+
+            totalPago: total,
+
+            tipo: 'IPO',
+
+            origem: 'IPO',
+
+            data: new Date(),
+
+            metadata: {
+
+              modo: 'mongo',
+
+            },
+
+          },
+
+        ],
+
+        { session }
+
+      );
+
+      payloadResposta = {
+
+        mensagem: 'Compra de IPO realizada com sucesso.',
+
+        investimento: investimento[0],
+
+        usuario: {
+
+          id: String(usuario._id),
+
+          legacyId: usuario.legacyId ?? null,
+
+          nomeUsuario: usuario.nomeUsuario,
+
+          saldo: round2(usuario.saldo),
+
+          carteira: usuario.carteira,
+
+        },
+
+        clube: {
+
+          id: clube.legacyId,
+
+          nome: clube.nome,
+
+          precoAtual: round2(clube.precoAtual),
+
+          cotasDisponiveis: Number(clube.cotasDisponiveis || 0),
+
+          cotasEmitidas: Number(clube.cotasEmitidas || 0),
+
+          ipoEncerrado: Boolean(clube.ipoEncerrado),
+
+        },
+
+      };
+
     });
 
-    audit.logEvent({ kind: 'IPO', action: 'IPO_COMPRA_OK', usuarioId, clubeId: clube.id, quantidade, preco });
-
-return res.status(201).json({
-      mensagem: 'Compra realizada com sucesso!',
-      usuario: (result.usuarios || []).find(u => String(u.id) === String(usuarioId))
-    });
+    return res.json(payloadResposta);
 
   } catch (err) {
-    console.error('Erro ao comprar cota:', err);
-    res.status(500).json({ erro: 'Saldo insuficiente.' });
-  }
-}
 
+    console.error('Erro ao comprar cota IPO:', err);
 
-async function venderCota(req, res) {
-  try {
-    const { clubeId, quantidade, precoDesejado } = req.body;
-    const usuarioId = req.usuario?.id;
+    if (err.message === 'USUARIO_NAO_ENCONTRADO') {
 
-    if (!clubeId || !quantidade || quantidade <= 0 || !precoDesejado) {
-      return res.status(400).json({ erro: 'Dados inválidos para venda.' });
+      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+
     }
 
-    const investimentos = lerJSON(investimentosPath);
-    investimentos.push({
-      id: Date.now(),
-      usuarioId,
-      clubeId,
-      quantidade: -Math.abs(quantidade),
-      precoUnitario: precoDesejado,
-      tipo: 'mercado_secundario',
-      data: new Date().toISOString()
-    });
+    if (err.message === 'CLUBE_NAO_ENCONTRADO') {
 
-    salvarJSON(investimentosPath, investimentos);
+      return res.status(404).json({ erro: 'Clube não encontrado.' });
 
-    res.status(201).json({ mensagem: 'Oferta de venda registrada com sucesso!' });
-  } catch (err) {
-    console.error('Erro ao vender cota:', err);
-    res.status(500).json({ erro: 'Erro interno ao vender cota.' });
+    }
+
+    if (err.message === 'IPO_ENCERRADO') {
+
+      return res.status(400).json({ erro: 'IPO encerrado para este clube.' });
+
+    }
+
+    if (err.message === 'COTAS_INSUFICIENTES') {
+
+      return res.status(400).json({ erro: 'Quantidade acima das cotas disponíveis.' });
+
+    }
+
+    if (err.message === 'SALDO_INSUFICIENTE') {
+
+      return res.status(400).json({ erro: 'Saldo insuficiente.' });
+
+    }
+
+    if (err.message === 'PRECO_INVALIDO') {
+
+      return res.status(400).json({ erro: 'Preço inválido.' });
+
+    }
+
+    return res.status(500).json({ erro: 'Erro interno ao comprar cota IPO.' });
+
+  } finally {
+
+    await session.endSession();
+
   }
-}
 
-module.exports = {
-  comprarCota,
-  venderCota
 };
