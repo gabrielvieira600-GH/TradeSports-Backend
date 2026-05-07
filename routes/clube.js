@@ -5,6 +5,10 @@ const router = express.Router();
 
 const Club = require('../models/Club');
 
+const auth = require('../middleware/auth');
+
+const InvestimentoController = require('../controllers/InvestimentoController');
+
 function toClubResponse(clube) {
 
   return {
@@ -110,6 +114,28 @@ router.get('/:id', async (req, res) => {
     return res.status(500).json({ erro: 'Erro ao buscar clube.' });
 
   }
+
+});
+
+/**
+
+ * Compatibilidade com o frontend antigo:
+
+ * POST /clube/:id/comprar
+
+ */
+
+router.post('/:id/comprar', auth, (req, res, next) => {
+
+  req.body = {
+
+    ...req.body,
+
+    clubeId: Number(req.params.id),
+
+  };
+
+  return InvestimentoController.comprarCota(req, res, next);
 
 });
 
