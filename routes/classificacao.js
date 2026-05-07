@@ -1,524 +1,693 @@
 require('dotenv').config();
-console.log('[ENV DEBUG] API_FOOTBALL_KEY:', process.env.API_FOOTBALL_KEY);
+
 if (!process.env.API_FOOTBALL_KEY) {
+
   throw new Error('CHAVE API_FOOTBALL_KEY está indefinida! Verifique o .env e a execução do servidor.');
+
 }
 
 const express = require('express');
+
 const router = express.Router();
+
 const axios = require('axios');
+
+const Club = require('../models/Club');
+
+const User = require('../models/User');
+
+const Investment = require('../models/Investment');
+
+const Dividendo = require('../models/dividendos');
+
+const Top4Rodada = require('../models/Top4Rodada');
+
+const HistoricoPosse = require('../models/HistoricoPosse');
+
+const { runTx, round2 } = require('../utils/tx');
+
+const audit = require('../utils/audit');
+
 const ledger = require('../utils/ledger');
-const fs = require('fs');
-const path = require('path');
 
-// Caminhos para arquivos locais
-const clubesPath = path.join(__dirname, '..', 'data', 'clubes.json');
-const classificacaoFinalPath = path.join(__dirname, '..', 'data', 'classificacaoFinal.json');
+function normalizarNome(str) {
 
-// ===================== DIVIDENDOS (TOP 4 estável por 4 rodadas) =====================
-// Obs: o projeto está usando JSON (não Mongo) no momento.
-const configCampeonatoPath = path.join(__dirname, '..', 'data', 'configCampeonato.json');
-const top4RodadaPath = path.join(__dirname, '..', 'data', 'top4Rodadas.json');
-const historicoPossePath = path.join(__dirname, '..', 'data', 'historicoPosse.json');
-const usuariosPath = path.join(__dirname, '..', 'data', 'usuarios.json');
-const investimentosPath = path.join(__dirname, '..', 'data', 'investimentos.json');
+  return String(str || '')
 
-function lerJSONSeguroAbs(p, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch {
-    return fallback;
-  }
-}
+    .normalize('NFD')
 
-function salvarJSONAbs(p, data) {
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
-}
+    .replace(/[\u0300-\u036f]/g, '')
 
-function garantirArquivo(p, valorInicial) {
-  try {
-    if (!fs.existsSync(p)) salvarJSONAbs(p, valorInicial);
-  } catch (e) {
-    console.error('[DIVIDENDOS] Erro ao garantir arquivo', p, e.message);
-  }
-}
+    .toLowerCase()
 
-function round2(n) {
-  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+    .trim();
+
 }
 
 function calcularPrecoPorPosicao(posicao) {
+
   const precoBase = 5;
+
   return precoBase * Math.pow(1.05, 20 - Number(posicao));
+
 }
 
-function obterNomeClube(clubeId) {
-  const clubes = lerJSONSeguroAbs(clubesPath, []);
-  const c = clubes.find((x) => String(x.id) === String(clubeId));
-  return c?.nome || '';
-}
+async function atualizarClubsComStandings(standingsApi) {
 
-function salvarSnapshotTop4(rodada, standingsApi) {
-  const clubes = lerJSONSeguroAbs(clubesPath, []);
-  const mapaNomeParaId = {};
+  const clubes = await Club.find({});
+
+  const mapaNomeParaClube = {};
+
   for (const c of clubes) {
-    if (!c || c.id == null) continue;
-    mapaNomeParaId[normalizarNome(c.nome)] = c.id;
+
+    mapaNomeParaClube[normalizarNome(c.nome)] = c;
+
+  }
+
+  for (const item of standingsApi) {
+
+    if (!item?.team?.name) continue;
+
+    const nomeNorm = normalizarNome(item.team.name);
+
+    const clube = mapaNomeParaClube[nomeNorm];
+
+    if (!clube) continue;
+
+    clube.posicao = Number(item.rank);
+
+    clube.escudo = item.team.logo || clube.escudo || '';
+
+    await clube.save();
+
+  }
+
+}
+
+async function salvarSnapshotTop4(rodada, standingsApi) {
+
+  const clubes = await Club.find({}).lean();
+
+  const mapaNomeParaId = {};
+
+  for (const c of clubes) {
+
+    mapaNomeParaId[normalizarNome(c.nome)] = {
+
+      mongoId: c._id,
+
+      legacyId: c.legacyId,
+
+    };
+
   }
 
   const top4 = standingsApi
+
     .filter((i) => i?.rank && i?.team?.name && Number(i.rank) >= 1 && Number(i.rank) <= 4)
+
     .map((i) => {
-      const clubeId = mapaNomeParaId[normalizarNome(i.team.name)];
-      return clubeId == null
-        ? null
-        : { clubeId: Number(clubeId), posicao: Number(i.rank) };
+
+      const clubeRef = mapaNomeParaId[normalizarNome(i.team.name)];
+
+      if (!clubeRef) return null;
+
+      return {
+
+        clubeId: clubeRef.mongoId,
+
+        clubeLegacyId: clubeRef.legacyId,
+
+        posicao: Number(i.rank),
+
+      };
+
     })
+
     .filter(Boolean)
+
     .sort((a, b) => a.posicao - b.posicao);
 
-  garantirArquivo(top4RodadaPath, []);
-  const hist = lerJSONSeguroAbs(top4RodadaPath, []);
-  const idx = hist.findIndex((r) => Number(r.rodada) === Number(rodada));
-  const registro = { rodada: Number(rodada), clubes: top4, data: new Date().toISOString() };
-  if (idx >= 0) hist[idx] = registro;
-  else hist.push(registro);
-  hist.sort((a, b) => Number(a.rodada) - Number(b.rodada));
-  salvarJSONAbs(top4RodadaPath, hist);
+  await Top4Rodada.findOneAndUpdate(
+
+    { rodada: Number(rodada) },
+
+    {
+
+      $set: {
+
+        rodada: Number(rodada),
+
+        clubes: top4,
+
+        data: new Date(),
+
+      },
+
+    },
+
+    { upsert: true, new: true }
+
+  );
+
 }
 
-function salvarSnapshotPosse(rodada) {
-  garantirArquivo(historicoPossePath, []);
-  const hist = lerJSONSeguroAbs(historicoPossePath, []);
+async function salvarSnapshotPosse(rodada) {
 
-  // remove snapshots já existentes dessa rodada (para idempotência)
-  const filtrado = hist.filter((x) => Number(x.rodada) !== Number(rodada));
+  const usuarios = await User.find({}).lean();
 
-  const usuarios = lerJSONSeguroAbs(usuariosPath, []);
-  const novos = [];
+  const ops = [];
 
   for (const u of usuarios) {
-    const uid = u?.id;
-    const carteira = Array.isArray(u?.carteira) ? u.carteira : [];
+
+    const carteira = Array.isArray(u.carteira) ? u.carteira : [];
+
     for (const ativo of carteira) {
+
       const qtd = Number(ativo?.quantidade || 0);
-      const clubeId = ativo?.clubeId;
-      if (!uid || clubeId == null) continue;
+
+      const clubeLegacyId = ativo?.clubeId;
+
+      if (!u?._id || clubeLegacyId == null) continue;
+
       if (qtd <= 0) continue;
 
-      novos.push({
-        usuarioId: uid,
-        clubeId: Number(clubeId),
-        rodada: Number(rodada),
-        quantidade: qtd,
-        data: new Date().toISOString(),
+      const clube = await Club.findOne({ legacyId: Number(clubeLegacyId) }).lean();
+
+      if (!clube) continue;
+
+      ops.push({
+
+        updateOne: {
+
+          filter: {
+
+            usuarioId: u._id,
+
+            clubeId: clube._id,
+
+            rodada: Number(rodada),
+
+          },
+
+          update: {
+
+            $set: {
+
+              usuarioId: u._id,
+
+              usuarioLegacyId: u.legacyId ?? null,
+
+              clubeId: clube._id,
+
+              clubeLegacyId: Number(clubeLegacyId),
+
+              rodada: Number(rodada),
+
+              quantidade: qtd,
+
+              data: new Date(),
+
+            },
+
+          },
+
+          upsert: true,
+
+        },
+
       });
+
     }
+
   }
 
-  salvarJSONAbs(historicoPossePath, [...filtrado, ...novos]);
+  if (ops.length) {
+
+    await HistoricoPosse.bulkWrite(ops);
+
+  }
+
 }
 
-function obterTop4DaRodada(rodada) {
-  const hist = lerJSONSeguroAbs(top4RodadaPath, []);
-  const r = hist.find((x) => Number(x.rodada) === Number(rodada));
-  if (!r || !Array.isArray(r.clubes)) return [];
-  return r.clubes;
+async function obterTop4DaRodada(rodada) {
+
+  const snap = await Top4Rodada.findOne({ rodada: Number(rodada) }).lean();
+
+  return snap?.clubes || [];
+
 }
 
-function obterPosse(usuarioId, clubeId, rodada) {
-  const hist = lerJSONSeguroAbs(historicoPossePath, []);
-  const r = hist.find(
-    (x) =>
-      String(x.usuarioId) === String(usuarioId) &&
-      String(x.clubeId) === String(clubeId) &&
-      Number(x.rodada) === Number(rodada)
-  );
-  return Number(r?.quantidade || 0);
-}
+async function obterPosse(usuarioId, clubeId, rodada) {
 
-function jaPagouDividendo(investimentos, usuarioId, clubeId, rodada, posicao) {
-  return investimentos.some(
-    (i) =>
-      String(i.usuarioId) === String(usuarioId) &&
-      String(i.clubeId) === String(clubeId) &&
-      Number(i.rodada) === Number(rodada) &&
-      Number(i.posicao) === Number(posicao) &&
-      String(i.tipo).toUpperCase() === 'DIVIDENDO'
-  );
+  const registro = await HistoricoPosse.findOne({
+
+    usuarioId,
+
+    clubeId,
+
+    rodada: Number(rodada),
+
+  }).lean();
+
+  return Number(registro?.quantidade || 0);
+
 }
 
 async function distribuirDividendosSeElegivel(rodadaAtual) {
-  garantirArquivo(top4RodadaPath, []);
-  garantirArquivo(historicoPossePath, []);
-  garantirArquivo(investimentosPath, []);
 
-  const config = lerJSONSeguroAbs(configCampeonatoPath, {});
-  const ciclos = Number(config?.dividendos?.ciclosMinimos || 4);
-  const taxas = config?.dividendos?.taxasPorPosicao || {
+  const ciclos = 4;
+
+  const taxas = {
+
     1: 0.025,
+
     2: 0.018,
+
     3: 0.013,
+
     4: 0.009,
+
   };
 
   if (Number(rodadaAtual) < ciclos) return;
 
   const r0 = Number(rodadaAtual);
-  const rodadas = [r0 - (ciclos - 1), r0 - (ciclos - 2), r0 - 1, r0];
 
-  // precisa ter snapshot top4 das 4 rodadas
+  const rodadas = [r0 - 3, r0 - 2, r0 - 1, r0];
+
   for (const r of rodadas) {
-    const t = obterTop4DaRodada(r);
+
+    const t = await obterTop4DaRodada(r);
+
     if (!t || t.length < 4) return;
+
   }
 
-  const topAtual = obterTop4DaRodada(r0);
-  const usuarios = lerJSONSeguroAbs(usuariosPath, []);
-  const investimentos = lerJSONSeguroAbs(investimentosPath, []);
-
-  const novosInvestimentos = [];
+  const topAtual = await obterTop4DaRodada(r0);
 
   for (const item of topAtual) {
+
     const pos = Number(item.posicao);
+
     if (pos < 1 || pos > 4) continue;
 
-    // verifica estabilidade do mesmo clube na mesma posição nas 4 rodadas
-    const clubeId = Number(item.clubeId);
+    const clubeLegacyId = Number(item.clubeLegacyId);
+
     let estavel = true;
+
     for (const r of rodadas) {
-      const top = obterTop4DaRodada(r);
+
+      const top = await obterTop4DaRodada(r);
+
       const mesmo = top.find((x) => Number(x.posicao) === pos);
-      if (!mesmo || Number(mesmo.clubeId) !== clubeId) {
+
+      if (!mesmo || Number(mesmo.clubeLegacyId) !== clubeLegacyId) {
+
         estavel = false;
+
         break;
+
       }
+
     }
+
     if (!estavel) continue;
 
     const taxa = Number(taxas[pos] ?? 0);
-    if (!Number.isFinite(taxa) || taxa <= 0) continue;
+
+    if (!taxa || taxa <= 0) continue;
+
+    const clube = await Club.findOne({ legacyId: clubeLegacyId });
+
+    if (!clube) continue;
 
     const base = calcularPrecoPorPosicao(pos);
+
     const valorUnitario = round2(base * taxa);
-    const clubeNome = obterNomeClube(clubeId);
 
-    for (let ui = 0; ui < usuarios.length; ui++) {
-      const u = usuarios[ui];
-      const uid = u?.id;
-      if (!uid) continue;
+    const possesPeriodo = await HistoricoPosse.find({
 
-      // min de posse nas 4 rodadas
-      const posses = rodadas.map((r) => obterPosse(uid, clubeId, r));
-      const qtdElegivel = Math.min(...posses);
+      clubeId: clube._id,
+
+      rodada: { $in: rodadas },
+
+      quantidade: { $gt: 0 },
+
+    }).lean();
+
+    const mapaPorUsuario = new Map();
+
+    for (const p of possesPeriodo) {
+
+      const key = String(p.usuarioId);
+
+      if (!mapaPorUsuario.has(key)) mapaPorUsuario.set(key, []);
+
+      mapaPorUsuario.get(key).push(p);
+
+    }
+
+    for (const [usuarioId, registros] of mapaPorUsuario.entries()) {
+
+      if (registros.length < ciclos) continue;
+
+      const quantidades = rodadas.map((r) => {
+
+        const reg = registros.find((x) => Number(x.rodada) === Number(r));
+
+        return Number(reg?.quantidade || 0);
+
+      });
+
+      const qtdElegivel = Math.min(...quantidades);
+
       if (!Number.isFinite(qtdElegivel) || qtdElegivel <= 0) continue;
 
-      if (jaPagouDividendo(investimentos, uid, clubeId, r0, pos)) continue;
+      const idemKey = `div:${r0}:${usuarioId}:${clubeLegacyId}:${pos}`;
+
+      const jaPago = await Dividendo.findOne({ idemKey });
+
+      if (jaPago) continue;
 
       const totalPago = round2(qtdElegivel * valorUnitario);
-      if (totalPago <= 0) continue;
 
-      // Ledger (CAMADA 13): registra e aplica crédito do dividendo no saldo do usuário (via applyToUsuarios)
-      const temporada = Number(config?.temporada || 0);
-      const idemKey = `div:${temporada}:${r0}:${uid}:${clubeId}:${pos}`;
-      await ledger.postJournal({
-        action: 'DIVIDEND',
-        idemKey,
+      await runTx({
+
+        action: 'DIVIDENDOS_RODADA',
+
         meta: {
-          origem: 'RODADA',
-          temporada,
+
           rodada: r0,
+
+          usuarioId,
+
+          clubeId: clubeLegacyId,
+
           posicao: pos,
-          clubeId,
-          clubeNome,
-          quantidade: qtdElegivel,
-          valorUnitario,
-          totalPago,
+
         },
-        lines: [
-          { account: `user:${uid}`, debit: totalPago },
-          { account: 'platform:equity', credit: totalPago },
-        ],
-        applyToUsuarios: { usuariosPath },
+
+        mutate: async (session) => {
+
+          const userDoc = await User.findById(usuarioId).session(session);
+
+          if (!userDoc) return;
+
+          userDoc.saldo = round2(Number(userDoc.saldo || 0) + totalPago);
+
+          await userDoc.save({ session });
+
+          const journal = await ledger.postJournal({
+
+            action: 'DIVIDEND',
+
+            idemKey,
+
+            meta: {
+
+              origem: 'RODADA',
+
+              rodada: r0,
+
+              posicao: pos,
+
+              clubeId: clubeLegacyId,
+
+              clubeNome: clube.nome,
+
+              quantidade: qtdElegivel,
+
+              valorUnitario,
+
+              totalPago,
+
+            },
+
+            lines: [
+
+              { account: `user:${String(userDoc._id)}`, debit: totalPago },
+
+              { account: 'platform:equity', credit: totalPago },
+
+            ],
+
+            session,
+
+          });
+
+          await Dividendo.create(
+
+            [
+
+              {
+
+                usuarioId: userDoc._id,
+
+                clubeId: clube._id,
+
+                usuarioLegacyId: userDoc.legacyId ?? null,
+
+                clubeLegacyId,
+
+                clubeNome: clube.nome,
+
+                rodada: r0,
+
+                posicao: pos,
+
+                origem: 'RODADA',
+
+                quantidade: qtdElegivel,
+
+                valorUnitario,
+
+                totalPago,
+
+                idemKey,
+
+                data: new Date(),
+
+                meta: {
+
+                  ledgerEntryId: journal?.entry?.id || null,
+
+                  rodadasConsideradas: rodadas,
+
+                  quantidadesPeriodo: quantidades,
+
+                },
+
+              },
+
+            ],
+
+            { session }
+
+          );
+
+          await Investment.create(
+
+            [
+
+              {
+
+                legacyId: `div_${userDoc.legacyId || userDoc._id}_${clubeLegacyId}_${r0}_${pos}`,
+
+                usuarioId: userDoc._id,
+
+                usuarioLegacyId: userDoc.legacyId ?? null,
+
+                clubeId: clube._id,
+
+                clubeLegacyId,
+
+                clubeNome: clube.nome,
+
+                quantidade: qtdElegivel,
+
+                precoUnitario: valorUnitario,
+
+                valorUnitario,
+
+                totalPago,
+
+                tipo: 'DIVIDENDO',
+
+                origem: 'RODADA',
+
+                data: new Date(),
+
+                metadata: {
+
+                  rodada: r0,
+
+                  posicao: pos,
+
+                  quantidadesPeriodo: quantidades,
+
+                },
+
+              },
+
+            ],
+
+            { session }
+
+          );
+
+        },
+
       });
 
-      novosInvestimentos.push({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        usuarioId: uid,
-        tipo: 'DIVIDENDO',
-        origem: 'RODADA',
-        rodada: r0,
-        posicao: pos,
-        clubeId,
-        clubeNome,
-        quantidade: qtdElegivel,
-        valorUnitario,
-        totalPago,
-        data: new Date().toISOString(),
-      });
-    }
-  }
-  if (novosInvestimentos.length > 0) {
-    salvarJSONAbs(investimentosPath, [...investimentos, ...novosInvestimentos]);
-    console.log(`🟣 [DIVIDENDOS] Pagamentos gerados na rodada ${r0}:`, novosInvestimentos.length);
-  }
-}
-
-// Helpers de JSON
-function lerJSON(p, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch (e) {
-    console.error('[CLASSIFICACAO] Erro ao ler', p, e.message);
-    return fallback;
-  }
-}
-
-function salvarJSON(p, data) {
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
-}
-
-// Normaliza nomes para comparação (remove acentos, caixa baixa, trim)
-function normalizarNome(str) {
-  return String(str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
-/**
- * Atualiza backend/data/classificacaoFinal.json
- * a partir do array de standings da API-Football.
- *
- * standingsApi = response.data.response[0].league.standings[0]
- * (cada item tem team, rank, etc.)
- */
-function atualizarClassificacaoFinal(standingsApi) {
-  const clubes = lerJSON(clubesPath, []);
-
-  // Mapa nomeNormalizado -> idInterno
-  const mapaNomeParaId = {};
-  for (const c of clubes) {
-    if (!c || c.id == null) continue;
-    const nomeNorm = normalizarNome(c.nome);
-    mapaNomeParaId[nomeNorm] = c.id;
-  }
-
-  const classificacaoFinal = [];
-
-  for (const item of standingsApi) {
-    if (!item || !item.team) continue;
-
-    const nomeTimeApi = item.team.name;
-    const posicao     = item.rank;
-
-    if (posicao == null || !nomeTimeApi) continue;
-
-    const nomeNorm = normalizarNome(nomeTimeApi);
-    const clubeId  = mapaNomeParaId[nomeNorm];
-
-    if (clubeId == null) {
-      console.warn('[CLASSIFICACAO] Não encontrei clube em clubes.json para nome da API:', nomeTimeApi);
-      continue;
     }
 
-    classificacaoFinal.push({
-      clubeId,
-      posicao: Number(posicao),
-    });
   }
 
-  salvarJSON(classificacaoFinalPath, classificacaoFinal);
-  console.log('🟢 [CLASSIFICACAO] classificacaoFinal.json atualizado com', classificacaoFinal.length, 'clubes.');
 }
 
 router.get('/tabela-brasileirao', async (req, res) => {
+
   try {
+
     const response = await axios({
+
       method: 'get',
+
       url: 'https://v3.football.api-sports.io/standings',
+
       headers: {
-      'x-apisports-key': process.env.API_FOOTBALL_KEY,
-       Accept: 'application/json',
-       },
+
+        'x-apisports-key': process.env.API_FOOTBALL_KEY,
+
+        Accept: 'application/json',
+
+      },
+
       params: {
+
         league: 71,
-        season: 2026
-      }
+
+        season: 2026,
+
+      },
+
     });
 
     const standings = response?.data?.response?.[0]?.league?.standings?.[0];
 
-if (!Array.isArray(standings)) {
-  console.error('[API-Football] Resposta inesperada:', response?.data);
-  return res.status(502).json({
-    erro: 'Resposta inválida da API-Football.',
-    detalhes: response?.data || null,
-  });
-}
+    if (!Array.isArray(standings)) {
 
-    // ===================== RODADA ATUAL (via jogos disputados) =====================
-    // A API de standings não traz "rodada" diretamente. Uma forma consistente aqui é
-    // usar o maior número de jogos disputados entre os clubes (matchday aproximado).
+      return res.status(502).json({
+
+        erro: 'Resposta inválida da API-Football.',
+
+        detalhes: response?.data || null,
+
+      });
+
+    }
+
     const rodadaApi = Math.max(
-      ...standings
-        .map((t) => Number(t?.all?.played || 0))
-        .filter((n) => Number.isFinite(n))
+
+      ...standings.map((t) => Number(t?.all?.played || 0)).filter((n) => Number.isFinite(n))
+
     );
 
-    // garante config + defaults de dividendos
-    garantirArquivo(configCampeonatoPath, {
-      campeonato: 'Brasileirao',
-      temporada: 2023,
-      dispararLiquidacao: false,
-      liquidado: false,
-      rodadaAtual: rodadaApi,
-      dividendos: {
-        ciclosMinimos: 4,
-        taxasPorPosicao: { 1: 0.025, 2: 0.018, 3: 0.013, 4: 0.009 },
-      },
-      ultimaRodadaProcessadaDividendos: 0,
-    });
+    await atualizarClubsComStandings(standings);
 
-    // 🔹 NOVO: atualiza classificacaoFinal.json sem mudar a resposta pro front
-    try {
-      atualizarClassificacaoFinal(standings);
-    } catch (e) {
-      console.error('[CLASSIFICACAO] Erro ao atualizar classificacaoFinal.json:', e.message);
+    if (rodadaApi > 0) {
+
+      await salvarSnapshotTop4(rodadaApi, standings);
+
+      await salvarSnapshotPosse(rodadaApi);
+
+      await distribuirDividendosSeElegivel(rodadaApi);
+
     }
 
-    // ===================== SNAPSHOT + DIVIDENDOS QUANDO RODADA MUDAR =====================
-    try {
-      const config = lerJSONSeguroAbs(configCampeonatoPath, {});
-      const rodadaAnterior = Number(config?.rodadaAtual || 0);
+    const clubesMongo = await Club.find({}).lean();
 
-      // se a rodada mudou, salva snapshots da nova rodada e tenta pagar dividendos
-      if (Number.isFinite(rodadaApi) && rodadaApi > 0 && rodadaApi !== rodadaAnterior) {
-        // salva snapshots da rodada atual
-        salvarSnapshotTop4(rodadaApi, standings);
-        salvarSnapshotPosse(rodadaApi);
+    const mapaNome = {};
 
-        // atualiza config
-        config.rodadaAtual = rodadaApi;
+    for (const c of clubesMongo) {
 
-        // tenta distribuir dividendos apenas 1x por rodada
-        const ultimaProc = Number(config?.ultimaRodadaProcessadaDividendos || 0);
-        if (rodadaApi > ultimaProc) {
-          await distribuirDividendosSeElegivel(rodadaApi);
-          config.ultimaRodadaProcessadaDividendos = rodadaApi;
-        }
+      mapaNome[normalizarNome(c.nome)] = c;
 
-        salvarJSONAbs(configCampeonatoPath, config);
-      } else {
-        // primeira execução (sem rodadaAnterior) ou mesma rodada: garante pelo menos snapshots iniciais
-        if (!rodadaAnterior && rodadaApi > 0) {
-          salvarSnapshotTop4(rodadaApi, standings);
-          salvarSnapshotPosse(rodadaApi);
-          config.rodadaAtual = rodadaApi;
-          salvarJSONAbs(configCampeonatoPath, config);
-        }
-      }
-    } catch (e) {
-      console.error('[DIVIDENDOS] Erro no snapshot/distribuição:', e.message);
     }
 
-    res.json({
-      success: true,
-      data: standings.map(team => ({
-        posicao: team.rank,
-        nome: team.team.name,
-        pontos: team.points,
-        jogos: team.all.played,
-        vitorias: team.all.win,
-        empates: team.all.draw,
-        derrotas: team.all.lose
-      }))
+    const data = standings
+
+      .map((item) => {
+
+        const clubeLocal = mapaNome[normalizarNome(item?.team?.name)];
+
+        if (!clubeLocal) return null;
+
+        return {
+
+          id: clubeLocal.legacyId,
+
+          nome: clubeLocal.nome,
+
+          escudo: item?.team?.logo || clubeLocal.escudo || '',
+
+          posicao: Number(item?.rank || clubeLocal.posicao || 0),
+
+          pontos: Number(item?.points || 0),
+
+          jogos: Number(item?.all?.played || 0),
+
+          vitorias: Number(item?.all?.win || 0),
+
+          empates: Number(item?.all?.draw || 0),
+
+          derrotas: Number(item?.all?.lose || 0),
+
+          saldoGols: Number(item?.goalsDiff || 0),
+
+          preco: Number(clubeLocal.preco || 0),
+
+          precoAtual:
+
+            clubeLocal.precoAtual != null
+
+              ? Number(clubeLocal.precoAtual)
+
+              : Number(clubeLocal.preco || 0),
+
+          cotasDisponiveis: Number(clubeLocal.cotasDisponiveis || 0),
+
+          cotasEmitidas: Number(clubeLocal.cotasEmitidas || 0),
+
+          ipoEncerrado: Boolean(clubeLocal.ipoEncerrado),
+
+        };
+
+      })
+
+      .filter(Boolean);
+
+    return res.json({ data, rodada: rodadaApi });
+
+  } catch (e) {
+
+    console.error('[CLASSIFICACAO] erro:', e);
+
+    await audit.logEvent({
+
+      kind: 'CLASSIFICACAO',
+
+      action: 'TABELA_BRASILEIRAO_FAIL',
+
+      error: String(e),
+
     });
 
-  } catch (error) {
-  const detalhes = error.response?.data || error.message || null;
-  console.error('[API-Football] Erro ao buscar tabela:', detalhes);
+    return res.status(500).json({ erro: 'Erro ao carregar tabela.' });
 
-  return res.status(500).json({
-    erro: 'Erro ao buscar tabela da API-Football.',
-    detalhes,
-  });
-}
-});
-
-router.get('/tabela-laliga', async (req, res) => {
-
-  try {
-    const response = await axios({
-      method: 'get',
-      url: 'https://v3.football.api-sports.io/standings' ,
-      headers: {
-        'x-apisports-key' : 'a3118e9a451a60bae40400fa6b255037',
-        'Accept' : 'application/json'
-      },
-      params: {
-        league: 140,
-        season: 2023
-      }
-    });
-
-    const standings = response.data.response[0].league.standings[0];
-
-    res.json({
-      success: true,
-      data: standings.map(team => ({
-        posicao: team.rank,
-        nome: team.team.name,
-        pontos: team.points,
-        jogos: team.all.played,
-        vitorias: team.all.win,
-        empates: team.all.draw,
-        derrotas: team.all.lose
-      }))
-    });
-
-  } catch (error) {
-    console.error('[API-Football] Erro ao buscar tabela:', error.response?.data || error.message);
-    res.status(500).json({ erro: 'Erro ao buscar tabela da API-Football.' });
   }
-});
 
-router.get('/tabela-premierleague', async (req, res) => {
-
-  try {
-    const response = await axios({
-      method: 'get',
-      url: 'https://v3.football.api-sports.io/standings' ,
-      headers: {
-        'x-apisports-key' : 'a3118e9a451a60bae40400fa6b255037',
-        'Accept' : 'application/json'
-      },
-      params: {
-        league: 39,
-        season: 2023
-      }
-    });
-
-    const standings = response.data.response[0].league.standings[0];
-
-    res.json({
-      success: true,
-      data: standings.map(team => ({
-        posicao: team.rank,
-        nome: team.team.name,
-        pontos: team.points,
-        jogos: team.all.played,
-        vitorias: team.all.win,
-        empates: team.all.draw,
-        derrotas: team.all.lose
-      }))
-    });
-
-  } catch (error) {
-    console.error('[API-Football] Erro ao buscar tabela:', error.response?.data || error.message);
-    res.status(500).json({ erro: 'Erro ao buscar tabela da API-Football.' });
-  }
 });
 
 module.exports = router;

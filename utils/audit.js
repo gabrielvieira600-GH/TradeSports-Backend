@@ -1,45 +1,100 @@
 // backend/utils/audit.js
-// CAMADA 6/8 — Auditoria operacional (JSON rotativo)
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
 
-const auditPath = path.join(__dirname, '../data/audit_logs.json');
+const AuditLogSchema = new mongoose.Schema(
 
-function safeReadJSON(p, fallback) {
-  try {
-    if (!fs.existsSync(p)) return fallback;
-    return JSON.parse(fs.readFileSync(p, 'utf8') || JSON.stringify(fallback));
-  } catch {
-    return fallback;
+  {
+
+    id: { type: String, index: true, unique: true, sparse: true },
+
+    kind: { type: String, default: 'APP', index: true },
+
+    action: { type: String, required: true, index: true },
+
+    userId: { type: String, default: null, index: true },
+
+    actorUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+
+    actorLegacyId: { type: Number, default: null, index: true },
+
+    entityType: { type: String, default: null, index: true },
+
+    entityId: { type: String, default: null, index: true },
+
+    ip: { type: String, default: null },
+
+    userAgent: { type: String, default: null },
+
+    txAction: { type: String, default: null },
+
+    snapshot: { type: String, default: null },
+
+    inv: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    error: { type: String, default: null },
+
+    meta: { type: mongoose.Schema.Types.Mixed, default: {} },
+
+    ts: { type: Date, default: Date.now, index: true },
+
+  },
+
+  {
+
+    collection: 'audit_logs',
+
+    versionKey: false,
+
   }
-}
 
-function safeWriteJSON(p, data) {
-  const dir = path.dirname(p);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmp = p + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
-  fs.renameSync(tmp, p);
-}
+);
 
-function logEvent(evt) {
-  const logs = safeReadJSON(auditPath, []);
+const AuditLog =
+
+  mongoose.models.AuditLog || mongoose.model('AuditLog', AuditLogSchema);
+
+async function logEvent(evt = {}, session = null) {
+
   const entry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    ts: new Date().toISOString(),
+
+    id: evt.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+
+    ts: evt.ts ? new Date(evt.ts) : new Date(),
+
     ...evt,
+
   };
-  logs.push(entry);
-  const MAX = 5000;
-  if (logs.length > MAX) logs.splice(0, logs.length - MAX);
-  safeWriteJSON(auditPath, logs);
-  return entry;
+
+  try {
+
+    if (session) {
+
+      const docs = await AuditLog.create([entry], { session });
+
+      return docs[0].toObject();
+
+    }
+
+    const doc = await AuditLog.create(entry);
+
+    return doc.toObject();
+
+  } catch (err) {
+
+    console.error('[AUDIT] erro ao gravar log:', err.message);
+
+    return entry;
+
+  }
+
 }
 
-function readRecent(limit = 50) {
-  const logs = safeReadJSON(auditPath, []);
-  return logs.slice(-Math.max(1, Number(limit) || 50)).reverse();
+async function readRecent(limit = 50, filter = {}) {
+
+  const lim = Math.max(1, Math.min(1000, Number(limit) || 50));
+
+  return AuditLog.find(filter).sort({ ts: -1 }).limit(lim).lean();
+
 }
 
-module.exports = { logEvent, readRecent, auditPath };
+module.exports = { logEvent, readRecent, AuditLog };
