@@ -487,441 +487,305 @@ router.get('/minhas-ordens', auth, async (req, res) => {
 });
 
 router.post('/ordem', auth, async (req, res) => {
-
   const session = await mongoose.startSession();
 
   try {
-
     const clubeLegacyId = Number(req.body.clubeId);
-
     const tipo = String(req.body.tipo || '').toLowerCase();
-
     const preco = Number(req.body.preco);
-
     const quantidade = Number(req.body.quantidade);
 
     if (!['compra', 'venda'].includes(tipo)) {
-
       return res.status(400).json({ erro: 'Tipo de ordem inválido.' });
+    }
 
+    if (!Number.isInteger(clubeLegacyId) || clubeLegacyId <= 0) {
+      return res.status(400).json({ erro: 'clubeId inválido.' });
     }
 
     if (!Number.isFinite(preco) || preco <= 0 || !validaTick(preco)) {
-
-      return res.status(400).json({ erro: `Preço inválido. Tick mínimo: R$ ${TICK_SIZE.toFixed(2)}` });
-
+      return res.status(400).json({
+        erro: `Preço inválido. Tick mínimo: R$ ${TICK_SIZE.toFixed(2)}`,
+      });
     }
 
     if (!Number.isFinite(quantidade) || quantidade <= 0) {
-
       return res.status(400).json({ erro: 'Quantidade inválida.' });
-
     }
 
     let resposta = null;
 
     await session.withTransaction(async () => {
-
       const usuario = await User.findById(req.usuario.id).session(session);
-
       const clube = await Club.findOne({ legacyId: clubeLegacyId }).session(session);
 
       if (!usuario) throw new Error('USUARIO_NAO_ENCONTRADO');
-
       if (!clube) throw new Error('CLUBE_NAO_ENCONTRADO');
 
-      if (!clube.ipoEncerrado) {
-
+      if (!Boolean(clube.ipoEncerrado)) {
         throw new Error('IPO_AINDA_ABERTO');
-
       }
 
-      if (tipo === 'venda') {
+      usuario.carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
 
+      if (tipo === 'venda') {
         const ativo = getCarteiraAtivo(usuario, clubeLegacyId);
 
         const reservado = await getReservedSellQty({
-
           userId: usuario._id,
-
           clubId: clube._id,
-
           session,
-
         });
 
-        const disponivel = Number(ativo?.quantidade || 0) - reservado;
+        const disponivel = Number(ativo?.quantidade || 0) - Number(reservado || 0);
 
         if (disponivel < quantidade) {
-
           throw new Error('COTAS_INSUFICIENTES_VENDA');
-
         }
-
       }
 
       if (tipo === 'compra') {
-
         const custoMaximo = round2(preco * quantidade * (1 + TAKER_FEE));
 
         if (round2(usuario.saldo || 0) < custoMaximo) {
-
           throw new Error('SALDO_INSUFICIENTE');
-
         }
-
       }
 
-      const ordemNova = await Order.create(
-
+      const [ordem] = await Order.create(
         [
-
           {
-
-            legacyId: `ord_${usuario.legacyId || usuario._id}_${clubeLegacyId}_${Date.now()}`,
-
+            legacyId: `ord_${usuario.legacyId || usuario._id}_${clubeLegacyId}_${Date.now()}_${Math.random()
+              .toString(36)
+              .slice(2, 8)}`,
             usuarioId: usuario._id,
-
             usuarioLegacyId: usuario.legacyId ?? null,
-
             clubeId: clube._id,
-
             clubeLegacyId,
-
             tipo,
-
             preco: round2(preco),
-
             quantidade: Number(quantidade),
-
             restante: Number(quantidade),
-
             status: 'aberta',
-
             criadoEm: new Date(),
-
           },
-
         ],
-
         { session }
-
       );
 
-      const ordem = ordemNova[0];
-
       const matchQuery =
-
         tipo === 'compra'
-
           ? {
-
               clubeId: clube._id,
-
               tipo: 'venda',
-
               status: { $in: ['aberta', 'parcial'] },
-
+              restante: { $gt: 0 },
               preco: { $lte: round2(preco) },
-
               usuarioId: { $ne: usuario._id },
-
             }
-
           : {
-
               clubeId: clube._id,
-
               tipo: 'compra',
-
               status: { $in: ['aberta', 'parcial'] },
-
+              restante: { $gt: 0 },
               preco: { $gte: round2(preco) },
-
               usuarioId: { $ne: usuario._id },
-
             };
 
       const contrapartes = await Order.find(matchQuery)
-
         .sort(
-
           tipo === 'compra'
-
             ? { preco: 1, criadoEm: 1 }
-
             : { preco: -1, criadoEm: 1 }
-
         )
-
         .session(session);
 
       const execucoes = [];
 
       for (const contraparte of contrapartes) {
-
         if (Number(ordem.restante || 0) <= 0) break;
 
         const qtdExec = Math.min(
-
           Number(ordem.restante || 0),
-
           Number(contraparte.restante || 0)
-
         );
 
         if (qtdExec <= 0) continue;
 
         const precoExec = round2(contraparte.preco);
 
-        const buyerOrder = tipo === 'compra' ? ordem : contraparte;
+        const buyer =
+          tipo === 'compra'
+            ? usuario
+            : await User.findById(contraparte.usuarioId).session(session);
 
-        const sellerOrder = tipo === 'venda' ? ordem : contraparte;
-
-        const buyer = tipo === 'compra'
-
-          ? usuario
-
-          : await User.findById(contraparte.usuarioId).session(session);
-
-        const seller = tipo === 'venda'
-
-          ? usuario
-
-          : await User.findById(contraparte.usuarioId).session(session);
+        const seller =
+          tipo === 'venda'
+            ? usuario
+            : await User.findById(contraparte.usuarioId).session(session);
 
         if (!buyer || !seller) continue;
 
+        if (String(buyer._id) === String(seller._id)) continue;
+
         const bruto = round2(qtdExec * precoExec);
-
         const taxaBuyer = round2(bruto * TAKER_FEE);
-
         const taxaSeller = round2(bruto * MAKER_FEE);
-
         const custoBuyer = round2(bruto + taxaBuyer);
-
         const creditoSeller = round2(bruto - taxaSeller);
 
         if (round2(buyer.saldo || 0) < custoBuyer) {
-
-          if (tipo === 'compra') {
-
-            break;
-
-          }
-
+          if (tipo === 'compra') break;
           continue;
-
         }
 
         try {
-
           debitaVenda(seller, clubeLegacyId, qtdExec);
-
-        } catch (e) {
-
+        } catch (_) {
           continue;
-
         }
 
         creditaCompra(buyer, clubeLegacyId, clube.nome, qtdExec, precoExec);
 
         buyer.saldo = round2(Number(buyer.saldo || 0) - custoBuyer);
-
         seller.saldo = round2(Number(seller.saldo || 0) + creditoSeller);
 
-        ordem.restante = Number(ordem.restante || 0) - qtdExec;
+        buyer.markModified('carteira');
+        seller.markModified('carteira');
 
+        ordem.restante = Number(ordem.restante || 0) - qtdExec;
         contraparte.restante = Number(contraparte.restante || 0) - qtdExec;
 
         ordem.status = Number(ordem.restante || 0) <= 0 ? 'executada' : 'parcial';
-
         contraparte.status =
-
           Number(contraparte.restante || 0) <= 0 ? 'executada' : 'parcial';
 
         if (ordem.status === 'executada') ordem.executadoEm = new Date();
-
         if (contraparte.status === 'executada') contraparte.executadoEm = new Date();
 
         clube.precoAtual = precoExec;
 
         await buyer.save({ session });
 
-        await seller.save({ session });
+        if (String(buyer._id) !== String(seller._id)) {
+          await seller.save({ session });
+        }
 
         await ordem.save({ session });
-
         await contraparte.save({ session });
-
         await clube.save({ session });
 
+        const buyerOrder = tipo === 'compra' ? ordem : contraparte;
+        const sellerOrder = tipo === 'venda' ? ordem : contraparte;
+
         await criarRegistroInvestment({
-
           session,
-
           usuario: buyer,
-
           clube,
-
           quantidade: qtdExec,
-
           precoUnitario: precoExec,
-
-          totalPago: round2(bruto + taxaBuyer),
-
+          totalPago: custoBuyer,
           tipo: 'COMPRA',
-
           metadata: {
-
             mercado: 'secundario',
-
             fee: taxaBuyer,
-
-            feeType: 'taker',
-
+            feeType: tipo === 'compra' ? 'taker' : 'maker',
             orderId: String(buyerOrder._id),
-
             matchedOrderId: String(sellerOrder._id),
-
           },
-
         });
 
         await criarRegistroInvestment({
-
           session,
-
           usuario: seller,
-
           clube,
-
           quantidade: qtdExec,
-
           precoUnitario: precoExec,
-
-          totalPago: round2(bruto - taxaSeller),
-
+          totalPago: creditoSeller,
           tipo: 'VENDA',
-
           metadata: {
-
             mercado: 'secundario',
-
             fee: taxaSeller,
-
-            feeType: 'maker',
-
+            feeType: tipo === 'venda' ? 'taker' : 'maker',
             orderId: String(sellerOrder._id),
-
             matchedOrderId: String(buyerOrder._id),
-
           },
-
         });
 
         execucoes.push({
-
           quantidade: qtdExec,
-
           preco: precoExec,
-
           bruto,
-
           taxaBuyer,
-
           taxaSeller,
-
         });
-
       }
 
+      if (Number(ordem.restante || 0) <= 0) {
+        ordem.restante = 0;
+        ordem.status = 'executada';
+        ordem.executadoEm = ordem.executadoEm || new Date();
+      } else if (execucoes.length > 0) {
+        ordem.status = 'parcial';
+      } else {
+        ordem.status = 'aberta';
+      }
+
+      await ordem.save({ session });
+
       resposta = {
-
         mensagem: execucoes.length
-
           ? 'Ordem enviada e processada no mercado.'
-
           : 'Ordem enviada para o livro de ordens.',
-
         ordem: {
-
           id: String(ordem._id),
-
           tipo: ordem.tipo,
-
           preco: round2(ordem.preco),
-
           quantidade: Number(ordem.quantidade || 0),
-
           restante: Number(ordem.restante || 0),
-
           status: ordem.status,
-
           clubeId: ordem.clubeLegacyId,
-
         },
-
         execucoes,
-
         clube: {
-
           id: clube.legacyId,
-
           nome: clube.nome,
-
           precoAtual: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
-
         },
-
       };
-
     });
 
     return res.json(resposta);
-
   } catch (err) {
-
     console.error('Erro ao enviar ordem:', err);
 
     if (err.message === 'USUARIO_NAO_ENCONTRADO') {
-
       return res.status(404).json({ erro: 'Usuário não encontrado.' });
-
     }
 
     if (err.message === 'CLUBE_NAO_ENCONTRADO') {
-
       return res.status(404).json({ erro: 'Clube não encontrado.' });
-
     }
 
     if (err.message === 'IPO_AINDA_ABERTO') {
-
       return res.status(400).json({ erro: 'Mercado secundário só abre após o fim do IPO.' });
-
     }
 
     if (err.message === 'COTAS_INSUFICIENTES_VENDA') {
-
       return res.status(400).json({ erro: 'Você não possui cotas livres suficientes para vender.' });
-
     }
 
     if (err.message === 'SALDO_INSUFICIENTE') {
-
       return res.status(400).json({ erro: 'Saldo insuficiente para enviar a ordem.' });
-
     }
 
-    return res.status(500).json({ erro: 'Erro interno ao enviar ordem.' });
-
+    return res.status(500).json({
+      erro: 'Erro interno ao enviar ordem.',
+      detalhe: process.env.NODE_ENV === 'production' ? undefined : String(err.message || err),
+    });
   } finally {
-
     await session.endSession();
-
   }
-
 });
 
 router.post('/ordem/cancelar/:id', auth, async (req, res) => {
