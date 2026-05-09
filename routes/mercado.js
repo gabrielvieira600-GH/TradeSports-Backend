@@ -644,7 +644,8 @@ router.post('/ordem', auth, async (req, res) => {
         } catch (_) {
           continue;
         }
-
+        seller.markModified('carteira');
+        
         creditaCompra(buyer, clubeLegacyId, clube.nome, qtdExec, precoExec);
         
         buyer.markModified('carteira');
