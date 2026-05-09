@@ -646,7 +646,8 @@ router.post('/ordem', auth, async (req, res) => {
         }
 
         creditaCompra(buyer, clubeLegacyId, clube.nome, qtdExec, precoExec);
-
+        
+        buyer.markModified('carteira');
         buyer.saldo = round2(Number(buyer.saldo || 0) - custoBuyer);
         seller.saldo = round2(Number(seller.saldo || 0) + creditoSeller);
 

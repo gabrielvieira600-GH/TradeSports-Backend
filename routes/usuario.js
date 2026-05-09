@@ -153,29 +153,175 @@ router.get('/historico', auth, async (req, res) => {
 router.get('/carteira', auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
+
     if (!usuario) {
       return res.status(404).json({ erro: 'Usuário não encontrado' });
     }
 
-    const carteiraUsuario = Array.isArray(usuario.carteira) ? usuario.carteira : [];
     const clubesData = await Club.find({}).lean();
 
-    const carteiraDetalhada = carteiraUsuario.map((ativo) => {
-      const clube = clubesData.find(
-        (c) => Number(c.legacyId) === Number(ativo.clubeId)
+    const clubesPorLegacyId = new Map(
+      clubesData.map((c) => [String(c.legacyId), c])
+    );
+
+    const carteiraMap = new Map();
+
+    // 1. Primeiro usa a carteira salva no usuário
+    const carteiraUsuario = Array.isArray(usuario.carteira)
+      ? usuario.carteira
+      : [];
+
+    for (const ativo of carteiraUsuario) {
+      const clubeId = Number(
+        ativo.clubeId ??
+          ativo.clubeLegacyId ??
+          ativo.idClube ??
+          ativo.clube?.id ??
+          ativo.clube?.legacyId
       );
 
-      return {
-        ...ativo,
-        nome: clube?.nome || ativo?.nomeClube || 'Desconhecido',
-        escudo: clube?.escudo || '',
-      };
+      if (!Number.isFinite(clubeId) || clubeId <= 0) continue;
+
+      const quantidade = Number(ativo.quantidade ?? ativo.cotas ?? 0);
+      if (!Number.isFinite(quantidade) || quantidade <= 0) continue;
+
+      const precoMedio = Number(ativo.precoMedio ?? ativo.valorUnitario ?? 0);
+      const totalInvestido = Number(
+        ativo.totalInvestido ?? quantidade * precoMedio
+      );
+
+      carteiraMap.set(String(clubeId), {
+        clubeId,
+        nomeClube: ativo.nomeClube || ativo.clubeNome || ativo.nome || '',
+        quantidade,
+        precoMedio,
+        totalInvestido,
+      });
+    }
+
+    // 2. Depois reconstrói/valida com base no histórico de investimentos
+    const movimentos = await Investment.find({
+      $or: [
+        { usuarioId: req.usuario.id },
+        { usuarioLegacyId: usuario.legacyId ?? null },
+      ],
+    })
+      .sort({ data: 1, createdAt: 1 })
+      .lean();
+
+    for (const mov of movimentos) {
+      const tipo = String(mov.tipo || '').toUpperCase();
+
+      const clubeId = Number(
+        mov.clubeLegacyId ??
+          mov.clubeId?.legacyId ??
+          mov.clubeId ??
+          mov.clube?.id
+      );
+
+      if (!Number.isFinite(clubeId) || clubeId <= 0) continue;
+
+      const quantidade = Number(mov.quantidade || 0);
+      if (!Number.isFinite(quantidade) || quantidade <= 0) continue;
+
+      const precoUnitario = Number(
+        mov.precoUnitario ?? mov.valorUnitario ?? 0
+      );
+
+      const total = Number(
+        mov.totalPago ?? quantidade * precoUnitario
+      );
+
+      const atual =
+        carteiraMap.get(String(clubeId)) || {
+          clubeId,
+          nomeClube: mov.clubeNome || '',
+          quantidade: 0,
+          precoMedio: 0,
+          totalInvestido: 0,
+        };
+
+      if (
+        tipo === 'IPO' ||
+        tipo === 'COMPRA' ||
+        tipo === 'COMPRA_SECUNDARIO'
+      ) {
+        const novaQtd = Number(atual.quantidade || 0) + quantidade;
+        const novoTotal =
+          Number(atual.totalInvestido || 0) + Number(total || 0);
+
+        carteiraMap.set(String(clubeId), {
+          ...atual,
+          nomeClube: atual.nomeClube || mov.clubeNome || '',
+          quantidade: novaQtd,
+          totalInvestido: Number(novoTotal.toFixed(2)),
+          precoMedio:
+            novaQtd > 0 ? Number((novoTotal / novaQtd).toFixed(2)) : 0,
+        });
+      }
+
+      if (
+        tipo === 'VENDA' ||
+        tipo === 'LIQUIDACAO' ||
+        tipo === 'LIQUIDAÇÃO'
+      ) {
+        const qtdAtual = Number(atual.quantidade || 0);
+        const novaQtd = Math.max(0, qtdAtual - quantidade);
+
+        if (novaQtd <= 0) {
+          carteiraMap.delete(String(clubeId));
+        } else {
+          const precoMedioAtual = Number(atual.precoMedio || 0);
+          carteiraMap.set(String(clubeId), {
+            ...atual,
+            quantidade: novaQtd,
+            totalInvestido: Number((novaQtd * precoMedioAtual).toFixed(2)),
+            precoMedio: precoMedioAtual,
+          });
+        }
+      }
+    }
+
+    const carteiraDetalhada = Array.from(carteiraMap.values())
+      .filter((ativo) => Number(ativo.quantidade || 0) > 0)
+      .map((ativo) => {
+        const clube = clubesPorLegacyId.get(String(ativo.clubeId));
+
+        const precoAtual = Number(
+          clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0
+        );
+
+        const valorAtual = Number(
+          (Number(ativo.quantidade || 0) * precoAtual).toFixed(2)
+        );
+
+        return {
+          ...ativo,
+          nome: clube?.nome || ativo.nomeClube || 'Desconhecido',
+          nomeClube: clube?.nome || ativo.nomeClube || 'Desconhecido',
+          escudo: clube?.escudo || '',
+          precoAtual,
+          valorAtual,
+        };
+      });
+
+    // 3. Sincroniza user.carteira com a carteira reconstruída
+    await User.findByIdAndUpdate(req.usuario.id, {
+      $set: {
+        carteira: carteiraDetalhada.map((a) => ({
+          clubeId: Number(a.clubeId),
+          nomeClube: a.nomeClube || a.nome,
+          quantidade: Number(a.quantidade || 0),
+          precoMedio: Number(a.precoMedio || 0),
+          totalInvestido: Number(a.totalInvestido || 0),
+        })),
+      },
     });
 
-    res.json(carteiraDetalhada);
+    return res.json(carteiraDetalhada);
   } catch (err) {
     console.error('Erro ao buscar carteira:', err);
-    res.status(500).json({ erro: 'Erro interno ao buscar carteira' });
+    return res.status(500).json({ erro: 'Erro interno ao buscar carteira' });
   }
 });
 
