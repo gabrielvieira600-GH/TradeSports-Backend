@@ -150,6 +150,83 @@ const UserSchema = new mongoose.Schema(
   }
 );
 
+function normalizarAtivoCarteira(ativo) {
+  if (!ativo) return null;
+
+  const obj = ativo.toObject ? ativo.toObject() : ativo;
+
+  const clubeIdRaw =
+    obj.clubeId ??
+    obj.clubeLegacyId ??
+    obj.idClube ??
+    obj.clube?.id ??
+    obj.clube?.legacyId ??
+    obj.clube?._id;
+
+  const clubeId = Number(clubeIdRaw);
+
+  if (!Number.isFinite(clubeId) || clubeId <= 0) {
+    return null;
+  }
+
+  const quantidade = Number(obj.quantidade ?? obj.cotas ?? 0);
+
+  if (!Number.isFinite(quantidade) || quantidade <= 0) {
+    return null;
+  }
+
+  const precoMedio = Number(obj.precoMedio ?? obj.valorUnitario ?? obj.preco ?? 0);
+  const totalInvestidoRaw =
+    obj.totalInvestido != null
+      ? Number(obj.totalInvestido)
+      : Number(quantidade) * Number(precoMedio || 0);
+
+  return {
+    clubeId,
+    nomeClube: obj.nomeClube || obj.clubeNome || obj.nome || obj.clube?.nome || '',
+    quantidade,
+    precoMedio: Number(Number(precoMedio || 0).toFixed(2)),
+    totalInvestido: Number(Number(totalInvestidoRaw || 0).toFixed(2)),
+  };
+}
+
+function normalizarCarteira(carteira) {
+  const arr = Array.isArray(carteira) ? carteira : [];
+  const mapa = new Map();
+
+  for (const ativo of arr) {
+    const normalizado = normalizarAtivoCarteira(ativo);
+    if (!normalizado) continue;
+
+    const key = String(normalizado.clubeId);
+    const atual = mapa.get(key);
+
+    if (!atual) {
+      mapa.set(key, normalizado);
+      continue;
+    }
+
+    const qtdTotal = Number(atual.quantidade || 0) + Number(normalizado.quantidade || 0);
+    const totalInvestido =
+      Number(atual.totalInvestido || 0) + Number(normalizado.totalInvestido || 0);
+
+    mapa.set(key, {
+      clubeId: normalizado.clubeId,
+      nomeClube: atual.nomeClube || normalizado.nomeClube,
+      quantidade: qtdTotal,
+      totalInvestido: Number(totalInvestido.toFixed(2)),
+      precoMedio: qtdTotal > 0 ? Number((totalInvestido / qtdTotal).toFixed(2)) : 0,
+    });
+  }
+
+  return Array.from(mapa.values());
+}
+
+UserSchema.pre('validate', function (next) {
+  this.carteira = normalizarCarteira(this.carteira);
+  next();
+});
+
 UserSchema.pre('save', function (next) {
   if (this.admin === true || this.role === 'admin') {
     this.role = 'admin';
