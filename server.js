@@ -421,39 +421,102 @@ function ensureUserNotificationFields(user) {
 async function synthesizeWatchlistNotifications(user) {
   ensureUserNotificationFields(user);
 
-  const clubesWatch = Array.isArray(user.watchlist?.clubes) ? user.watchlist.clubes : [];
-  if (!clubesWatch.length) return;
+  const clubesWatch = Array.isArray(user.watchlist?.clubes)
+    ? user.watchlist.clubes
+    : [];
+
+  if (!clubesWatch.length) return false;
 
   const legacyIds = clubesWatch
     .map((c) => Number(c.id))
     .filter((id) => Number.isFinite(id));
 
+  if (!legacyIds.length) return false;
+
   const clubes = await Club.find({ legacyId: { $in: legacyIds } }).lean();
+
+  let mudou = false;
+
+  if (!user.alertState || typeof user.alertState !== 'object') {
+    user.alertState = { clubPrices: {} };
+    mudou = true;
+  }
+
+  if (!user.alertState.clubPrices || typeof user.alertState.clubPrices !== 'object') {
+    user.alertState.clubPrices = {};
+    mudou = true;
+  }
+
+  user.notificacoes = Array.isArray(user.notificacoes) ? user.notificacoes : [];
 
   for (const clube of clubes) {
     const key = String(clube.legacyId);
     const precoAtual = Number(clube.precoAtual ?? clube.preco ?? 0);
-    const anterior = Number(user.alertState?.clubPrices?.[key] ?? precoAtual);
 
-    if (precoAtual !== anterior) {
+    if (!Number.isFinite(precoAtual) || precoAtual <= 0) continue;
+
+    const anteriorRaw = user.alertState.clubPrices[key];
+
+    // Primeira vez: apenas registra o preço-base, sem criar notificação.
+    if (anteriorRaw === undefined || anteriorRaw === null) {
+      user.alertState.clubPrices[key] = precoAtual;
+      mudou = true;
+      continue;
+    }
+
+    const anterior = Number(anteriorRaw);
+
+    // Sem mudança real de preço: não cria notificação.
+    if (Number(anterior.toFixed(2)) === Number(precoAtual.toFixed(2))) {
+      continue;
+    }
+
+    const notificationKey = `price:${key}:${precoAtual.toFixed(2)}`;
+
+    const jaExiste = user.notificacoes.some((n) => {
+      const meta = n?.metadata || {};
+      return (
+        String(meta.notificationKey || '') === notificationKey ||
+        (
+          String(meta.clubeId) === key &&
+          Number(meta.precoAtual || 0).toFixed(2) === precoAtual.toFixed(2) &&
+          String(n.title || '') === 'Preço atualizado'
+        )
+      );
+    });
+
+    if (!jaExiste) {
       user.notificacoes.unshift({
-        id: `price_${key}_${Date.now()}`,
+        id: `price_${key}_${precoAtual.toFixed(2)}_${Date.now()}`,
         title: 'Preço atualizado',
         body: `${clube.nome} agora está em R$ ${precoAtual.toFixed(2)}.`,
         read: false,
         createdAt: new Date(),
         metadata: {
+          notificationKey,
           clubeId: clube.legacyId,
+          clubeNome: clube.nome,
           precoAnterior: anterior,
           precoAtual,
         },
       });
+
+      mudou = true;
     }
 
+    // Atualiza o estado mesmo se a notificação já existia.
     user.alertState.clubPrices[key] = precoAtual;
+    mudou = true;
   }
 
   user.notificacoes = user.notificacoes.slice(0, 100);
+
+  if (mudou) {
+    user.markModified('alertState');
+    user.markModified('notificacoes');
+  }
+
+  return mudou;
 }
 
 app.get('/notifications', auth, async (req, res) => {
