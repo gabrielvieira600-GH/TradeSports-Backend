@@ -229,6 +229,91 @@ async function criarRegistroInvestment({
 
 }
 
+router.get('/livro', async (req, res) => {
+  try {
+    const clubeLegacyId = Number(req.query.clubeId);
+
+    if (!Number.isInteger(clubeLegacyId) || clubeLegacyId <= 0) {
+      return res.status(400).json({ erro: 'clubeId inválido.' });
+    }
+
+    const clube = await Club.findOne({ legacyId: clubeLegacyId }).lean();
+
+    if (!clube) {
+      return res.status(404).json({ erro: 'Clube não encontrado.' });
+    }
+
+    const ordens = await Order.find({
+      clubeLegacyId,
+      status: { $in: ['aberta', 'parcial'] },
+      restante: { $gt: 0 },
+    })
+      .sort({ tipo: 1, preco: 1, criadoEm: 1 })
+      .lean();
+
+    const compras = ordens
+      .filter((o) => o.tipo === 'compra')
+      .sort(
+        (a, b) =>
+          Number(b.preco) - Number(a.preco) ||
+          new Date(a.criadoEm) - new Date(b.criadoEm)
+      )
+      .map((o) => ({
+        id: String(o._id),
+        usuarioId: String(o.usuarioId),
+        clubeId: o.clubeLegacyId,
+        tipo: o.tipo,
+        preco: round2(o.preco),
+        quantidade: Number(o.quantidade || 0),
+        restante: Number(o.restante || 0),
+        status: o.status,
+        criadoEm: o.criadoEm,
+      }));
+
+    const vendas = ordens
+      .filter((o) => o.tipo === 'venda')
+      .sort(
+        (a, b) =>
+          Number(a.preco) - Number(b.preco) ||
+          new Date(a.criadoEm) - new Date(b.criadoEm)
+      )
+      .map((o) => ({
+        id: String(o._id),
+        usuarioId: String(o.usuarioId),
+        clubeId: o.clubeLegacyId,
+        tipo: o.tipo,
+        preco: round2(o.preco),
+        quantidade: Number(o.quantidade || 0),
+        restante: Number(o.restante || 0),
+        status: o.status,
+        criadoEm: o.criadoEm,
+      }));
+
+    return res.json({
+      clube: {
+        id: clube.legacyId,
+        nome: clube.nome,
+        precoAtual: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
+        ipoEncerrado: Boolean(clube.ipoEncerrado),
+      },
+
+      compras,
+      vendas,
+
+      // compatibilidade com componentes antigos
+      compra: compras,
+      venda: vendas,
+
+      melhorCompra: compras.length ? round2(compras[0].preco) : null,
+      melhorVenda: vendas.length ? round2(vendas[0].preco) : null,
+      ultimoPreco: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
+    });
+  } catch (err) {
+    console.error('Erro ao carregar livro de ordens:', err);
+    return res.status(500).json({ erro: 'Erro ao carregar livro de ordens.' });
+  }
+});
+
 router.get('/livro/:clubeId', async (req, res) => {
 
   try {
