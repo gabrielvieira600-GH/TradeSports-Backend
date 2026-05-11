@@ -493,11 +493,13 @@ async function synthesizeWatchlistNotifications(user) {
         read: false,
         createdAt: new Date(),
         metadata: {
-          notificationKey,
-          clubeId: clube.legacyId,
-          clubeNome: clube.nome,
-          precoAnterior: anterior,
-          precoAtual,
+        notificationKey,
+        clubeId: clube.legacyId,
+        clubeNome: clube.nome,
+        precoAnterior: anterior,
+        precoAtual,
+        targetUrl: `/clube/${clube.legacyId}`,
+        entityType: 'clube',
         },
       });
 
