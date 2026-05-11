@@ -15,6 +15,8 @@ const Order = require('../models/Order');
 
 const Investment = require('../models/Investment');
 
+const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
+
 const MAKER_FEE = 0.002; // 0.20%
 
 const TAKER_FEE = 0.005; // 0.50%
@@ -647,13 +649,26 @@ router.post('/ordem', auth, async (req, res) => {
         seller.markModified('carteira');
         
         creditaCompra(buyer, clubeLegacyId, clube.nome, qtdExec, precoExec);
+
+        autoFavoritarClubeAoComprar(buyer, clube, {
+        ligaId: 'brasileirao-a',
+        ligaNome: 'Brasileirão Série A',
+        criarNotificacao: true,
+        });
+
+        buyer.saldo = round2(Number(buyer.saldo || 0) - custoBuyer);
+        seller.saldo = round2(Number(seller.saldo || 0) + creditoSeller);
         
         buyer.markModified('carteira');
         buyer.saldo = round2(Number(buyer.saldo || 0) - custoBuyer);
         seller.saldo = round2(Number(seller.saldo || 0) + creditoSeller);
 
         buyer.markModified('carteira');
-        seller.markModified('carteira');
+        buyer.markModified('watchlist');
+        buyer.markModified('alertState');
+        buyer.markModified('notificacoes');
+
+seller.markModified('carteira');
 
         ordem.restante = Number(ordem.restante || 0) - qtdExec;
         contraparte.restante = Number(contraparte.restante || 0) - qtdExec;

@@ -421,6 +421,8 @@ function ensureUserNotificationFields(user) {
 async function synthesizeWatchlistNotifications(user) {
   ensureUserNotificationFields(user);
 
+  const THRESHOLD_PERCENT = 3;
+
   const clubesWatch = Array.isArray(user.watchlist?.clubes)
     ? user.watchlist.clubes
     : [];
@@ -457,57 +459,81 @@ async function synthesizeWatchlistNotifications(user) {
 
     const anteriorRaw = user.alertState.clubPrices[key];
 
-    // Primeira vez: apenas registra o preço-base, sem criar notificação.
+    // Primeira vez: registra o preço-base, mas não notifica.
     if (anteriorRaw === undefined || anteriorRaw === null) {
       user.alertState.clubPrices[key] = precoAtual;
       mudou = true;
       continue;
     }
 
-    const anterior = Number(anteriorRaw);
+    const precoAnterior = Number(anteriorRaw);
 
-    // Sem mudança real de preço: não cria notificação.
-    if (Number(anterior.toFixed(2)) === Number(precoAtual.toFixed(2))) {
+    if (!Number.isFinite(precoAnterior) || precoAnterior <= 0) {
+      user.alertState.clubPrices[key] = precoAtual;
+      mudou = true;
       continue;
     }
 
-    const notificationKey = `price:${key}:${precoAtual.toFixed(2)}`;
+    const variacaoPercentual = ((precoAtual - precoAnterior) / precoAnterior) * 100;
+    const variacaoAbs = Math.abs(variacaoPercentual);
+
+    // Só notifica se a alteração for acima de 3%.
+    // Importante: se for menor que 3%, NÃO atualiza o preço-base.
+    // Assim, pequenas alterações acumuladas também podem disparar alerta depois.
+    if (variacaoAbs < THRESHOLD_PERCENT) {
+      continue;
+    }
+
+    const subiu = variacaoPercentual > 0;
+    const direcao = subiu ? 'subiu' : 'caiu';
+    const tipo = subiu ? 'PRICE_UP' : 'PRICE_DOWN';
+
+    const variacaoFormatada = Number(variacaoAbs.toFixed(2));
+    const precoAtualFormatado = Number(precoAtual.toFixed(2));
+    const precoAnteriorFormatado = Number(precoAnterior.toFixed(2));
+
+    const notificationKey = `price:${key}:${tipo}:${precoAtualFormatado.toFixed(2)}`;
 
     const jaExiste = user.notificacoes.some((n) => {
       const meta = n?.metadata || {};
+
       return (
         String(meta.notificationKey || '') === notificationKey ||
         (
           String(meta.clubeId) === key &&
-          Number(meta.precoAtual || 0).toFixed(2) === precoAtual.toFixed(2) &&
-          String(n.title || '') === 'Preço atualizado'
+          String(meta.tipo || '') === tipo &&
+          Number(meta.precoAtual || 0).toFixed(2) === precoAtualFormatado.toFixed(2)
         )
       );
     });
 
     if (!jaExiste) {
       user.notificacoes.unshift({
-        id: `price_${key}_${precoAtual.toFixed(2)}_${Date.now()}`,
-        title: 'Preço atualizado',
-        body: `${clube.nome} agora está em R$ ${precoAtual.toFixed(2)}.`,
+        id: `price_${key}_${tipo}_${precoAtualFormatado.toFixed(2)}_${Date.now()}`,
+        title: `${clube.nome} ${direcao} ${variacaoFormatada.toFixed(2)}%`,
+        body: `Novo preço de mercado: R$ ${precoAtualFormatado.toFixed(2)}.`,
         read: false,
         createdAt: new Date(),
         metadata: {
-        notificationKey,
-        clubeId: clube.legacyId,
-        clubeNome: clube.nome,
-        precoAnterior: anterior,
-        precoAtual,
-        targetUrl: `/clube/${clube.legacyId}`,
-        entityType: 'clube',
+          notificationKey,
+          tipo,
+          entityType: 'clube',
+          clubeId: clube.legacyId,
+          clubeNome: clube.nome,
+          precoAnterior: precoAnteriorFormatado,
+          precoAtual: precoAtualFormatado,
+          variacaoPercentual: Number(variacaoPercentual.toFixed(4)),
+          variacaoAbsoluta: variacaoFormatada,
+          thresholdPercent: THRESHOLD_PERCENT,
+          targetUrl: `/clube/${clube.legacyId}`,
         },
       });
 
       mudou = true;
     }
 
-    // Atualiza o estado mesmo se a notificação já existia.
-    user.alertState.clubPrices[key] = precoAtual;
+    // Atualiza o preço-base somente quando a variação bate o gatilho.
+    user.alertState.clubPrices[key] = precoAtualFormatado;
     mudou = true;
   }
 

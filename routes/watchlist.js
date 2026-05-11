@@ -17,6 +17,14 @@ function ensureWatchlist(user) {
   if (!Array.isArray(user.watchlist.ligas)) {
     user.watchlist.ligas = [];
   }
+
+  if (!Array.isArray(user.notificacoes)) {
+    user.notificacoes = [];
+  }
+}
+
+function criarIdNotificacao(prefix = 'notif') {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function normalizarItem({ entityId, nome, ligaId, ligaNome }) {
@@ -26,6 +34,47 @@ function normalizarItem({ entityId, nome, ligaId, ligaNome }) {
     ligaId: ligaId || null,
     ligaNome: ligaNome || null,
   };
+}
+
+function adicionarNotificacaoFavorito(user, { entityType, entityId, nome, ligaNome }) {
+  const isClube = entityType === 'clube';
+  const idStr = String(entityId);
+
+  const notificationKey = `watchlist:${entityType}:${idStr}:favoritado`;
+
+  const jaExiste = user.notificacoes.some((n) => {
+    const meta = n?.metadata || {};
+    return String(meta.notificationKey || '') === notificationKey;
+  });
+
+  if (jaExiste) return;
+
+  const title = isClube ? 'Clube favoritado' : 'Liga favoritada';
+
+  const body = isClube
+    ? `${nome || 'Clube'} foi adicionado à sua lista de favoritos. Você receberá alertas sobre movimentações de preço.`
+    : `${nome || 'Liga'} foi adicionada à sua lista de favoritos.`;
+
+  user.notificacoes.unshift({
+    id: criarIdNotificacao('watchlist'),
+    title,
+    body,
+    read: false,
+    createdAt: new Date(),
+    metadata: {
+      notificationKey,
+      entityType,
+      entityId: idStr,
+      clubeId: isClube ? idStr : null,
+      clubeNome: isClube ? nome || '' : null,
+      ligaNome: ligaNome || null,
+      targetUrl: isClube ? `/clube/${idStr}` : null,
+      tipo: 'WATCHLIST_FAVORITED',
+    },
+  });
+
+  user.notificacoes = user.notificacoes.slice(0, 100);
+  user.markModified('notificacoes');
 }
 
 router.get('/', auth, async (req, res) => {
@@ -88,7 +137,15 @@ router.post('/toggle', auth, async (req, res) => {
           ligaNome,
         })
       );
+
       favoritado = true;
+
+      adicionarNotificacaoFavorito(user, {
+        entityType,
+        entityId,
+        nome,
+        ligaNome,
+      });
     }
 
     user.watchlist[campo] = lista;
@@ -100,6 +157,7 @@ router.post('/toggle', auth, async (req, res) => {
       ok: true,
       favoritado,
       watchlist: user.watchlist,
+      unreadCount: user.notificacoes.filter((n) => !n.read).length,
     });
   } catch (err) {
     console.error('[WATCHLIST TOGGLE] erro:', err);

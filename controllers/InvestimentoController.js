@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Club = require('../models/Club');
 const Investment = require('../models/Investment');
+const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
 
 function round2(n) {
   return Number(Number(n || 0).toFixed(2));
@@ -136,7 +137,13 @@ async function comprarCota(req, res) {
 
       atualizarCarteiraCompra(usuario, clube, quantidade, precoUnitario);
 
-      clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
+      autoFavoritarClubeAoComprar(usuario, clube, {
+      ligaId: 'brasileirao-a',
+      ligaNome: 'Brasileirão Série A',
+      criarNotificacao: true,
+      });
+
+clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
       clube.cotasEmitidas = Number(clube.cotasEmitidas || 0) + quantidade;
       clube.precoAtual = precoUnitario;
 
