@@ -568,7 +568,7 @@ router.get('/tabela-brasileirao', async (req, res) => {
 
         league: 71,
 
-        season: 2020,
+        season: 2024,
 
       },
 
