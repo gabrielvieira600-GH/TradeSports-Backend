@@ -573,7 +573,10 @@ router.get('/tabela-brasileirao', async (req, res) => {
       },
 
     });
-
+      console.log(
+  '[API-FOOTBALL RESPOSTA COMPLETA]',
+  JSON.stringify(response.data, null, 2)
+);
     const standings = response?.data?.response?.[0]?.league?.standings?.[0];
 
     if (!Array.isArray(standings)) {
