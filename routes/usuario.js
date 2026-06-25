@@ -79,6 +79,205 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// Ranking geral de usuários do mercado simulado
+router.get('/ranking', auth, async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 100)
+    );
+
+    const [usuarios, clubes] = await Promise.all([
+      User.find({
+        role: { $ne: 'admin' },
+        admin: { $ne: true },
+      })
+        .select(
+          '_id nome nomeUsuario saldo capitalInicial carteira createdAt'
+        )
+        .lean(),
+
+      Club.find({})
+        .select('legacyId precoAtual preco')
+        .lean(),
+    ]);
+
+    const precosPorClube = new Map(
+      clubes.map((clube) => [
+        String(clube.legacyId),
+        Number(clube.precoAtual ?? clube.preco ?? 0),
+      ])
+    );
+
+    const rankingCompleto = usuarios.map((usuario) => {
+      const capitalInicial = Number(usuario.capitalInicial ?? 1000);
+      const saldo = Number(usuario.saldo || 0);
+
+      const carteira = Array.isArray(usuario.carteira)
+        ? usuario.carteira
+        : [];
+
+      let valorPosicoes = 0;
+      let quantidadeUnidades = 0;
+      let quantidadePosicoes = 0;
+
+      for (const ativo of carteira) {
+        const clubeId = Number(
+          ativo.clubeId ??
+            ativo.clubeLegacyId ??
+            ativo.idClube ??
+            ativo.clube?.id ??
+            ativo.clube?.legacyId
+        );
+
+        const quantidade = Number(
+          ativo.quantidade ??
+            ativo.cotas ??
+            0
+        );
+
+        if (
+          !Number.isFinite(clubeId) ||
+          clubeId <= 0 ||
+          !Number.isFinite(quantidade) ||
+          quantidade <= 0
+        ) {
+          continue;
+        }
+
+        const precoAtualDoClube = precosPorClube.get(
+          String(clubeId)
+        );
+
+        const precoAtual = Number.isFinite(precoAtualDoClube)
+          ? precoAtualDoClube
+          : Number(
+              ativo.precoMedio ??
+                ativo.valorUnitario ??
+                0
+            );
+
+        valorPosicoes += quantidade * precoAtual;
+        quantidadeUnidades += quantidade;
+        quantidadePosicoes += 1;
+      }
+
+      valorPosicoes = Number(valorPosicoes.toFixed(2));
+
+      const patrimonio = Number(
+        (saldo + valorPosicoes).toFixed(2)
+      );
+
+      const resultado = Number(
+        (patrimonio - capitalInicial).toFixed(2)
+      );
+
+      const rentabilidade =
+        capitalInicial > 0
+          ? Number(
+              (
+                (resultado / capitalInicial) *
+                100
+              ).toFixed(2)
+            )
+          : 0;
+
+      return {
+        usuarioId: String(usuario._id),
+        nome: usuario.nome || '',
+        nomeUsuario: usuario.nomeUsuario || '',
+
+        capitalInicial: Number(
+          capitalInicial.toFixed(2)
+        ),
+
+        saldo: Number(saldo.toFixed(2)),
+
+        valorPosicoes,
+        patrimonio,
+        resultado,
+        rentabilidade,
+        quantidadePosicoes,
+
+        quantidadeUnidades: Number(
+          quantidadeUnidades.toFixed(4)
+        ),
+
+        criadoEm: usuario.createdAt || null,
+      };
+    });
+
+    rankingCompleto.sort((a, b) => {
+      if (b.patrimonio !== a.patrimonio) {
+        return b.patrimonio - a.patrimonio;
+      }
+
+      if (b.rentabilidade !== a.rentabilidade) {
+        return b.rentabilidade - a.rentabilidade;
+      }
+
+      return String(a.nomeUsuario).localeCompare(
+        String(b.nomeUsuario),
+        'pt-BR'
+      );
+    });
+
+    const rankingPosicionado = rankingCompleto.map(
+      (item, index) => ({
+        posicao: index + 1,
+        ...item,
+      })
+    );
+
+    const totalUsuarios = rankingPosicionado.length;
+
+    const totalPages = Math.max(
+      1,
+      Math.ceil(totalUsuarios / limit)
+    );
+
+    const inicio = (page - 1) * limit;
+    const fim = inicio + limit;
+
+    const usuarioAtual =
+      rankingPosicionado.find(
+        (item) =>
+          item.usuarioId ===
+          String(req.usuario.id)
+      ) || null;
+
+    return res.json({
+      moeda: 'T$',
+      criterio: 'PATRIMONIO_TOTAL',
+      capitalInicialPadrao: 1000,
+
+      page,
+      limit,
+      totalPages,
+      totalUsuarios,
+
+      usuarioAtual,
+
+      ranking: rankingPosicionado.slice(
+        inicio,
+        fim
+      ),
+    });
+  } catch (err) {
+    console.error(
+      'Erro ao gerar ranking de usuários:',
+      err
+    );
+
+    return res.status(500).json({
+      erro:
+        'Erro interno ao gerar ranking de usuários.',
+    });
+  }
+});
+
 router.get('/dividendos', auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();

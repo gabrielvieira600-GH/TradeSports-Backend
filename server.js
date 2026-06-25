@@ -53,6 +53,7 @@ const app = express();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 4001;
+const CAPITAL_INICIAL_SIMULADO = 1000;
 
 if (!JWT_SECRET) {
   console.warn('[SEGURANCA] JWT_SECRET não definido no .env.');
@@ -286,7 +287,8 @@ app.post('/cadastro', async (req, res) => {
       genero: genero || null,
       nomeUsuario: nomeUsuarioNormalizado,
       senha: hashSenha,
-      saldo: 0,
+      capitalInicial: CAPITAL_INICIAL_SIMULADO,
+      saldo: CAPITAL_INICIAL_SIMULADO,
       carteira: [],
       historico: [],
       transacoes: [],
@@ -511,7 +513,7 @@ async function synthesizeWatchlistNotifications(user) {
       user.notificacoes.unshift({
         id: `price_${key}_${tipo}_${precoAtualFormatado.toFixed(2)}_${Date.now()}`,
         title: `${clube.nome} ${direcao} ${variacaoFormatada.toFixed(2)}%`,
-        body: `Novo preço de mercado: R$ ${precoAtualFormatado.toFixed(2)}.`,
+        body: `Novo preço de mercado: T$ ${precoAtualFormatado.toFixed(2)}.`,
         read: false,
         createdAt: new Date(),
         metadata: {

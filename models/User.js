@@ -87,7 +87,8 @@ const UserSchema = new mongoose.Schema(
 
     senha: { type: String, required: true },
 
-    saldo: { type: Number, default: 0 },
+    capitalInicial: { type: Number, default: 1000 },
+    saldo: { type: Number, default: 1000 },
 
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     admin: { type: Boolean, default: false },
@@ -244,3 +245,4 @@ UserSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
+
