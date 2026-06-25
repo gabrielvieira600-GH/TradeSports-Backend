@@ -90,10 +90,7 @@ router.get('/ranking', auth, async (req, res) => {
     );
 
     const [usuarios, clubes] = await Promise.all([
-      User.find({
-        role: { $ne: 'admin' },
-        admin: { $ne: true },
-      })
+      User.find({})
         .select(
           '_id nome nomeUsuario saldo capitalInicial carteira createdAt'
         )
