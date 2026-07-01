@@ -90,9 +90,24 @@ router.get('/ranking', auth, async (req, res) => {
     );
 
     const [usuarios, clubes] = await Promise.all([
-      User.find({})
+      User.find({
+        rankingAtivo: { $ne: false },
+      })
         .select(
-          '_id nome nomeUsuario saldo capitalInicial carteira createdAt'
+          [
+            '_id',
+            'nome',
+            'nomeUsuario',
+            'saldo',
+            'capitalInicial',
+            'carteira',
+            'createdAt',
+            'temporadaRanking',
+            'patrimonioInicialTemporada',
+            'saldoInicialTemporada',
+            'inicioTemporadaRanking',
+            'rankingAtivo',
+          ].join(' ')
         )
         .lean(),
 
@@ -109,7 +124,6 @@ router.get('/ranking', auth, async (req, res) => {
     );
 
     const rankingCompleto = usuarios.map((usuario) => {
-      const capitalInicial = Number(usuario.capitalInicial ?? 1000);
       const saldo = Number(usuario.saldo || 0);
 
       const carteira = Array.isArray(usuario.carteira)
@@ -167,15 +181,32 @@ router.get('/ranking', auth, async (req, res) => {
         (saldo + valorPosicoes).toFixed(2)
       );
 
+      const patrimonioInicialTemporadaRaw = Number(
+        usuario.patrimonioInicialTemporada
+      );
+
+      const temporadaInicializada =
+        Boolean(usuario.temporadaRanking) &&
+        Number.isFinite(patrimonioInicialTemporadaRaw) &&
+        patrimonioInicialTemporadaRaw > 0;
+
+      const patrimonioInicialTemporada = temporadaInicializada
+        ? patrimonioInicialTemporadaRaw
+        : Number(usuario.capitalInicial ?? 1000);
+
       const resultado = Number(
-        (patrimonio - capitalInicial).toFixed(2)
+        (
+          patrimonio -
+          patrimonioInicialTemporada
+        ).toFixed(2)
       );
 
       const rentabilidade =
-        capitalInicial > 0
+        patrimonioInicialTemporada > 0
           ? Number(
               (
-                (resultado / capitalInicial) *
+                (resultado /
+                  patrimonioInicialTemporada) *
                 100
               ).toFixed(2)
             )
@@ -186,12 +217,34 @@ router.get('/ranking', auth, async (req, res) => {
         nome: usuario.nome || '',
         nomeUsuario: usuario.nomeUsuario || '',
 
+        temporadaRanking:
+          usuario.temporadaRanking || null,
+
+        temporadaInicializada,
+
         capitalInicial: Number(
-          capitalInicial.toFixed(2)
+          Number(
+            usuario.capitalInicial ?? 1000
+          ).toFixed(2)
         ),
 
-        saldo: Number(saldo.toFixed(2)),
+        saldoInicialTemporada:
+          usuario.saldoInicialTemporada != null
+            ? Number(
+                Number(
+                  usuario.saldoInicialTemporada
+                ).toFixed(2)
+              )
+            : null,
 
+        patrimonioInicialTemporada: Number(
+          patrimonioInicialTemporada.toFixed(2)
+        ),
+
+        inicioTemporadaRanking:
+          usuario.inicioTemporadaRanking || null,
+
+        saldo: Number(saldo.toFixed(2)),
         valorPosicoes,
         patrimonio,
         resultado,
@@ -207,12 +260,16 @@ router.get('/ranking', auth, async (req, res) => {
     });
 
     rankingCompleto.sort((a, b) => {
-      if (b.patrimonio !== a.patrimonio) {
-        return b.patrimonio - a.patrimonio;
-      }
-
       if (b.rentabilidade !== a.rentabilidade) {
         return b.rentabilidade - a.rentabilidade;
+      }
+
+      if (b.resultado !== a.resultado) {
+        return b.resultado - a.resultado;
+      }
+
+      if (b.patrimonio !== a.patrimonio) {
+        return b.patrimonio - a.patrimonio;
       }
 
       return String(a.nomeUsuario).localeCompare(
@@ -245,10 +302,19 @@ router.get('/ranking', auth, async (req, res) => {
           String(req.usuario.id)
       ) || null;
 
+    const temporadasAtivas = [
+      ...new Set(
+        rankingPosicionado
+          .map((item) => item.temporadaRanking)
+          .filter(Boolean)
+      ),
+    ];
+
     return res.json({
       moeda: 'T$',
-      criterio: 'PATRIMONIO_TOTAL',
+      criterio: 'RENTABILIDADE_TEMPORADA',
       capitalInicialPadrao: 1000,
+      temporadasAtivas,
 
       page,
       limit,

@@ -88,8 +88,34 @@ const UserSchema = new mongoose.Schema(
     senha: { type: String, required: true },
 
     capitalInicial: { type: Number, default: 1000 },
-    saldo: { type: Number, default: 1000 },
+saldo: { type: Number, default: 1000 },
 
+temporadaRanking: {
+  type: String,
+  default: null,
+  index: true,
+},
+
+patrimonioInicialTemporada: {
+  type: Number,
+  default: null,
+},
+
+saldoInicialTemporada: {
+  type: Number,
+  default: null,
+},
+
+inicioTemporadaRanking: {
+  type: Date,
+  default: null,
+},
+
+rankingAtivo: {
+  type: Boolean,
+  default: true,
+},
+    
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     admin: { type: Boolean, default: false },
 
