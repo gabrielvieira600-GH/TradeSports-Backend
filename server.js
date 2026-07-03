@@ -43,6 +43,7 @@ const ordemRoutes = require('./routes/ordens');
 const classificacaoRoutes = require('./routes/classificacao');
 const depositoRoutes = require('./routes/deposito');
 const saqueRoutes = require('./routes/saque');
+const temporadaRoutes = require('./routes/temporada');
 
 let watchlistRoutes = null;
 try {
@@ -194,6 +195,7 @@ app.use('/ordens', ordemRoutes);
 app.use('/usuario', usuarioRoutes);
 app.use('/deposito', depositoRoutes);
 app.use('/saque', saqueRoutes);
+app.use('/temporada', temporadaRoutes);
 
 if (watchlistRoutes) {
   app.use('/watchlist', watchlistRoutes);

@@ -115,7 +115,29 @@ rankingAtivo: {
   type: Boolean,
   default: true,
 },
-    
+
+plano: {
+  type: String,
+  enum: ['lite', 'premium'],
+  default: 'lite',
+  index: true,
+},
+
+premiumAtivo: {
+  type: Boolean,
+  default: false,
+},
+
+premiumInicio: {
+  type: Date,
+  default: null,
+},
+
+premiumFim: {
+  type: Date,
+  default: null,
+},
+
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     admin: { type: Boolean, default: false },
 

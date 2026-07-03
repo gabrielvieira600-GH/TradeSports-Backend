@@ -9,6 +9,9 @@ const Club = require('../models/Club');
 const jwt = require('jsonwebtoken');
 const Order = require('../models/Order');
 const antifraude = require('../utils/antifraude');
+const {
+  obterResumoDoPlano,
+} = require('../utils/planFeatures');
 
 async function obterAntifraudeState() {
   if (typeof antifraude.getStateSnapshot === 'function') {
@@ -76,6 +79,45 @@ router.get('/', auth, async (req, res) => {
   } catch (err) {
     console.error('Erro ao obter usuário:', err);
     res.status(500).json({ erro: 'Erro interno ao obter usuário.' });
+  }
+});
+
+router.get('/plano', auth, async (req, res) => {
+  try {
+    const usuario = await User.findById(
+      req.usuario.id
+    )
+      .select(
+        [
+          '_id',
+          'plano',
+          'premiumAtivo',
+          'premiumInicio',
+          'premiumFim',
+        ].join(' ')
+      )
+      .lean();
+
+    if (!usuario) {
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
+      });
+    }
+
+    const resumoPlano =
+      obterResumoDoPlano(usuario);
+
+    return res.json(resumoPlano);
+  } catch (err) {
+    console.error(
+      'Erro ao obter plano do usuário:',
+      err
+    );
+
+    return res.status(500).json({
+      erro:
+        'Erro interno ao obter plano do usuário.',
+    });
   }
 });
 
