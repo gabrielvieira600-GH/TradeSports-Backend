@@ -11,6 +11,7 @@ const Order = require('../models/Order');
 const antifraude = require('../utils/antifraude');
 const {
   obterResumoDoPlano,
+  obterPlanoEfetivo,
 } = require('../utils/planFeatures');
 
 async function obterAntifraudeState() {
@@ -121,15 +122,44 @@ router.get('/plano', auth, async (req, res) => {
   }
 });
 
-// Ranking geral de usuários do mercado simulado
+// Ranking geral, Lite e Premium do mercado simulado
 router.get('/ranking', auth, async (req, res) => {
   try {
-    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const page = Math.max(
+      1,
+      Number.parseInt(req.query.page, 10) || 1
+    );
 
     const limit = Math.min(
       100,
-      Math.max(1, Number.parseInt(req.query.limit, 10) || 100)
+      Math.max(
+        1,
+        Number.parseInt(req.query.limit, 10) || 100
+      )
     );
+
+    const categoriasPermitidas = [
+      'geral',
+      'lite',
+      'premium',
+    ];
+
+    const categoriaSolicitada = String(
+      req.query.categoria || 'geral'
+    )
+      .trim()
+      .toLowerCase();
+
+    if (
+      !categoriasPermitidas.includes(
+        categoriaSolicitada
+      )
+    ) {
+      return res.status(400).json({
+        erro: 'Categoria de ranking inválida.',
+        categoriasPermitidas,
+      });
+    }
 
     const [usuarios, clubes] = await Promise.all([
       User.find({
@@ -149,26 +179,40 @@ router.get('/ranking', auth, async (req, res) => {
             'saldoInicialTemporada',
             'inicioTemporadaRanking',
             'rankingAtivo',
+            'plano',
+            'premiumAtivo',
+            'premiumInicio',
+            'premiumFim',
           ].join(' ')
         )
         .lean(),
 
       Club.find({})
-        .select('legacyId precoAtual preco')
+        .select(
+          'legacyId precoAtual preco'
+        )
         .lean(),
     ]);
 
     const precosPorClube = new Map(
       clubes.map((clube) => [
         String(clube.legacyId),
-        Number(clube.precoAtual ?? clube.preco ?? 0),
+        Number(
+          clube.precoAtual ??
+            clube.preco ??
+            0
+        ),
       ])
     );
 
-    const rankingCompleto = usuarios.map((usuario) => {
-      const saldo = Number(usuario.saldo || 0);
+    function calcularDadosRanking(usuario) {
+      const saldo = Number(
+        usuario.saldo || 0
+      );
 
-      const carteira = Array.isArray(usuario.carteira)
+      const carteira = Array.isArray(
+        usuario.carteira
+      )
         ? usuario.carteira
         : [];
 
@@ -200,41 +244,64 @@ router.get('/ranking', auth, async (req, res) => {
           continue;
         }
 
-        const precoAtualDoClube = precosPorClube.get(
-          String(clubeId)
-        );
+        const precoAtualDoClube =
+          precosPorClube.get(
+            String(clubeId)
+          );
 
-        const precoAtual = Number.isFinite(precoAtualDoClube)
-          ? precoAtualDoClube
-          : Number(
-              ativo.precoMedio ??
-                ativo.valorUnitario ??
-                0
-            );
+        const precoAtual =
+          Number.isFinite(
+            precoAtualDoClube
+          )
+            ? precoAtualDoClube
+            : Number(
+                ativo.precoMedio ??
+                  ativo.valorUnitario ??
+                  0
+              );
 
-        valorPosicoes += quantidade * precoAtual;
-        quantidadeUnidades += quantidade;
+        valorPosicoes +=
+          quantidade * precoAtual;
+
+        quantidadeUnidades +=
+          quantidade;
+
         quantidadePosicoes += 1;
       }
 
-      valorPosicoes = Number(valorPosicoes.toFixed(2));
+      valorPosicoes = Number(
+        valorPosicoes.toFixed(2)
+      );
 
       const patrimonio = Number(
-        (saldo + valorPosicoes).toFixed(2)
+        (
+          saldo +
+          valorPosicoes
+        ).toFixed(2)
       );
 
-      const patrimonioInicialTemporadaRaw = Number(
-        usuario.patrimonioInicialTemporada
-      );
+      const patrimonioInicialTemporadaRaw =
+        Number(
+          usuario
+            .patrimonioInicialTemporada
+        );
 
       const temporadaInicializada =
-        Boolean(usuario.temporadaRanking) &&
-        Number.isFinite(patrimonioInicialTemporadaRaw) &&
+        Boolean(
+          usuario.temporadaRanking
+        ) &&
+        Number.isFinite(
+          patrimonioInicialTemporadaRaw
+        ) &&
         patrimonioInicialTemporadaRaw > 0;
 
-      const patrimonioInicialTemporada = temporadaInicializada
-        ? patrimonioInicialTemporadaRaw
-        : Number(usuario.capitalInicial ?? 1000);
+      const patrimonioInicialTemporada =
+        temporadaInicializada
+          ? patrimonioInicialTemporadaRaw
+          : Number(
+              usuario.capitalInicial ??
+                1000
+            );
 
       const resultado = Number(
         (
@@ -247,128 +314,364 @@ router.get('/ranking', auth, async (req, res) => {
         patrimonioInicialTemporada > 0
           ? Number(
               (
-                (resultado /
-                  patrimonioInicialTemporada) *
-                100
+                (
+                  resultado /
+                  patrimonioInicialTemporada
+                ) * 100
               ).toFixed(2)
             )
           : 0;
 
+      const planoEfetivo =
+        obterPlanoEfetivo(usuario);
+
       return {
-        usuarioId: String(usuario._id),
-        nome: usuario.nome || '',
-        nomeUsuario: usuario.nomeUsuario || '',
+        usuarioId:
+          String(usuario._id),
+
+        nome:
+          usuario.nome || '',
+
+        nomeUsuario:
+          usuario.nomeUsuario || '',
+
+        plano:
+          planoEfetivo,
+
+        planoCadastrado:
+          usuario.plano || 'lite',
+
+        premiumAtivo:
+          planoEfetivo === 'premium',
 
         temporadaRanking:
-          usuario.temporadaRanking || null,
+          usuario.temporadaRanking ||
+          null,
 
         temporadaInicializada,
 
         capitalInicial: Number(
           Number(
-            usuario.capitalInicial ?? 1000
+            usuario.capitalInicial ??
+              1000
           ).toFixed(2)
         ),
 
         saldoInicialTemporada:
-          usuario.saldoInicialTemporada != null
+          usuario
+            .saldoInicialTemporada !=
+          null
             ? Number(
                 Number(
-                  usuario.saldoInicialTemporada
+                  usuario
+                    .saldoInicialTemporada
                 ).toFixed(2)
               )
             : null,
 
-        patrimonioInicialTemporada: Number(
-          patrimonioInicialTemporada.toFixed(2)
-        ),
+        patrimonioInicialTemporada:
+          Number(
+            patrimonioInicialTemporada.toFixed(
+              2
+            )
+          ),
 
         inicioTemporadaRanking:
-          usuario.inicioTemporadaRanking || null,
+          usuario
+            .inicioTemporadaRanking ||
+          null,
 
-        saldo: Number(saldo.toFixed(2)),
+        saldo:
+          Number(saldo.toFixed(2)),
+
         valorPosicoes,
+
         patrimonio,
+
         resultado,
+
         rentabilidade,
+
         quantidadePosicoes,
 
         quantidadeUnidades: Number(
           quantidadeUnidades.toFixed(4)
         ),
 
-        criadoEm: usuario.createdAt || null,
+        criadoEm:
+          usuario.createdAt || null,
       };
-    });
+    }
 
-    rankingCompleto.sort((a, b) => {
-      if (b.rentabilidade !== a.rentabilidade) {
-        return b.rentabilidade - a.rentabilidade;
+    function ordenarRanking(a, b) {
+      if (
+        b.rentabilidade !==
+        a.rentabilidade
+      ) {
+        return (
+          b.rentabilidade -
+          a.rentabilidade
+        );
       }
 
-      if (b.resultado !== a.resultado) {
-        return b.resultado - a.resultado;
+      if (
+        b.resultado !==
+        a.resultado
+      ) {
+        return (
+          b.resultado -
+          a.resultado
+        );
       }
 
-      if (b.patrimonio !== a.patrimonio) {
-        return b.patrimonio - a.patrimonio;
+      if (
+        b.patrimonio !==
+        a.patrimonio
+      ) {
+        return (
+          b.patrimonio -
+          a.patrimonio
+        );
       }
 
-      return String(a.nomeUsuario).localeCompare(
+      return String(
+        a.nomeUsuario
+      ).localeCompare(
         String(b.nomeUsuario),
         'pt-BR'
       );
-    });
+    }
 
-    const rankingPosicionado = rankingCompleto.map(
-      (item, index) => ({
-        posicao: index + 1,
-        ...item,
-      })
-    );
+    const rankingBase = usuarios
+      .map(calcularDadosRanking)
+      .sort(ordenarRanking);
 
-    const totalUsuarios = rankingPosicionado.length;
+    const rankingGeral =
+      rankingBase.map(
+        (item, index) => ({
+          ...item,
+          posicaoGeral:
+            index + 1,
+        })
+      );
 
-    const totalPages = Math.max(
-      1,
-      Math.ceil(totalUsuarios / limit)
-    );
+    const rankingLite =
+      rankingGeral
+        .filter(
+          (item) =>
+            item.plano === 'lite'
+        )
+        .map(
+          (item, index) => ({
+            ...item,
+            posicaoPlano:
+              index + 1,
+          })
+        );
 
-    const inicio = (page - 1) * limit;
-    const fim = inicio + limit;
+    const rankingPremium =
+      rankingGeral
+        .filter(
+          (item) =>
+            item.plano === 'premium'
+        )
+        .map(
+          (item, index) => ({
+            ...item,
+            posicaoPlano:
+              index + 1,
+          })
+        );
 
-    const usuarioAtual =
-      rankingPosicionado.find(
+    const posicaoPlanoPorUsuario =
+      new Map();
+
+    for (const item of [
+      ...rankingLite,
+      ...rankingPremium,
+    ]) {
+      posicaoPlanoPorUsuario.set(
+        item.usuarioId,
+        item.posicaoPlano
+      );
+    }
+
+    const rankingGeralCompleto =
+      rankingGeral.map(
+        (item) => ({
+          ...item,
+
+          posicao:
+            item.posicaoGeral,
+
+          posicaoPlano:
+            posicaoPlanoPorUsuario.get(
+              item.usuarioId
+            ) || null,
+        })
+      );
+
+    const rankingLiteCompleto =
+      rankingLite.map(
+        (item) => ({
+          ...item,
+
+          posicao:
+            item.posicaoPlano,
+        })
+      );
+
+    const rankingPremiumCompleto =
+      rankingPremium.map(
+        (item) => ({
+          ...item,
+
+          posicao:
+            item.posicaoPlano,
+        })
+      );
+
+    let rankingSelecionado =
+      rankingGeralCompleto;
+
+    if (
+      categoriaSolicitada === 'lite'
+    ) {
+      rankingSelecionado =
+        rankingLiteCompleto;
+    }
+
+    if (
+      categoriaSolicitada ===
+      'premium'
+    ) {
+      rankingSelecionado =
+        rankingPremiumCompleto;
+    }
+
+    const usuarioAtualGeral =
+      rankingGeralCompleto.find(
         (item) =>
           item.usuarioId ===
           String(req.usuario.id)
       ) || null;
 
+    const usuarioAtualCategoria =
+      rankingSelecionado.find(
+        (item) =>
+          item.usuarioId ===
+          String(req.usuario.id)
+      ) || null;
+
+    const planoUsuarioAtual =
+      usuarioAtualGeral?.plano ||
+      'lite';
+
+    const rankingDoPlanoAtual =
+      planoUsuarioAtual === 'premium'
+        ? rankingPremiumCompleto
+        : rankingLiteCompleto;
+
+    const usuarioAtualNoPlano =
+      rankingDoPlanoAtual.find(
+        (item) =>
+          item.usuarioId ===
+          String(req.usuario.id)
+      ) || null;
+
+    const totalUsuarios =
+      rankingSelecionado.length;
+
+    const totalPages = Math.max(
+      1,
+      Math.ceil(
+        totalUsuarios / limit
+      )
+    );
+
+    const pageNormalizada =
+      Math.min(page, totalPages);
+
+    const inicio =
+      (pageNormalizada - 1) *
+      limit;
+
+    const fim =
+      inicio + limit;
+
     const temporadasAtivas = [
       ...new Set(
-        rankingPosicionado
-          .map((item) => item.temporadaRanking)
+        rankingBase
+          .map(
+            (item) =>
+              item.temporadaRanking
+          )
           .filter(Boolean)
       ),
     ];
 
     return res.json({
       moeda: 'T$',
-      criterio: 'RENTABILIDADE_TEMPORADA',
+
+      criterio:
+        'RENTABILIDADE_TEMPORADA',
+
       capitalInicialPadrao: 1000,
+
+      categoria:
+        categoriaSolicitada,
+
+      categoriasPermitidas,
+
       temporadasAtivas,
 
-      page,
+      page:
+        pageNormalizada,
+
       limit,
+
       totalPages,
+
       totalUsuarios,
 
-      usuarioAtual,
+      totaisPorCategoria: {
+        geral:
+          rankingGeralCompleto.length,
 
-      ranking: rankingPosicionado.slice(
-        inicio,
-        fim
-      ),
+        lite:
+          rankingLiteCompleto.length,
+
+        premium:
+          rankingPremiumCompleto.length,
+      },
+
+      usuarioAtual: usuarioAtualGeral
+        ? {
+            ...usuarioAtualGeral,
+
+            posicaoGeral:
+              usuarioAtualGeral
+                .posicaoGeral,
+
+            posicaoNoPlano:
+              usuarioAtualNoPlano
+                ?.posicaoPlano ||
+              null,
+
+            categoriaSolicitada,
+
+            apareceNaCategoria:
+              Boolean(
+                usuarioAtualCategoria
+              ),
+          }
+        : null,
+
+      ranking:
+        rankingSelecionado.slice(
+          inicio,
+          fim
+        ),
     });
   } catch (err) {
     console.error(
