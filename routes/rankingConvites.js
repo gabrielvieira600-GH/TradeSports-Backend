@@ -17,6 +17,46 @@ const {
 
 router.use(auth);
 
+function criarIdNotificacao(prefix = 'notif') {
+  return `${prefix}_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+async function adicionarNotificacaoUsuario(
+  usuarioId,
+  {
+    title,
+    body,
+    metadata = {},
+  }
+) {
+  const usuario = await User.findById(usuarioId);
+
+  if (!usuario) return null;
+
+  if (!Array.isArray(usuario.notificacoes)) {
+    usuario.notificacoes = [];
+  }
+
+  usuario.notificacoes.unshift({
+    id: criarIdNotificacao('ranking_invite'),
+    title,
+    body,
+    read: false,
+    createdAt: new Date(),
+    metadata,
+  });
+
+  usuario.notificacoes = usuario.notificacoes.slice(0, 100);
+
+  usuario.markModified('notificacoes');
+
+  await usuario.save();
+
+  return usuario.notificacoes[0];
+}
+
 function montarUsuarioPublico(usuario) {
   if (!usuario) return null;
 
@@ -55,56 +95,57 @@ async function popularConvites(convites) {
   const remetenteIds = convites.map((c) => c.remetenteId);
   const destinatarioIds = convites.map((c) => c.destinatarioId);
 
-  const [rankings, remetentes, destinatarios] = await Promise.all([
-    PrivateRanking.find({
-      _id: { $in: rankingIds },
-    })
-      .select(
-        [
-          '_id',
-          'nome',
-          'descricao',
-          'codigoConvite',
-          'status',
-          'totalParticipantes',
-          'maxParticipantes',
-          'criadorId',
-        ].join(' ')
-      )
-      .lean(),
+  const [rankings, remetentes, destinatarios] =
+    await Promise.all([
+      PrivateRanking.find({
+        _id: { $in: rankingIds },
+      })
+        .select(
+          [
+            '_id',
+            'nome',
+            'descricao',
+            'codigoConvite',
+            'status',
+            'totalParticipantes',
+            'maxParticipantes',
+            'criadorId',
+          ].join(' ')
+        )
+        .lean(),
 
-    User.find({
-      _id: { $in: remetenteIds },
-    })
-      .select(
-        [
-          '_id',
-          'nome',
-          'nomeUsuario',
-          'plano',
-          'premiumAtivo',
-          'premiumInicio',
-          'premiumFim',
-        ].join(' ')
-      )
-      .lean(),
+      User.find({
+        _id: { $in: remetenteIds },
+      })
+        .select(
+          [
+            '_id',
+            'nome',
+            'nomeUsuario',
+            'plano',
+            'premiumAtivo',
+            'premiumInicio',
+            'premiumFim',
+          ].join(' ')
+        )
+        .lean(),
 
-    User.find({
-      _id: { $in: destinatarioIds },
-    })
-      .select(
-        [
-          '_id',
-          'nome',
-          'nomeUsuario',
-          'plano',
-          'premiumAtivo',
-          'premiumInicio',
-          'premiumFim',
-        ].join(' ')
-      )
-      .lean(),
-  ]);
+      User.find({
+        _id: { $in: destinatarioIds },
+      })
+        .select(
+          [
+            '_id',
+            'nome',
+            'nomeUsuario',
+            'plano',
+            'premiumAtivo',
+            'premiumInicio',
+            'premiumFim',
+          ].join(' ')
+        )
+        .lean(),
+    ]);
 
   const rankingsPorId = new Map(
     rankings.map((r) => [String(r._id), r])
@@ -119,9 +160,17 @@ async function popularConvites(convites) {
   );
 
   return convites.map((convite) => {
-    const ranking = rankingsPorId.get(String(convite.rankingId));
-    const remetente = remetentesPorId.get(String(convite.remetenteId));
-    const destinatario = destinatariosPorId.get(String(convite.destinatarioId));
+    const ranking = rankingsPorId.get(
+      String(convite.rankingId)
+    );
+
+    const remetente = remetentesPorId.get(
+      String(convite.remetenteId)
+    );
+
+    const destinatario = destinatariosPorId.get(
+      String(convite.destinatarioId)
+    );
 
     return {
       id: String(convite._id),
@@ -147,8 +196,12 @@ async function popularConvites(convites) {
             descricao: ranking.descricao || '',
             codigoConvite: ranking.codigoConvite || '',
             status: ranking.status,
-            totalParticipantes: Number(ranking.totalParticipantes || 0),
-            maxParticipantes: Number(ranking.maxParticipantes || 0),
+            totalParticipantes: Number(
+              ranking.totalParticipantes || 0
+            ),
+            maxParticipantes: Number(
+              ranking.maxParticipantes || 0
+            ),
             criadorId: String(ranking.criadorId),
           }
         : null,
@@ -199,34 +252,35 @@ router.post('/', requirePremium, async (req, res) => {
       });
     }
 
-    const [ranking, destinatario, remetente] = await Promise.all([
-      PrivateRanking.findById(rankingId),
+    const [ranking, destinatario, remetente] =
+      await Promise.all([
+        PrivateRanking.findById(rankingId),
 
-      User.findById(destinatarioId)
-        .select(
-          [
-            '_id',
-            'rankingAtivo',
-            'plano',
-            'premiumAtivo',
-            'premiumInicio',
-            'premiumFim',
-          ].join(' ')
-        )
-        .lean(),
+        User.findById(destinatarioId)
+          .select(
+            [
+              '_id',
+              'rankingAtivo',
+              'plano',
+              'premiumAtivo',
+              'premiumInicio',
+              'premiumFim',
+            ].join(' ')
+          )
+          .lean(),
 
-      User.findById(remetenteId)
-        .select(
-          [
-            '_id',
-            'plano',
-            'premiumAtivo',
-            'premiumInicio',
-            'premiumFim',
-          ].join(' ')
-        )
-        .lean(),
-    ]);
+        User.findById(remetenteId)
+          .select(
+            [
+              '_id',
+              'plano',
+              'premiumAtivo',
+              'premiumInicio',
+              'premiumFim',
+            ].join(' ')
+          )
+          .lean(),
+      ]);
 
     if (!ranking || ranking.status !== 'ativo') {
       return res.status(404).json({
@@ -236,7 +290,8 @@ router.post('/', requirePremium, async (req, res) => {
 
     if (String(ranking.criadorId) !== String(remetenteId)) {
       return res.status(403).json({
-        erro: 'Apenas o criador pode convidar usuários para este ranking privado.',
+        erro:
+          'Apenas o criador pode convidar usuários para este ranking privado.',
       });
     }
 
@@ -250,52 +305,63 @@ router.post('/', requirePremium, async (req, res) => {
 
     if (planoDestinatario !== 'premium') {
       return res.status(403).json({
-        erro: 'Apenas usuários Premium podem participar de rankings privados.',
+        erro:
+          'Apenas usuários Premium podem participar de rankings privados.',
         codigo: 'DESTINATARIO_PREMIUM_NECESSARIO',
       });
     }
 
-    const membroExistente = await PrivateRankingMember.findOne({
-      rankingId: ranking._id,
-      usuarioId: destinatarioId,
-      status: {
-        $in: ['aprovado', 'pendente'],
-      },
-    }).lean();
+    const membroExistente =
+      await PrivateRankingMember.findOne({
+        rankingId: ranking._id,
+        usuarioId: destinatarioId,
+        status: {
+          $in: ['aprovado', 'pendente'],
+        },
+      }).lean();
 
     if (membroExistente) {
       return res.status(409).json({
-        erro: 'Este usuário já participa ou já possui solicitação pendente neste ranking.',
+        erro:
+          'Este usuário já participa ou já possui solicitação pendente neste ranking.',
         codigo: 'USUARIO_JA_VINCULADO_AO_RANKING',
       });
     }
 
-    const convitePendente = await PrivateRankingInvite.findOne({
-      rankingId: ranking._id,
-      destinatarioId,
-      status: 'pendente',
-    }).lean();
+    const convitePendente =
+      await PrivateRankingInvite.findOne({
+        rankingId: ranking._id,
+        destinatarioId,
+        status: 'pendente',
+      }).lean();
 
     if (convitePendente) {
       return res.status(409).json({
-        erro: 'Já existe um convite pendente para este usuário neste ranking.',
+        erro:
+          'Já existe um convite pendente para este usuário neste ranking.',
         codigo: 'CONVITE_PENDENTE_EXISTENTE',
       });
     }
 
-    const totalParticipantes = await PrivateRankingMember.countDocuments({
-      rankingId: ranking._id,
-      status: 'aprovado',
-    });
+    const totalParticipantes =
+      await PrivateRankingMember.countDocuments({
+        rankingId: ranking._id,
+        status: 'aprovado',
+      });
 
-    if (totalParticipantes >= Number(ranking.maxParticipantes || 50)) {
+    if (
+      totalParticipantes >=
+      Number(ranking.maxParticipantes || 50)
+    ) {
       return res.status(403).json({
-        erro: 'Este ranking privado atingiu o limite de participantes.',
+        erro:
+          'Este ranking privado atingiu o limite de participantes.',
         codigo: 'RANKING_PRIVADO_LOTADO',
       });
     }
 
-    const limitesDestinatario = obterLimitesDoPlano(destinatario);
+    const limitesDestinatario =
+      obterLimitesDoPlano(destinatario);
 
     const totalParticipandoDestinatario =
       await PrivateRankingMember.countDocuments({
@@ -317,12 +383,15 @@ router.post('/', requirePremium, async (req, res) => {
 
     if (
       limitesDestinatario.rankingsPrivadosParticipando != null &&
-      totalComprometido >= limitesDestinatario.rankingsPrivadosParticipando
+      totalComprometido >=
+        limitesDestinatario.rankingsPrivadosParticipando
     ) {
       return res.status(403).json({
-        erro: 'O usuário convidado atingiu o limite de rankings privados em participação.',
+        erro:
+          'O usuário convidado atingiu o limite de rankings privados em participação.',
         codigo: 'DESTINATARIO_LIMITE_RANKINGS_PRIVADOS',
-        limite: limitesDestinatario.rankingsPrivadosParticipando,
+        limite:
+          limitesDestinatario.rankingsPrivadosParticipando,
       });
     }
 
@@ -343,7 +412,23 @@ router.post('/', requirePremium, async (req, res) => {
       },
     });
 
-    const [conviteDetalhado] = await popularConvites([convite.toObject()]);
+    await adicionarNotificacaoUsuario(destinatarioId, {
+      title: 'Novo convite para ranking privado',
+      body: `Você recebeu um convite para participar do ranking privado "${ranking.nome}".`,
+      metadata: {
+        tipo: 'PRIVATE_RANKING_INVITE',
+        targetUrl: '/convites',
+        conviteId: String(convite._id),
+        rankingId: String(ranking._id),
+        rankingNome: ranking.nome,
+        remetenteId: String(remetenteId),
+        destinatarioId: String(destinatarioId),
+      },
+    });
+
+    const [conviteDetalhado] = await popularConvites([
+      convite.toObject(),
+    ]);
 
     return res.status(201).json({
       ok: true,
@@ -362,7 +447,8 @@ router.post('/', requirePremium, async (req, res) => {
     }
 
     return res.status(500).json({
-      erro: 'Erro interno ao enviar convite de ranking privado.',
+      erro:
+        'Erro interno ao enviar convite de ranking privado.',
     });
   }
 });
@@ -470,7 +556,9 @@ router.get('/enviados', requirePremium, async (req, res) => {
  */
 router.post('/:id/aceitar', requirePremium, async (req, res) => {
   try {
-    const convite = await PrivateRankingInvite.findById(req.params.id);
+    const convite = await PrivateRankingInvite.findById(
+      req.params.id
+    );
 
     if (!convite) {
       return res.status(404).json({
@@ -478,7 +566,10 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
       });
     }
 
-    if (String(convite.destinatarioId) !== String(req.usuario.id)) {
+    if (
+      String(convite.destinatarioId) !==
+      String(req.usuario.id)
+    ) {
       return res.status(403).json({
         erro: 'Este convite não pertence ao usuário logado.',
       });
@@ -495,9 +586,11 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
       convite.expiraEm &&
       new Date(convite.expiraEm).getTime() < Date.now()
     ) {
+      const agoraExpiracao = new Date();
+
       convite.status = 'expirado';
-      convite.expiradoEm = new Date();
-      convite.respondidoEm = new Date();
+      convite.expiradoEm = agoraExpiracao;
+      convite.respondidoEm = agoraExpiracao;
 
       await convite.save();
 
@@ -533,25 +626,46 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
 
     if (plano !== 'premium') {
       return res.status(403).json({
-        erro: 'Apenas usuários Premium podem participar de rankings privados.',
+        erro:
+          'Apenas usuários Premium podem participar de rankings privados.',
         codigo: 'PREMIUM_NECESSARIO',
       });
     }
 
-    const membroExistente = await PrivateRankingMember.findOne({
-      rankingId: ranking._id,
-      usuarioId: req.usuario.id,
-      status: {
-        $in: ['aprovado', 'pendente'],
-      },
-    });
+    const membroExistente =
+      await PrivateRankingMember.findOne({
+        rankingId: ranking._id,
+        usuarioId: req.usuario.id,
+        status: {
+          $in: ['aprovado', 'pendente'],
+        },
+      });
 
     if (membroExistente) {
+      const agora = new Date();
+
       convite.status = 'aceito';
-      convite.respondidoEm = new Date();
-      convite.aceitoEm = new Date();
+      convite.respondidoEm = agora;
+      convite.aceitoEm = agora;
 
       await convite.save();
+
+      const totalAtualizado =
+        await recalcularTotalParticipantes(ranking._id);
+
+      await adicionarNotificacaoUsuario(convite.remetenteId, {
+        title: 'Convite aceito',
+        body: `Seu convite para o ranking privado "${ranking.nome}" foi aceito.`,
+        metadata: {
+          tipo: 'PRIVATE_RANKING_INVITE_ACCEPTED',
+          targetUrl: '/convites',
+          conviteId: String(convite._id),
+          rankingId: String(ranking._id),
+          rankingNome: ranking.nome,
+          remetenteId: String(convite.remetenteId),
+          destinatarioId: String(convite.destinatarioId),
+        },
+      });
 
       const [conviteDetalhado] = await popularConvites([
         convite.toObject(),
@@ -561,37 +675,45 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
         ok: true,
         convite: conviteDetalhado,
         membro: membroExistente,
-        totalParticipantes: ranking.totalParticipantes || 0,
+        totalParticipantes: totalAtualizado,
       });
     }
 
-    const totalParticipantes = await PrivateRankingMember.countDocuments({
-      rankingId: ranking._id,
-      status: 'aprovado',
-    });
+    const totalParticipantes =
+      await PrivateRankingMember.countDocuments({
+        rankingId: ranking._id,
+        status: 'aprovado',
+      });
 
-    if (totalParticipantes >= Number(ranking.maxParticipantes || 50)) {
+    if (
+      totalParticipantes >=
+      Number(ranking.maxParticipantes || 50)
+    ) {
       return res.status(403).json({
-        erro: 'Este ranking privado atingiu o limite de participantes.',
+        erro:
+          'Este ranking privado atingiu o limite de participantes.',
         codigo: 'RANKING_PRIVADO_LOTADO',
       });
     }
 
     const limites = obterLimitesDoPlano(usuario);
 
-    const totalParticipando = await PrivateRankingMember.countDocuments({
-      usuarioId: req.usuario.id,
-      status: {
-        $in: ['aprovado', 'pendente'],
-      },
-    });
+    const totalParticipando =
+      await PrivateRankingMember.countDocuments({
+        usuarioId: req.usuario.id,
+        status: {
+          $in: ['aprovado', 'pendente'],
+        },
+      });
 
     if (
       limites.rankingsPrivadosParticipando != null &&
-      totalParticipando >= limites.rankingsPrivadosParticipando
+      totalParticipando >=
+        limites.rankingsPrivadosParticipando
     ) {
       return res.status(403).json({
-        erro: 'Você atingiu o limite de rankings privados em participação.',
+        erro:
+          'Você atingiu o limite de rankings privados em participação.',
         codigo: 'LIMITE_RANKINGS_PRIVADOS_PARTICIPANDO',
         limite: limites.rankingsPrivadosParticipando,
       });
@@ -610,7 +732,10 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
           entrouEm: agora,
           aprovadoEm: agora,
           aprovadoPor: convite.remetenteId,
-          convidadoEm: convite.enviadoEm || convite.createdAt || agora,
+          convidadoEm:
+            convite.enviadoEm ||
+            convite.createdAt ||
+            agora,
           removidoEm: null,
           recusadoEm: null,
           saiuEm: null,
@@ -633,7 +758,22 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
 
     await convite.save();
 
-    const totalAtualizado = await recalcularTotalParticipantes(ranking._id);
+    const totalAtualizado =
+      await recalcularTotalParticipantes(ranking._id);
+
+    await adicionarNotificacaoUsuario(convite.remetenteId, {
+      title: 'Convite aceito',
+      body: `Seu convite para o ranking privado "${ranking.nome}" foi aceito.`,
+      metadata: {
+        tipo: 'PRIVATE_RANKING_INVITE_ACCEPTED',
+        targetUrl: '/convites',
+        conviteId: String(convite._id),
+        rankingId: String(ranking._id),
+        rankingNome: ranking.nome,
+        remetenteId: String(convite.remetenteId),
+        destinatarioId: String(convite.destinatarioId),
+      },
+    });
 
     const [conviteDetalhado] = await popularConvites([
       convite.toObject(),
@@ -658,7 +798,8 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
     }
 
     return res.status(500).json({
-      erro: 'Erro interno ao aceitar convite de ranking privado.',
+      erro:
+        'Erro interno ao aceitar convite de ranking privado.',
     });
   }
 });
@@ -670,7 +811,9 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
  */
 router.post('/:id/recusar', requirePremium, async (req, res) => {
   try {
-    const convite = await PrivateRankingInvite.findById(req.params.id);
+    const convite = await PrivateRankingInvite.findById(
+      req.params.id
+    );
 
     if (!convite) {
       return res.status(404).json({
@@ -678,7 +821,10 @@ router.post('/:id/recusar', requirePremium, async (req, res) => {
       });
     }
 
-    if (String(convite.destinatarioId) !== String(req.usuario.id)) {
+    if (
+      String(convite.destinatarioId) !==
+      String(req.usuario.id)
+    ) {
       return res.status(403).json({
         erro: 'Este convite não pertence ao usuário logado.',
       });
@@ -699,6 +845,28 @@ router.post('/:id/recusar', requirePremium, async (req, res) => {
 
     await convite.save();
 
+    const ranking = await PrivateRanking.findById(
+      convite.rankingId
+    )
+      .select('nome')
+      .lean();
+
+    await adicionarNotificacaoUsuario(convite.remetenteId, {
+      title: 'Convite recusado',
+      body: `Seu convite para o ranking privado "${
+        ranking?.nome || 'Ranking privado'
+      }" foi recusado.`,
+      metadata: {
+        tipo: 'PRIVATE_RANKING_INVITE_REFUSED',
+        targetUrl: '/convites',
+        conviteId: String(convite._id),
+        rankingId: String(convite.rankingId),
+        rankingNome: ranking?.nome || '',
+        remetenteId: String(convite.remetenteId),
+        destinatarioId: String(convite.destinatarioId),
+      },
+    });
+
     const [conviteDetalhado] = await popularConvites([
       convite.toObject(),
     ]);
@@ -714,7 +882,8 @@ router.post('/:id/recusar', requirePremium, async (req, res) => {
     );
 
     return res.status(500).json({
-      erro: 'Erro interno ao recusar convite de ranking privado.',
+      erro:
+        'Erro interno ao recusar convite de ranking privado.',
     });
   }
 });
@@ -726,7 +895,9 @@ router.post('/:id/recusar', requirePremium, async (req, res) => {
  */
 router.post('/:id/cancelar', requirePremium, async (req, res) => {
   try {
-    const convite = await PrivateRankingInvite.findById(req.params.id);
+    const convite = await PrivateRankingInvite.findById(
+      req.params.id
+    );
 
     if (!convite) {
       return res.status(404).json({
@@ -734,7 +905,10 @@ router.post('/:id/cancelar', requirePremium, async (req, res) => {
       });
     }
 
-    if (String(convite.remetenteId) !== String(req.usuario.id)) {
+    if (
+      String(convite.remetenteId) !==
+      String(req.usuario.id)
+    ) {
       return res.status(403).json({
         erro: 'Apenas quem enviou o convite pode cancelá-lo.',
       });
@@ -770,7 +944,8 @@ router.post('/:id/cancelar', requirePremium, async (req, res) => {
     );
 
     return res.status(500).json({
-      erro: 'Erro interno ao cancelar convite de ranking privado.',
+      erro:
+        'Erro interno ao cancelar convite de ranking privado.',
     });
   }
 });
