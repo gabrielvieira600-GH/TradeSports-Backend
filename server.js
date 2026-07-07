@@ -44,6 +44,7 @@ const classificacaoRoutes = require('./routes/classificacao');
 const depositoRoutes = require('./routes/deposito');
 const saqueRoutes = require('./routes/saque');
 const temporadaRoutes = require('./routes/temporada');
+const rankingsPrivadosRoutes = require('./routes/rankingsPrivados');
 
 let watchlistRoutes = null;
 try {
@@ -196,6 +197,7 @@ app.use('/usuario', usuarioRoutes);
 app.use('/deposito', depositoRoutes);
 app.use('/saque', saqueRoutes);
 app.use('/temporada', temporadaRoutes);
+app.use('/rankings-privados', rankingsPrivadosRoutes);
 
 if (watchlistRoutes) {
   app.use('/watchlist', watchlistRoutes);
