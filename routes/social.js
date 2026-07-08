@@ -6,10 +6,15 @@ const auth = require('../middleware/auth');
 
 const User = require('../models/User');
 const UserFollow = require('../models/UserFollow');
+const Club = require('../models/Club');
 
 const {
   obterPlanoEfetivo,
 } = require('../utils/planFeatures');
+
+function round2(valor) {
+  return Number(Number(valor || 0).toFixed(2));
+}
 
 function montarNomePublico(usuario) {
   return (
@@ -76,10 +81,220 @@ async function verificarRelacaoSocial({
   };
 }
 
+function criarMapaPrecosClubes(clubes) {
+  const mapa = new Map();
+
+  for (const clube of clubes || []) {
+    const legacyId = Number(
+      clube.legacyId ??
+        clube.id ??
+        clube.clubeId
+    );
+
+    if (!Number.isFinite(legacyId) || legacyId <= 0) {
+      continue;
+    }
+
+    const precoAtual = Number(
+      clube.precoAtual ??
+        clube.preco ??
+        0
+    );
+
+    mapa.set(String(legacyId), {
+      id: legacyId,
+      nome: clube.nome || clube.nomeApi || '',
+      precoAtual: Number.isFinite(precoAtual)
+        ? round2(precoAtual)
+        : 0,
+      escudo: clube.escudo || '',
+    });
+  }
+
+  return mapa;
+}
+
+function normalizarAtivoCarteira(ativo) {
+  if (!ativo) return null;
+
+  const clubeId = Number(
+    ativo.clubeId ??
+      ativo.clubeLegacyId ??
+      ativo.idClube ??
+      ativo.clube?.legacyId ??
+      ativo.clube?.id
+  );
+
+  if (!Number.isFinite(clubeId) || clubeId <= 0) {
+    return null;
+  }
+
+  const quantidade = Number(
+    ativo.quantidade ??
+      ativo.cotas ??
+      0
+  );
+
+  if (!Number.isFinite(quantidade) || quantidade <= 0) {
+    return null;
+  }
+
+  const precoMedio = Number(
+    ativo.precoMedio ??
+      ativo.valorUnitario ??
+      ativo.preco ??
+      0
+  );
+
+  const totalInvestido =
+    ativo.totalInvestido != null
+      ? Number(ativo.totalInvestido)
+      : quantidade * Number(precoMedio || 0);
+
+  return {
+    clubeId,
+    nomeClube:
+      ativo.nomeClube ||
+      ativo.clubeNome ||
+      ativo.nome ||
+      ativo.clube?.nome ||
+      '',
+    quantidade,
+    precoMedio: round2(precoMedio),
+    totalInvestido: round2(totalInvestido),
+  };
+}
+
+function calcularMercadoUsuario(usuario, precosPorClube) {
+  const saldo = round2(usuario.saldo || 0);
+
+  const carteira = Array.isArray(usuario.carteira)
+    ? usuario.carteira
+    : [];
+
+  let valorPosicoes = 0;
+  let totalInvestido = 0;
+  let quantidadeCotas = 0;
+  let quantidadePosicoes = 0;
+
+  const posicoes = [];
+
+  for (const ativoRaw of carteira) {
+    const ativo = normalizarAtivoCarteira(ativoRaw);
+
+    if (!ativo) continue;
+
+    const clubeInfo = precosPorClube.get(
+      String(ativo.clubeId)
+    );
+
+    const precoAtual = Number(
+      clubeInfo?.precoAtual ??
+        ativo.precoMedio ??
+        0
+    );
+
+    const valorAtual = round2(
+      ativo.quantidade * precoAtual
+    );
+
+    const resultado = round2(
+      valorAtual - ativo.totalInvestido
+    );
+
+    const rentabilidade =
+      ativo.totalInvestido > 0
+        ? round2(
+            (resultado / ativo.totalInvestido) * 100
+          )
+        : 0;
+
+    valorPosicoes += valorAtual;
+    totalInvestido += ativo.totalInvestido;
+    quantidadeCotas += ativo.quantidade;
+    quantidadePosicoes += 1;
+
+    posicoes.push({
+      clubeId: ativo.clubeId,
+      nomeClube:
+        clubeInfo?.nome ||
+        ativo.nomeClube ||
+        'Clube',
+      escudo: clubeInfo?.escudo || '',
+      quantidade: Number(ativo.quantidade || 0),
+      precoMedio: round2(ativo.precoMedio),
+      precoAtual: round2(precoAtual),
+      totalInvestido: round2(ativo.totalInvestido),
+      valorAtual,
+      resultado,
+      rentabilidade,
+    });
+  }
+
+  valorPosicoes = round2(valorPosicoes);
+  totalInvestido = round2(totalInvestido);
+
+  const patrimonio = round2(saldo + valorPosicoes);
+
+  const capitalInicial = Number(
+    usuario.patrimonioInicialTemporada ??
+      usuario.capitalInicial ??
+      1000
+  );
+
+  const baseRentabilidade =
+    Number.isFinite(capitalInicial) && capitalInicial > 0
+      ? capitalInicial
+      : 1000;
+
+  const resultadoGeral = round2(
+    patrimonio - baseRentabilidade
+  );
+
+  const rentabilidadeGeral =
+    baseRentabilidade > 0
+      ? round2(
+          (resultadoGeral / baseRentabilidade) * 100
+        )
+      : 0;
+
+  posicoes.sort((a, b) => {
+    if (b.valorAtual !== a.valorAtual) {
+      return b.valorAtual - a.valorAtual;
+    }
+
+    return String(a.nomeClube).localeCompare(
+      String(b.nomeClube),
+      'pt-BR'
+    );
+  });
+
+  return {
+    saldo,
+    valorPosicoes,
+    patrimonio,
+
+    capitalInicial: round2(baseRentabilidade),
+    totalInvestido,
+
+    resultado: resultadoGeral,
+    rentabilidade: rentabilidadeGeral,
+
+    quantidadePosicoes,
+    quantidadeCotas: Number(
+      Number(quantidadeCotas || 0).toFixed(4)
+    ),
+
+    posicoes,
+    topPosicoes: posicoes.slice(0, 8),
+  };
+}
+
 function montarPerfilPublico({
   usuario,
   estatisticas,
   relacao,
+  mercado,
 }) {
   const plano = obterPlanoEfetivo(usuario);
 
@@ -106,20 +321,18 @@ function montarPerfilPublico({
       segueVoce: Boolean(relacao?.segueVoce),
     },
 
-    mercado: {
+    mercado: mercado || {
       saldo: Number(usuario.saldo || 0),
-      patrimonio: null,
-      rentabilidade: null,
-      quantidadePosicoes: Array.isArray(usuario.carteira)
-        ? usuario.carteira.filter(
-            (ativo) =>
-              Number(
-                ativo.quantidade ??
-                  ativo.cotas ??
-                  0
-              ) > 0
-          ).length
-        : 0,
+      valorPosicoes: 0,
+      patrimonio: Number(usuario.saldo || 0),
+      capitalInicial: Number(usuario.capitalInicial || 1000),
+      totalInvestido: 0,
+      resultado: 0,
+      rentabilidade: 0,
+      quantidadePosicoes: 0,
+      quantidadeCotas: 0,
+      posicoes: [],
+      topPosicoes: [],
     },
   };
 }
@@ -182,6 +395,9 @@ router.get('/usuarios', async (req, res) => {
           'premiumAtivo',
           'premiumInicio',
           'premiumFim',
+          'saldo',
+          'capitalInicial',
+          'patrimonioInicialTemporada',
           'carteira',
         ].join(' ')
       )
@@ -193,6 +409,12 @@ router.get('/usuarios', async (req, res) => {
       .lean();
 
     const usuarioIds = usuarios.map((u) => u._id);
+
+    const clubes = await Club.find({})
+      .select('legacyId nome nomeApi escudo precoAtual preco')
+      .lean();
+
+    const precosPorClube = criarMapaPrecosClubes(clubes);
 
     const [seguindoDocs, seguidoresAgg, seguindoAgg] =
       await Promise.all([
@@ -262,6 +484,10 @@ router.get('/usuarios', async (req, res) => {
     const resposta = usuarios.map((usuario) => {
       const usuarioId = String(usuario._id);
       const plano = obterPlanoEfetivo(usuario);
+      const mercado = calcularMercadoUsuario(
+        usuario,
+        precosPorClube
+      );
 
       return {
         id: usuarioId,
@@ -281,16 +507,10 @@ router.get('/usuarios', async (req, res) => {
             seguindoPorUsuario.get(usuarioId) || 0,
         },
 
-        quantidadePosicoes: Array.isArray(usuario.carteira)
-          ? usuario.carteira.filter(
-              (ativo) =>
-                Number(
-                  ativo.quantidade ??
-                    ativo.cotas ??
-                    0
-                ) > 0
-            ).length
-          : 0,
+        quantidadePosicoes: mercado.quantidadePosicoes,
+        quantidadeCotas: mercado.quantidadeCotas,
+        rentabilidade: mercado.rentabilidade,
+        patrimonio: mercado.patrimonio,
 
         criadoEm: usuario.createdAt || null,
       };
@@ -316,7 +536,7 @@ router.get('/usuarios', async (req, res) => {
 /**
  * GET /social/usuarios/:id
  *
- * Perfil público de um usuário.
+ * Perfil público completo de um usuário.
  */
 router.get('/usuarios/:id', async (req, res) => {
   try {
@@ -333,6 +553,10 @@ router.get('/usuarios/:id', async (req, res) => {
           'premiumInicio',
           'premiumFim',
           'saldo',
+          'capitalInicial',
+          'patrimonioInicialTemporada',
+          'temporadaRanking',
+          'inicioTemporadaRanking',
           'carteira',
         ].join(' ')
       )
@@ -344,14 +568,26 @@ router.get('/usuarios/:id', async (req, res) => {
       });
     }
 
-    const [estatisticas, relacao] = await Promise.all([
-      obterEstatisticasSociais(usuario._id),
+    const [estatisticas, relacao, clubes] =
+      await Promise.all([
+        obterEstatisticasSociais(usuario._id),
 
-      verificarRelacaoSocial({
-        usuarioLogadoId: req.usuario.id,
-        usuarioAlvoId: usuario._id,
-      }),
-    ]);
+        verificarRelacaoSocial({
+          usuarioLogadoId: req.usuario.id,
+          usuarioAlvoId: usuario._id,
+        }),
+
+        Club.find({})
+          .select('legacyId nome nomeApi escudo precoAtual preco')
+          .lean(),
+      ]);
+
+    const precosPorClube = criarMapaPrecosClubes(clubes);
+
+    const mercado = calcularMercadoUsuario(
+      usuario,
+      precosPorClube
+    );
 
     return res.json({
       ok: true,
@@ -359,6 +595,7 @@ router.get('/usuarios/:id', async (req, res) => {
         usuario,
         estatisticas,
         relacao,
+        mercado,
       }),
     });
   } catch (err) {
