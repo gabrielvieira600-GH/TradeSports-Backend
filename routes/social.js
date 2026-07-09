@@ -290,11 +290,108 @@ function calcularMercadoUsuario(usuario, precosPorClube) {
   };
 }
 
+function ordenarRankingPublico(a, b) {
+  if (b.mercado.rentabilidade !== a.mercado.rentabilidade) {
+    return b.mercado.rentabilidade - a.mercado.rentabilidade;
+  }
+
+  if (b.mercado.patrimonio !== a.mercado.patrimonio) {
+    return b.mercado.patrimonio - a.mercado.patrimonio;
+  }
+
+  return String(a.nomePublico || '').localeCompare(
+    String(b.nomePublico || ''),
+    'pt-BR'
+  );
+}
+
+async function calcularPosicoesRankingPerfil({
+  usuarioAlvoId,
+  precosPorClube,
+}) {
+  const usuarios = await User.find({
+    rankingAtivo: { $ne: false },
+  })
+    .select(
+      [
+        '_id',
+        'nome',
+        'nomeUsuario',
+        'plano',
+        'premiumAtivo',
+        'premiumInicio',
+        'premiumFim',
+        'saldo',
+        'capitalInicial',
+        'patrimonioInicialTemporada',
+        'carteira',
+        'createdAt',
+      ].join(' ')
+    )
+    .lean();
+
+  const rankingBase = usuarios.map((usuario) => {
+    const plano = obterPlanoEfetivo(usuario);
+    const mercado = calcularMercadoUsuario(usuario, precosPorClube);
+
+    return {
+      id: String(usuario._id),
+      nomePublico: montarNomePublico(usuario),
+      plano,
+      mercado,
+    };
+  });
+
+  const rankingGeral = [...rankingBase].sort(ordenarRankingPublico);
+
+  const rankingLite = rankingBase
+    .filter((item) => item.plano === 'lite')
+    .sort(ordenarRankingPublico);
+
+  const rankingPremium = rankingBase
+    .filter((item) => item.plano === 'premium')
+    .sort(ordenarRankingPublico);
+
+  const alvoId = String(usuarioAlvoId);
+
+  const posicaoGeral =
+    rankingGeral.findIndex((item) => item.id === alvoId) + 1;
+
+  const usuarioAlvo = rankingBase.find((item) => item.id === alvoId);
+
+  const posicaoLite =
+    rankingLite.findIndex((item) => item.id === alvoId) + 1;
+
+  const posicaoPremium =
+    rankingPremium.findIndex((item) => item.id === alvoId) + 1;
+
+  return {
+    plano: usuarioAlvo?.plano || 'lite',
+
+    geral: posicaoGeral > 0 ? posicaoGeral : null,
+
+    lite:
+      usuarioAlvo?.plano === 'lite' && posicaoLite > 0
+        ? posicaoLite
+        : null,
+
+    premium:
+      usuarioAlvo?.plano === 'premium' && posicaoPremium > 0
+        ? posicaoPremium
+        : null,
+
+    totalGeral: rankingGeral.length,
+    totalLite: rankingLite.length,
+    totalPremium: rankingPremium.length,
+  };
+}
+
 function montarPerfilPublico({
   usuario,
   estatisticas,
   relacao,
   mercado,
+  ranking,
 }) {
   const plano = obterPlanoEfetivo(usuario);
 
@@ -333,6 +430,15 @@ function montarPerfilPublico({
       quantidadeCotas: 0,
       posicoes: [],
       topPosicoes: [],
+    },
+        ranking: ranking || {
+      plano: obterPlanoEfetivo(usuario),
+      geral: null,
+      lite: null,
+      premium: null,
+      totalGeral: 0,
+      totalLite: 0,
+      totalPremium: 0,
     },
   };
 }
@@ -585,19 +691,25 @@ router.get('/usuarios/:id', async (req, res) => {
     const precosPorClube = criarMapaPrecosClubes(clubes);
 
     const mercado = calcularMercadoUsuario(
-      usuario,
-      precosPorClube
-    );
+  usuario,
+  precosPorClube
+);
 
-    return res.json({
-      ok: true,
-      usuario: montarPerfilPublico({
-        usuario,
-        estatisticas,
-        relacao,
-        mercado,
-      }),
-    });
+const ranking = await calcularPosicoesRankingPerfil({
+  usuarioAlvoId: usuario._id,
+  precosPorClube,
+});
+
+return res.json({
+  ok: true,
+  usuario: montarPerfilPublico({
+    usuario,
+    estatisticas,
+    relacao,
+    mercado,
+    ranking,
+  }),
+});
   } catch (err) {
     console.error(
       'Erro ao buscar perfil público:',
