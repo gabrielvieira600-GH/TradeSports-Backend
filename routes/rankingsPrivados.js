@@ -274,6 +274,35 @@ async function recalcularTotalParticipantes(rankingId) {
   return total;
 }
 
+async function buscarRankingParaGestao({ rankingId, usuarioId }) {
+  const ranking = await PrivateRanking.findById(rankingId);
+
+  if (!ranking) {
+    return {
+      erroStatus: 404,
+      erro: 'Ranking privado não encontrado.',
+    };
+  }
+
+  if (ranking.status !== 'ativo') {
+    return {
+      erroStatus: 409,
+      erro: 'Este ranking privado não está ativo.',
+    };
+  }
+
+  if (String(ranking.criadorId) !== String(usuarioId)) {
+    return {
+      erroStatus: 403,
+      erro: 'Apenas o criador pode gerenciar participantes.',
+    };
+  }
+
+  return {
+    ranking,
+  };
+}
+
 router.use(auth);
 
 router.get('/', requirePremium, async (req, res) => {
@@ -511,15 +540,20 @@ router.get('/convite/:codigo', async (req, res) => {
     return res.json({
       ok: true,
       ranking: {
-        id: String(ranking._id),
-        nome: ranking.nome,
-        descricao: ranking.descricao || '',
-        imagemUrl: ranking.imagemUrl || null,
-        totalParticipantes:
-          ranking.totalParticipantes || 0,
-        maxParticipantes: ranking.maxParticipantes,
-        aprovacaoManual: ranking.aprovacaoManual,
-      },
+  id: String(ranking._id),
+  nome: ranking.nome,
+  descricao:
+    ranking.descricao || '',
+  codigoConvite:
+    ranking.codigoConvite,
+  totalParticipantes:
+    ranking.totalParticipantes || 0,
+  maxParticipantes:
+    ranking.maxParticipantes,
+  aprovacaoManual:
+    ranking.aprovacaoManual,
+  isCriador,
+},
       plano,
       premiumNecessario: plano !== 'premium',
       membro,
@@ -866,6 +900,297 @@ router.get(
       return res.status(500).json({
         erro:
           'Erro interno ao gerar classificação privada.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/:id/membros',
+  requirePremium,
+  async (req, res) => {
+    try {
+      const ranking = await PrivateRanking.findById(
+        req.params.id
+      ).lean();
+
+      if (!ranking) {
+        return res.status(404).json({
+          erro: 'Ranking privado não encontrado.',
+        });
+      }
+
+      const membroAtual = await PrivateRankingMember.findOne({
+        rankingId: ranking._id,
+        usuarioId: req.usuario.id,
+        status: 'aprovado',
+      }).lean();
+
+      const isCriador =
+        String(ranking.criadorId) === String(req.usuario.id);
+
+      if (!membroAtual && !isCriador) {
+        return res.status(403).json({
+          erro: 'Você não participa deste ranking privado.',
+        });
+      }
+
+      const membros = await PrivateRankingMember.find({
+        rankingId: ranking._id,
+        status: {
+          $in: ['aprovado', 'pendente'],
+        },
+      })
+        .populate({
+          path: 'usuarioId',
+          select:
+            'nome nomeUsuario email plano premiumAtivo premiumInicio premiumFim createdAt',
+        })
+        .sort({
+          status: 1,
+          entrouEm: 1,
+          createdAt: 1,
+        })
+        .lean();
+
+      return res.json({
+        ok: true,
+        ranking: {
+          id: String(ranking._id),
+          nome: ranking.nome,
+          criadorId: String(ranking.criadorId),
+          totalParticipantes: ranking.totalParticipantes || 0,
+          maxParticipantes: ranking.maxParticipantes || 50,
+        },
+        isCriador,
+        membros: membros
+          .filter((membro) => membro.usuarioId)
+          .map((membro) => {
+            const usuario = membro.usuarioId;
+            const plano = obterPlanoEfetivo(usuario);
+
+            return {
+              id: String(membro._id),
+              usuarioId: String(usuario._id),
+              nome: usuario.nome || '',
+              nomeUsuario: usuario.nomeUsuario || '',
+              email: usuario.email || '',
+              plano,
+              status: membro.status,
+              entrouEm: membro.entrouEm || null,
+              convidadoEm: membro.convidadoEm || null,
+              criadoEm: usuario.createdAt || null,
+              isCriador:
+                String(usuario._id) === String(ranking.criadorId),
+            };
+          }),
+      });
+    } catch (err) {
+      console.error(
+        'Erro ao listar membros do ranking privado:',
+        err
+      );
+
+      return res.status(500).json({
+        erro: 'Erro interno ao listar membros do ranking privado.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/:id/adicionar',
+  requirePremium,
+  async (req, res) => {
+    try {
+      const { ranking, erroStatus, erro } =
+        await buscarRankingParaGestao({
+          rankingId: req.params.id,
+          usuarioId: req.usuario.id,
+        });
+
+      if (erro) {
+        return res.status(erroStatus).json({ erro });
+      }
+
+      const busca = String(
+        req.body?.busca ||
+          req.body?.nomeUsuario ||
+          req.body?.email ||
+          req.body?.usuarioId ||
+          ''
+      ).trim();
+
+      if (!busca) {
+        return res.status(400).json({
+          erro:
+            'Informe o usuário que deseja adicionar ao ranking privado.',
+        });
+      }
+
+      const buscaSemArroba = busca.replace(/^@/, '');
+
+      const filtroUsuario = busca.match(/^[a-fA-F0-9]{24}$/)
+        ? {
+            _id: busca,
+          }
+        : {
+            $or: [
+              {
+                nomeUsuario: new RegExp(
+                  `^${buscaSemArroba.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+                  'i'
+                ),
+              },
+              {
+                email: new RegExp(
+                  `^${busca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+                  'i'
+                ),
+              },
+              {
+                nome: new RegExp(
+                  busca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                  'i'
+                ),
+              },
+            ],
+          };
+
+      const usuarioAdicionar = await User.findOne(filtroUsuario)
+        .select(
+          [
+            '_id',
+            'nome',
+            'nomeUsuario',
+            'email',
+            'plano',
+            'premiumAtivo',
+            'premiumInicio',
+            'premiumFim',
+          ].join(' ')
+        );
+
+      if (!usuarioAdicionar) {
+        return res.status(404).json({
+          erro: 'Usuário não encontrado.',
+        });
+      }
+
+      const planoUsuarioAdicionar =
+        obterPlanoEfetivo(usuarioAdicionar);
+
+      if (planoUsuarioAdicionar !== 'premium') {
+        return res.status(403).json({
+          erro:
+            'Apenas usuários Premium podem participar de rankings privados.',
+          codigo: 'USUARIO_NAO_PREMIUM',
+        });
+      }
+
+      const totalParticipantes =
+        await PrivateRankingMember.countDocuments({
+          rankingId: ranking._id,
+          status: 'aprovado',
+        });
+
+      if (
+        totalParticipantes >=
+        Number(ranking.maxParticipantes || 50)
+      ) {
+        return res.status(403).json({
+          erro:
+            'Este ranking privado atingiu o limite de participantes.',
+          codigo: 'RANKING_PRIVADO_LOTADO',
+        });
+      }
+
+      const limitesUsuarioAdicionar =
+        obterLimitesDoPlano(usuarioAdicionar);
+
+      const totalParticipandoUsuario =
+        await PrivateRankingMember.countDocuments({
+          usuarioId: usuarioAdicionar._id,
+          status: {
+            $in: ['aprovado', 'pendente'],
+          },
+        });
+
+      if (
+        limitesUsuarioAdicionar.rankingsPrivadosParticipando != null &&
+        totalParticipandoUsuario >=
+          limitesUsuarioAdicionar.rankingsPrivadosParticipando
+      ) {
+        return res.status(403).json({
+          erro:
+            'Este usuário atingiu o limite de rankings privados em participação.',
+          codigo:
+            'LIMITE_RANKINGS_PRIVADOS_PARTICIPANDO',
+        });
+      }
+
+      const agora = new Date();
+
+      const membro =
+        await PrivateRankingMember.findOneAndUpdate(
+          {
+            rankingId: ranking._id,
+            usuarioId: usuarioAdicionar._id,
+          },
+          {
+            $set: {
+              status: 'aprovado',
+              entrouEm: agora,
+              aprovadoEm: agora,
+              aprovadoPor: req.usuario.id,
+              convidadoEm: agora,
+              removidoEm: null,
+              recusadoEm: null,
+              saiuEm: null,
+              metadata: {
+                adicionadoDiretamente: true,
+                adicionadoPor: req.usuario.id,
+              },
+            },
+          },
+          {
+            new: true,
+            upsert: true,
+            setDefaultsOnInsert: true,
+          }
+        );
+
+      const totalAtualizado =
+        await recalcularTotalParticipantes(ranking._id);
+
+      return res.json({
+        ok: true,
+        membro,
+        totalParticipantes: totalAtualizado,
+        usuario: {
+          id: String(usuarioAdicionar._id),
+          nome: usuarioAdicionar.nome || '',
+          nomeUsuario: usuarioAdicionar.nomeUsuario || '',
+          email: usuarioAdicionar.email || '',
+          plano: planoUsuarioAdicionar,
+        },
+      });
+    } catch (err) {
+      console.error(
+        'Erro ao adicionar participante ao ranking privado:',
+        err
+      );
+
+      if (err?.code === 11000) {
+        return res.status(409).json({
+          erro:
+            'Este usuário já possui vínculo com este ranking privado.',
+        });
+      }
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao adicionar participante ao ranking privado.',
       });
     }
   }
