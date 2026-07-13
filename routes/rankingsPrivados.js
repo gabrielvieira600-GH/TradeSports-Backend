@@ -11,6 +11,7 @@ const Club = require('../models/Club');
 const PrivateRanking = require('../models/PrivateRanking');
 const PrivateRankingMember = require('../models/PrivateRankingMember');
 const RankingSeason = require('../models/RankingSeason');
+const SocialFeedEvent = require('../models/SocialFeedEvent');
 
 const {
   obterPlanoEfetivo,
@@ -274,6 +275,37 @@ async function recalcularTotalParticipantes(rankingId) {
   return total;
 }
 
+async function criarEventoFeedSocial({
+  tipo,
+  usuarioId,
+  usuarioAlvoId = null,
+  rankingPrivadoId = null,
+  titulo = '',
+  mensagem = '',
+  targetUrl = '',
+  relevancia = 0,
+  metadata = {},
+}) {
+  try {
+    return await SocialFeedEvent.create({
+      tipo,
+      usuarioId,
+      usuarioAlvoId,
+      rankingPrivadoId,
+      titulo,
+      mensagem,
+      targetUrl,
+      visibilidade: 'publico',
+      status: 'ativo',
+      relevancia,
+      metadata,
+    });
+  } catch (err) {
+    console.error('Erro ao criar evento do feed social:', err);
+    return null;
+  }
+}
+
 async function buscarRankingParaGestao({ rankingId, usuarioId }) {
   const ranking = await PrivateRanking.findById(rankingId);
 
@@ -373,16 +405,18 @@ router.post('/', requirePremium, async (req, res) => {
     const usuarioId = req.usuario.id;
 
     const usuario = await User.findById(usuarioId)
-      .select(
-        [
-          '_id',
-          'plano',
-          'premiumAtivo',
-          'premiumInicio',
-          'premiumFim',
-        ].join(' ')
-      )
-      .lean();
+  .select(
+    [
+      '_id',
+      'nome',
+      'nomeUsuario',
+      'plano',
+      'premiumAtivo',
+      'premiumInicio',
+      'premiumFim',
+    ].join(' ')
+  )
+  .lean();
 
     if (!usuario) {
       return res.status(404).json({
@@ -475,6 +509,27 @@ router.post('/', requirePremium, async (req, res) => {
         papel: 'criador',
       },
     });
+
+    const nomeUsuario =
+  usuario.nomeUsuario ||
+  usuario.nome ||
+  'Um usuário';
+
+await criarEventoFeedSocial({
+  tipo: 'PRIVATE_RANKING_CREATED',
+  usuarioId,
+  rankingPrivadoId: ranking._id,
+  titulo: `@${nomeUsuario} criou um ranking privado`,
+  mensagem: `Novo ranking privado criado: ${ranking.nome}.`,
+  targetUrl: '/ranking',
+  relevancia: 3,
+  metadata: {
+    origem: 'private_ranking_created',
+    rankingId: String(ranking._id),
+    rankingNome: ranking.nome,
+    codigoConvite: ranking.codigoConvite,
+  },
+});
 
     return res.status(201).json({
       ok: true,

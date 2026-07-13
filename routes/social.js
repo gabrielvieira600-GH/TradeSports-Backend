@@ -7,11 +7,78 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const UserFollow = require('../models/UserFollow');
 const Club = require('../models/Club');
+const SocialFeedEvent = require('../models/SocialFeedEvent');
+
 
 const {
   obterPlanoEfetivo,
 } = require('../utils/planFeatures');
 
+function criarIdNotificacao(prefix = 'notif') {
+  return `${prefix}_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+async function adicionarNotificacaoUsuario(
+  usuarioId,
+  { title, body = '', metadata = {} }
+) {
+  const usuario = await User.findById(usuarioId);
+
+  if (!usuario) return null;
+
+  if (!Array.isArray(usuario.notificacoes)) {
+    usuario.notificacoes = [];
+  }
+
+  usuario.notificacoes.unshift({
+    id: criarIdNotificacao('social'),
+    title,
+    body,
+    read: false,
+    createdAt: new Date(),
+    metadata,
+  });
+
+  usuario.notificacoes = usuario.notificacoes.slice(0, 100);
+  usuario.markModified('notificacoes');
+
+  await usuario.save();
+
+  return usuario.notificacoes[0];
+}
+
+async function criarEventoFeedSocial({
+  tipo,
+  usuarioId,
+  usuarioAlvoId = null,
+  rankingPrivadoId = null,
+  titulo = '',
+  mensagem = '',
+  targetUrl = '',
+  relevancia = 0,
+  metadata = {},
+}) {
+  try {
+    return await SocialFeedEvent.create({
+      tipo,
+      usuarioId,
+      usuarioAlvoId,
+      rankingPrivadoId,
+      titulo,
+      mensagem,
+      targetUrl,
+      visibilidade: 'publico',
+      status: 'ativo',
+      relevancia,
+      metadata,
+    });
+  } catch (err) {
+    console.error('Erro ao criar evento do feed social:', err);
+    return null;
+  }
+}
 function round2(valor) {
   return Number(Number(valor || 0).toFixed(2));
 }
@@ -443,7 +510,230 @@ function montarPerfilPublico({
   };
 }
 
+function criarIdNotificacao(prefix = 'notif') {
+  return `${prefix}_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+async function adicionarNotificacaoUsuario(
+  usuarioId,
+  { title, body = '', metadata = {} }
+) {
+  const usuario = await User.findById(usuarioId);
+
+  if (!usuario) return null;
+
+  if (!Array.isArray(usuario.notificacoes)) {
+    usuario.notificacoes = [];
+  }
+
+  usuario.notificacoes.unshift({
+    id: criarIdNotificacao('social'),
+    title,
+    body,
+    read: false,
+    createdAt: new Date(),
+    metadata,
+  });
+
+  usuario.notificacoes = usuario.notificacoes.slice(0, 100);
+  usuario.markModified('notificacoes');
+
+  await usuario.save();
+
+  return usuario.notificacoes[0];
+}
+
+async function criarEventoFeedSocial({
+  tipo,
+  usuarioId,
+  usuarioAlvoId = null,
+  rankingPrivadoId = null,
+  titulo = '',
+  mensagem = '',
+  targetUrl = '',
+  relevancia = 0,
+  metadata = {},
+}) {
+  try {
+    return await SocialFeedEvent.create({
+      tipo,
+      usuarioId,
+      usuarioAlvoId,
+      rankingPrivadoId,
+      titulo,
+      mensagem,
+      targetUrl,
+      visibilidade: 'publico',
+      status: 'ativo',
+      relevancia,
+      metadata,
+    });
+  } catch (err) {
+    console.error('Erro ao criar evento do feed social:', err);
+    return null;
+  }
+}
 router.use(auth);
+
+/**
+ * GET /social/feed
+ *
+ * Feed público da comunidade TradeSports.
+ */
+router.get('/feed', async (req, res) => {
+  try {
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 50)
+    );
+
+    const page = Math.max(
+      1,
+      Number.parseInt(req.query.page, 10) || 1
+    );
+
+    const skip = (page - 1) * limit;
+
+    const filtro = {
+      status: 'ativo',
+      visibilidade: 'publico',
+    };
+
+    if (req.query.tipo) {
+      filtro.tipo = String(req.query.tipo).trim();
+    }
+
+    const [eventos, total] = await Promise.all([
+      SocialFeedEvent.find(filtro)
+        .sort({
+          relevancia: -1,
+          createdAt: -1,
+        })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: 'usuarioId',
+          select:
+            'nome nomeUsuario plano premiumAtivo premiumInicio premiumFim rankingAtivo createdAt',
+        })
+        .populate({
+          path: 'usuarioAlvoId',
+          select:
+            'nome nomeUsuario plano premiumAtivo premiumInicio premiumFim rankingAtivo createdAt',
+        })
+        .populate({
+          path: 'rankingPrivadoId',
+          select:
+            'nome descricao codigoConvite status totalParticipantes maxParticipantes',
+        })
+        .lean(),
+
+      SocialFeedEvent.countDocuments(filtro),
+    ]);
+
+    const eventosNormalizados = eventos
+      .filter((evento) => evento.usuarioId)
+      .map((evento) => {
+        const usuario = evento.usuarioId;
+        const usuarioAlvo = evento.usuarioAlvoId || null;
+        const rankingPrivado = evento.rankingPrivadoId || null;
+
+        const planoUsuario = obterPlanoEfetivo(usuario);
+
+        const planoUsuarioAlvo = usuarioAlvo
+          ? obterPlanoEfetivo(usuarioAlvo)
+          : null;
+
+        return {
+          id: String(evento._id),
+          _id: String(evento._id),
+
+          tipo: evento.tipo,
+          titulo: evento.titulo || '',
+          mensagem: evento.mensagem || '',
+          targetUrl: evento.targetUrl || '',
+          visibilidade: evento.visibilidade,
+          relevancia: Number(evento.relevancia || 0),
+          metadata: evento.metadata || {},
+
+          usuarioId: String(usuario._id),
+
+          usuario: {
+            id: String(usuario._id),
+            _id: String(usuario._id),
+            nome: usuario.nome || '',
+            nomeUsuario: usuario.nomeUsuario || '',
+            nomePublico: montarNomePublico(usuario),
+            plano: planoUsuario,
+            premiumAtivo: planoUsuario === 'premium',
+            criadoEm: usuario.createdAt || null,
+          },
+
+          usuarioAlvoId: usuarioAlvo
+            ? String(usuarioAlvo._id)
+            : null,
+
+          usuarioAlvo: usuarioAlvo
+            ? {
+                id: String(usuarioAlvo._id),
+                _id: String(usuarioAlvo._id),
+                nome: usuarioAlvo.nome || '',
+                nomeUsuario: usuarioAlvo.nomeUsuario || '',
+                nomePublico: montarNomePublico(usuarioAlvo),
+                plano: planoUsuarioAlvo,
+                premiumAtivo: planoUsuarioAlvo === 'premium',
+                criadoEm: usuarioAlvo.createdAt || null,
+              }
+            : null,
+
+          rankingPrivadoId: rankingPrivado
+            ? String(rankingPrivado._id)
+            : null,
+
+          rankingPrivado: rankingPrivado
+            ? {
+                id: String(rankingPrivado._id),
+                _id: String(rankingPrivado._id),
+                nome: rankingPrivado.nome || '',
+                descricao: rankingPrivado.descricao || '',
+                codigoConvite: rankingPrivado.codigoConvite || '',
+                status: rankingPrivado.status || '',
+                totalParticipantes:
+                  rankingPrivado.totalParticipantes || 0,
+                maxParticipantes:
+                  rankingPrivado.maxParticipantes || 0,
+              }
+            : null,
+
+          createdAt: evento.createdAt,
+          updatedAt: evento.updatedAt,
+          criadoEm: evento.createdAt,
+        };
+      });
+
+    const totalPages = Math.max(
+      1,
+      Math.ceil(total / limit)
+    );
+
+    return res.json({
+      ok: true,
+      page,
+      limit,
+      total,
+      totalPages,
+      eventos: eventosNormalizados,
+    });
+  } catch (err) {
+    console.error('Erro ao carregar feed social:', err);
+
+    return res.status(500).json({
+      erro: 'Erro interno ao carregar feed da comunidade.',
+    });
+  }
+});
 
 /**
  * GET /social/usuarios?busca=gabriel
@@ -774,6 +1064,78 @@ router.post('/usuarios/:id/seguir', async (req, res) => {
       usuarioAlvoId
     );
 
+    const usuarioSeguidor = await User.findById(req.usuario.id)
+  .select('nome nomeUsuario')
+  .lean();
+
+const usuarioSeguido = await User.findById(req.params.id)
+  .select('nome nomeUsuario')
+  .lean();
+
+const nomeSeguidor =
+  usuarioSeguidor?.nomeUsuario ||
+  usuarioSeguidor?.nome ||
+  'Um usuário';
+
+const nomeSeguido =
+  usuarioSeguido?.nomeUsuario ||
+  usuarioSeguido?.nome ||
+  'outro usuário';
+
+await criarEventoFeedSocial({
+  tipo: 'FOLLOW_USER',
+  usuarioId: req.usuario.id,
+  usuarioAlvoId: req.params.id,
+  titulo: `@${nomeSeguidor} começou a seguir @${nomeSeguido}`,
+  mensagem: 'Novo vínculo social na comunidade TradeSports.',
+  targetUrl: `/perfil/${req.usuario.id}`,
+  relevancia: 1,
+  metadata: {
+    origem: 'follow',
+    seguidoId: String(req.params.id),
+  },
+});
+
+await adicionarNotificacaoUsuario(req.params.id, {
+  title: `${nomeSeguidor} começou a seguir você`,
+  body: 'Um usuário passou a acompanhar seu perfil na TradeSports.',
+  metadata: {
+    tipo: 'FOLLOW_USER',
+    targetUrl: `/perfil/${req.usuario.id}`,
+    usuarioId: String(req.usuario.id),
+  },
+});
+
+const followExistente = await UserFollow.findOne({
+  seguidorId: req.usuario.id,
+  seguidoId: req.params.id,
+});
+
+const eraAtivo = followExistente?.status === 'ativo';
+
+const follow = await UserFollow.findOneAndUpdate(
+  {
+    seguidorId: req.usuario.id,
+    seguidoId: req.params.id,
+  },
+  {
+    $set: {
+      status: 'ativo',
+      seguidoEm: new Date(),
+      removidoEm: null,
+      bloqueadoEm: null,
+    },
+  },
+  {
+    new: true,
+    upsert: true,
+    setDefaultsOnInsert: true,
+  }
+);
+
+if (!eraAtivo) {
+  // cria feed + notificação aqui
+}
     return res.json({
       ok: true,
       seguindo: true,

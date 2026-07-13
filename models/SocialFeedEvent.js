@@ -7,15 +7,13 @@ const SocialFeedEventSchema = new mongoose.Schema(
       required: true,
       index: true,
       enum: [
-        'FOLLOW_USER',
-        'PRIVATE_RANKING_CREATED',
-        'PRIVATE_RANKING_JOINED',
-        'PRIVATE_RANKING_INVITE_ACCEPTED',
-        'RANKING_POSITION_CHANGED',
-        'TRADE_EXECUTED',
-        'MILESTONE_RENTABILITY',
-        'SYSTEM',
-      ],
+  'FOLLOW_USER',
+  'PRIVATE_RANKING_CREATED',
+  'PRIVATE_RANKING_JOINED',
+  'RANKING_TOP_ACHIEVED',
+  'MILESTONE_RENTABILITY',
+  'SYSTEM',
+],
     },
 
     usuarioId: {
