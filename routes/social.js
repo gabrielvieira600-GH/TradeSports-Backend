@@ -985,6 +985,132 @@ router.get('/usuarios/:id/seguidores', async (req, res) => {
 });
 
 /**
+ * GET /social/usuarios/:id/seguindo?busca=gabriel
+ *
+ * Lista usuários que este perfil público segue.
+ */
+router.get('/usuarios/:id/seguindo', async (req, res) => {
+  try {
+    const usuarioAlvo = await User.findById(req.params.id)
+      .select('_id rankingAtivo')
+      .lean();
+
+    if (!usuarioAlvo || usuarioAlvo.rankingAtivo === false) {
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
+      });
+    }
+
+    const busca = normalizarBusca(
+      req.query.busca ||
+        req.query.q ||
+        req.query.search ||
+        ''
+    );
+
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 50)
+    );
+
+    const follows = await UserFollow.find({
+      seguidorId: usuarioAlvo._id,
+      status: 'ativo',
+    })
+      .sort({ seguidoEm: -1, createdAt: -1 })
+      .limit(300)
+      .lean();
+
+    const usuarioIds = follows.map((follow) => follow.seguidoId);
+
+    const filtroUsuarios = {
+      _id: { $in: usuarioIds },
+      rankingAtivo: { $ne: false },
+    };
+
+    if (busca && busca.length >= 2) {
+      const regex = new RegExp(
+        busca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        'i'
+      );
+
+      filtroUsuarios.$or = [
+        { nome: regex },
+        { nomeUsuario: regex },
+        { email: regex },
+      ];
+    }
+
+    const usuarios = await User.find(filtroUsuarios)
+      .select(
+        [
+          '_id',
+          'nome',
+          'nomeUsuario',
+          'email',
+          'plano',
+          'premiumAtivo',
+          'premiumInicio',
+          'premiumFim',
+          'createdAt',
+        ].join(' ')
+      )
+      .limit(limit)
+      .lean();
+
+    const usuariosPorId = new Map(
+      usuarios.map((usuario) => [
+        String(usuario._id),
+        usuario,
+      ])
+    );
+
+    const seguindoDocs = await UserFollow.find({
+      seguidorId: req.usuario.id,
+      seguidoId: { $in: usuarios.map((usuario) => usuario._id) },
+      status: 'ativo',
+    })
+      .select('seguidoId')
+      .lean();
+
+    const seguindoSet = new Set(
+      seguindoDocs.map((doc) => String(doc.seguidoId))
+    );
+
+    return res.json({
+      ok: true,
+      busca,
+      total: follows.length,
+      usuarios: follows
+        .map((follow) => {
+          const usuario = usuariosPorId.get(String(follow.seguidoId));
+
+          if (!usuario) return null;
+
+          const plano = obterPlanoEfetivo(usuario);
+
+          return {
+            id: String(usuario._id),
+            nome: usuario.nome || '',
+            nomeUsuario: usuario.nomeUsuario || '',
+            nomePublico: montarNomePublico(usuario),
+            plano,
+            premiumAtivo: plano === 'premium',
+            seguindo: seguindoSet.has(String(usuario._id)),
+            seguidoEm: follow.seguidoEm || follow.createdAt || null,
+          };
+        })
+        .filter(Boolean),
+    });
+  } catch (err) {
+    console.error('Erro ao listar seguindo do perfil:', err);
+
+    return res.status(500).json({
+      erro: 'Erro interno ao listar usuários seguidos pelo perfil.',
+    });
+  }
+});
+/**
  * GET /social/seguindo
  *
  * Lista quem o usuário logado segue.
