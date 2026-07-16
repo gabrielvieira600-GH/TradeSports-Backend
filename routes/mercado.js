@@ -25,6 +25,10 @@ const {
   obterPlanoEfetivo,
 } = require('../utils/planFeatures');
 
+const {
+  verificarMilestoneRentabilidadeUsuario,
+} = require('../utils/socialFeedMilestones');
+
 const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
 
 const MAKER_FEE = 0.002; // 0.20%
@@ -789,7 +793,9 @@ router.post('/ordem', auth, async (req, res) => {
 
     let resposta = null;
 
-    await session.withTransaction(async () => {
+const usuariosParaVerificarMilestone = new Set();
+
+await session.withTransaction(async () => {
       const usuario = await User.findById(
         req.usuario.id
       ).session(session);
@@ -1429,12 +1435,15 @@ router.post('/ordem', auth, async (req, res) => {
         });
 
         execucoes.push({
-          quantidade: qtdExec,
-          preco: precoExec,
-          bruto,
-          taxaBuyer,
-          taxaSeller,
-        });
+  quantidade: qtdExec,
+  preco: precoExec,
+  bruto,
+  taxaBuyer,
+  taxaSeller,
+});
+
+usuariosParaVerificarMilestone.add(String(buyer._id));
+usuariosParaVerificarMilestone.add(String(seller._id));
       }
 
       if (
@@ -1571,7 +1580,17 @@ router.post('/ordem', auth, async (req, res) => {
               : false,
         },
       };
-    });
+        });
+
+    if (usuariosParaVerificarMilestone.size > 0) {
+      await Promise.allSettled(
+        Array.from(usuariosParaVerificarMilestone).map((usuarioId) =>
+          verificarMilestoneRentabilidadeUsuario(usuarioId, {
+            origem: 'trade_executed',
+          })
+        )
+      );
+    }
 
     return res.json(resposta);
   } catch (err) {
