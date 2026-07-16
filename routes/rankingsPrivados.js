@@ -574,16 +574,18 @@ router.get('/convite/:codigo', async (req, res) => {
     }
 
     const usuario = await User.findById(req.usuario.id)
-      .select(
-        [
-          '_id',
-          'plano',
-          'premiumAtivo',
-          'premiumInicio',
-          'premiumFim',
-        ].join(' ')
-      )
-      .lean();
+  .select(
+    [
+      '_id',
+      'nome',
+      'nomeUsuario',
+      'plano',
+      'premiumAtivo',
+      'premiumInicio',
+      'premiumFim',
+    ].join(' ')
+  )
+  .lean();
 
     const plano = obterPlanoEfetivo(usuario);
 
@@ -764,14 +766,37 @@ router.post(
         );
 
       const totalAtualizado =
-        await recalcularTotalParticipantes(ranking._id);
+  await recalcularTotalParticipantes(ranking._id);
 
-      return res.json({
-        ok: true,
-        status,
-        membro,
-        totalParticipantes: totalAtualizado,
-      });
+if (status === 'aprovado') {
+  const nomeUsuario =
+    usuario.nomeUsuario ||
+    usuario.nome ||
+    'Um usuário';
+
+  await criarEventoFeedSocial({
+    tipo: 'PRIVATE_RANKING_JOINED',
+    usuarioId: req.usuario.id,
+    rankingPrivadoId: ranking._id,
+    titulo: `@${nomeUsuario} entrou em um ranking privado`,
+    mensagem: `Agora participa do ranking ${ranking.nome}.`,
+    targetUrl: '/ranking',
+    relevancia: 2,
+    metadata: {
+      origem: 'private_ranking_joined_by_code',
+      rankingId: String(ranking._id),
+      rankingNome: ranking.nome,
+      codigoConvite: ranking.codigoConvite,
+    },
+  });
+}
+
+return res.json({
+  ok: true,
+  status,
+  membro,
+  totalParticipantes: totalAtualizado,
+});
     } catch (err) {
       console.error(
         'Erro ao entrar em ranking privado:',

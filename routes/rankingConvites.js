@@ -9,6 +9,7 @@ const User = require('../models/User');
 const PrivateRanking = require('../models/PrivateRanking');
 const PrivateRankingMember = require('../models/PrivateRankingMember');
 const PrivateRankingInvite = require('../models/PrivateRankingInvite');
+const SocialFeedEvent = require('../models/SocialFeedEvent');
 
 const {
   obterPlanoEfetivo,
@@ -210,6 +211,37 @@ async function popularConvites(convites) {
       destinatario: montarUsuarioPublico(destinatario),
     };
   });
+}
+
+async function criarEventoFeedSocial({
+  tipo,
+  usuarioId,
+  usuarioAlvoId = null,
+  rankingPrivadoId = null,
+  titulo = '',
+  mensagem = '',
+  targetUrl = '',
+  relevancia = 0,
+  metadata = {},
+}) {
+  try {
+    return await SocialFeedEvent.create({
+      tipo,
+      usuarioId,
+      usuarioAlvoId,
+      rankingPrivadoId,
+      titulo,
+      mensagem,
+      targetUrl,
+      visibilidade: 'publico',
+      status: 'ativo',
+      relevancia,
+      metadata,
+    });
+  } catch (err) {
+    console.error('Erro ao criar evento do feed social:', err);
+    return null;
+  }
 }
 
 /**
@@ -598,6 +630,7 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
         erro: 'Este convite expirou.',
         codigo: 'CONVITE_EXPIRADO',
       });
+      
     }
 
     const [ranking, usuario] = await Promise.all([
@@ -670,6 +703,33 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
       const [conviteDetalhado] = await popularConvites([
         convite.toObject(),
       ]);
+      
+      const usuarioAceitou = await User.findById(req.usuario.id)
+  .select('nome nomeUsuario')
+  .lean();
+  
+      const nomeUsuario =
+  usuarioAceitou?.nomeUsuario ||
+  usuarioAceitou?.nome ||
+  'Um usuário';
+
+await criarEventoFeedSocial({
+  tipo: 'PRIVATE_RANKING_JOINED',
+  usuarioId: req.usuario.id,
+  usuarioAlvoId: convite.remetenteId,
+  rankingPrivadoId: ranking._id,
+  titulo: `@${nomeUsuario} entrou em um ranking privado`,
+  mensagem: `Agora participa do ranking ${ranking.nome}.`,
+  targetUrl: '/ranking',
+  relevancia: 2,
+  metadata: {
+    origem: 'private_ranking_joined_by_invite',
+    conviteId: String(convite._id),
+    rankingId: String(ranking._id),
+    rankingNome: ranking.nome,
+    remetenteId: String(convite.remetenteId),
+  },
+});
 
       return res.json({
         ok: true,
