@@ -1595,11 +1595,11 @@ router.post('/ordem', auth, async (req, res) => {
 
     if (
       err.message ===
-      'LIMITE_ORDENS_ATINGIDO'
+      'LIMITE_SEMANAL_ORDENS_ATINGIDO'
     ) {
       return res.status(403).json({
         erro:
-          'Você atingiu o limite de ordens desta rodada.',
+          'Você atingiu o limite semanal de ordens.',
 
         codigo:
           'LIMITE_ORDENS_ATINGIDO',
