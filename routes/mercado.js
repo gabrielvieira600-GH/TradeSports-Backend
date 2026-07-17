@@ -17,9 +17,12 @@ const Investment = require('../models/Investment');
 
 const RankingSeason = require('../models/RankingSeason');
 
-const RankingRound = require('../models/RankingRound');
-
-const UserRoundUsage = require('../models/UserRoundUsage');
+const {
+  LIMITE_SEMANAL_LITE_PADRAO,
+  obterJanelaSemanal,
+  obterOuCriarQuotaSemanal,
+  consumirOrdemQuotaSemanal,
+} = require('../utils/tradingQuota');
 
 const {
   obterPlanoEfetivo,
@@ -502,243 +505,210 @@ router.get('/minhas-ordens', auth, async (req, res) => {
 
 });
 
-router.get(
-  '/limite-ordens',
-  auth,
-  async (req, res) => {
-    try {
-      const usuario = await User.findById(
-        req.usuario.id
+router.get('/limite-ordens', auth, async (req, res) => {
+  try {
+    const usuario = await User.findById(req.usuario.id)
+      .select(
+        [
+          '_id',
+          'plano',
+          'premiumAtivo',
+          'premiumInicio',
+          'premiumFim',
+        ].join(' ')
       )
-        .select(
-          [
-            '_id',
-            'plano',
-            'premiumAtivo',
-            'premiumInicio',
-            'premiumFim',
-          ].join(' ')
-        )
-        .lean();
+      .lean();
 
-      if (!usuario) {
-        return res.status(404).json({
-          erro: 'Usuário não encontrado.',
-        });
-      }
-
-      const planoEfetivo =
-        obterPlanoEfetivo(usuario);
-
-      const temporada =
-        await RankingSeason.findOne({
-          status: 'ativa',
-        })
-          .sort({
-            iniciadaEm: -1,
-            createdAt: -1,
-          })
-          .lean();
-
-      if (!temporada) {
-        return res.json({
-          temporadaAtiva: false,
-          rodadaAberta: false,
-
-          temporada: null,
-          rodada: null,
-
-          plano: planoEfetivo,
-
-          ordensIlimitadas:
-            planoEfetivo === 'premium',
-
-          limite:
-            planoEfetivo === 'lite'
-              ? 15
-              : null,
-
-          utilizadas:
-            planoEfetivo === 'lite'
-              ? 0
-              : null,
-
-          restantes:
-            planoEfetivo === 'lite'
-              ? 15
-              : null,
-
-          limiteAtingido: false,
-        });
-      }
-
-      const rodada =
-        await RankingRound.findOne({
-          temporadaId: temporada._id,
-          status: 'aberta',
-        })
-          .sort({
-            numero: -1,
-          })
-          .lean();
-
-      const limiteOrdensLite = Number(
-        rodada?.limiteOrdensLite ??
-          temporada
-            .limiteOrdensLitePorRodada ??
-          15
-      );
-
-      if (!rodada) {
-        return res.json({
-          temporadaAtiva: true,
-          rodadaAberta: false,
-
-          temporada: {
-            id: String(temporada._id),
-            codigo: temporada.codigo,
-            nome: temporada.nome,
-          },
-
-          rodada: null,
-
-          plano: planoEfetivo,
-
-          ordensIlimitadas:
-            planoEfetivo === 'premium',
-
-          limite:
-            planoEfetivo === 'lite'
-              ? limiteOrdensLite
-              : null,
-
-          utilizadas:
-            planoEfetivo === 'lite'
-              ? 0
-              : null,
-
-          restantes:
-            planoEfetivo === 'lite'
-              ? limiteOrdensLite
-              : null,
-
-          limiteAtingido: false,
-        });
-      }
-
-      if (planoEfetivo === 'premium') {
-        return res.json({
-          temporadaAtiva: true,
-          rodadaAberta: true,
-
-          temporada: {
-            id: String(temporada._id),
-            codigo: temporada.codigo,
-            nome: temporada.nome,
-          },
-
-          rodada: {
-            id: String(rodada._id),
-            numero: rodada.numero,
-            nome: rodada.nome || '',
-            abertaEm:
-              rodada.abertaEm || null,
-            fimPrevisto:
-              rodada.fimPrevisto || null,
-          },
-
-          plano: 'premium',
-
-          ordensIlimitadas: true,
-
-          limite: null,
-          utilizadas: null,
-          restantes: null,
-
-          limiteAtingido: false,
-        });
-      }
-
-      const uso =
-        await UserRoundUsage.findOne({
-          usuarioId: usuario._id,
-          temporadaId: temporada._id,
-          rodadaId: rodada._id,
-        }).lean();
-
-      const utilizadas = Math.max(
-        0,
-        Number(
-          uso?.ordensUtilizadas || 0
-        )
-      );
-
-      const limiteRegistrado =
-        uso?.limiteOrdens != null
-          ? Number(uso.limiteOrdens)
-          : limiteOrdensLite;
-
-      const restantes = Math.max(
-        0,
-        limiteRegistrado -
-          utilizadas
-      );
-
-      return res.json({
-        temporadaAtiva: true,
-        rodadaAberta: true,
-
-        temporada: {
-          id: String(temporada._id),
-          codigo: temporada.codigo,
-          nome: temporada.nome,
-        },
-
-        rodada: {
-          id: String(rodada._id),
-          numero: rodada.numero,
-          nome: rodada.nome || '',
-          abertaEm:
-            rodada.abertaEm || null,
-          fimPrevisto:
-            rodada.fimPrevisto || null,
-        },
-
-        plano: 'lite',
-
-        ordensIlimitadas: false,
-
-        limite: limiteRegistrado,
-
-        utilizadas,
-
-        restantes,
-
-        limiteAtingido:
-          restantes <= 0,
-
-        primeiraOrdemEm:
-          uso?.primeiraOrdemEm || null,
-
-        ultimaOrdemEm:
-          uso?.ultimaOrdemEm || null,
-
-        limiteAtingidoEm:
-          uso?.limiteAtingidoEm || null,
-      });
-    } catch (err) {
-      console.error(
-        'Erro ao consultar limite de ordens:',
-        err
-      );
-
-      return res.status(500).json({
-        erro:
-          'Erro interno ao consultar limite de ordens.',
+    if (!usuario) {
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
+        codigo: 'USUARIO_NAO_ENCONTRADO',
       });
     }
+
+    const planoEfetivo = obterPlanoEfetivo(usuario);
+    const janela = obterJanelaSemanal();
+
+    const temporada = await RankingSeason.findOne({
+      status: 'ativa',
+    })
+      .sort({
+        iniciadaEm: -1,
+        createdAt: -1,
+      })
+      .lean();
+
+    if (!temporada) {
+      return res.json({
+        temporadaAtiva: false,
+        mercadoAberto: false,
+
+        temporada: null,
+
+        plano: planoEfetivo,
+
+        ordensIlimitadas:
+          planoEfetivo === 'premium',
+
+        periodo: {
+          tipo: janela.periodoTipo,
+          chave: janela.periodoChave,
+          inicio: janela.periodoInicio,
+          fim: janela.periodoFim,
+          renovaEm: janela.renovaEm,
+          timezone: janela.timezone,
+        },
+
+        limite:
+          planoEfetivo === 'lite'
+            ? LIMITE_SEMANAL_LITE_PADRAO
+            : null,
+
+        utilizadas:
+          planoEfetivo === 'lite'
+            ? 0
+            : null,
+
+        restantes:
+          planoEfetivo === 'lite'
+            ? LIMITE_SEMANAL_LITE_PADRAO
+            : null,
+
+        limiteAtingido: false,
+      });
+    }
+
+    /*
+     * Enquanto o campo mercadoAberto ainda não existir
+     * nos documentos antigos, o mercado será considerado
+     * aberto por compatibilidade.
+     *
+     * Apenas mercadoAberto === false fecha o mercado.
+     */
+    const mercadoAberto =
+      temporada.mercadoAberto !== false;
+
+    const temporadaResposta = {
+      id: String(temporada._id),
+      codigo: temporada.codigo,
+      nome: temporada.nome,
+      iniciadaEm:
+        temporada.iniciadaEm || null,
+      encerraEm:
+        temporada.encerraEm ||
+        temporada.fimPrevisto ||
+        null,
+    };
+
+    if (planoEfetivo === 'premium') {
+      return res.json({
+        temporadaAtiva: true,
+        mercadoAberto,
+
+        temporada: temporadaResposta,
+
+        plano: 'premium',
+
+        ordensIlimitadas: true,
+
+        periodo: {
+          tipo: janela.periodoTipo,
+          chave: janela.periodoChave,
+          inicio: janela.periodoInicio,
+          fim: janela.periodoFim,
+          renovaEm: janela.renovaEm,
+          timezone: janela.timezone,
+        },
+
+        limite: null,
+        utilizadas: null,
+        restantes: null,
+        limiteAtingido: false,
+
+        primeiraOrdemEm: null,
+        ultimaOrdemEm: null,
+        limiteAtingidoEm: null,
+      });
+    }
+
+    const {
+      quota,
+      janela: janelaQuota,
+    } = await obterOuCriarQuotaSemanal({
+      usuario,
+      temporada,
+      limiteLite:
+        LIMITE_SEMANAL_LITE_PADRAO,
+    });
+
+    const limite = Math.max(
+      1,
+      Number(
+        quota.limiteOrdens ||
+          LIMITE_SEMANAL_LITE_PADRAO
+      )
+    );
+
+    const utilizadas = Math.max(
+      0,
+      Number(quota.ordensUtilizadas || 0)
+    );
+
+    const restantes = Math.max(
+      0,
+      limite - utilizadas
+    );
+
+    return res.json({
+      temporadaAtiva: true,
+      mercadoAberto,
+
+      temporada: temporadaResposta,
+
+      plano: 'lite',
+
+      ordensIlimitadas: false,
+
+      periodo: {
+        tipo: janelaQuota.periodoTipo,
+        chave: janelaQuota.periodoChave,
+        inicio: janelaQuota.periodoInicio,
+        fim: janelaQuota.periodoFim,
+        renovaEm: janelaQuota.renovaEm,
+        timezone: janelaQuota.timezone,
+      },
+
+      limite,
+      utilizadas,
+      restantes,
+
+      limiteAtingido:
+        utilizadas >= limite,
+
+      primeiraOrdemEm:
+        quota.primeiraOrdemEm || null,
+
+      ultimaOrdemEm:
+        quota.ultimaOrdemEm || null,
+
+      limiteAtingidoEm:
+        quota.limiteAtingidoEm || null,
+    });
+  } catch (err) {
+    console.error(
+      'Erro ao consultar limite semanal de ordens:',
+      err
+    );
+
+    return res.status(500).json({
+      erro:
+        'Erro interno ao consultar limite de ordens.',
+
+      codigo:
+        'ERRO_CONSULTA_LIMITE_ORDENS',
+    });
   }
-);
+});
 
 router.post('/ordem', auth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -791,11 +761,12 @@ router.post('/ordem', auth, async (req, res) => {
       });
     }
 
-    let resposta = null;
+        let resposta = null;
 
-const usuariosParaVerificarMilestone = new Set();
+    const usuariosParaVerificarMilestone =
+      new Set();
 
-await session.withTransaction(async () => {
+    await session.withTransaction(async () => {
       const usuario = await User.findById(
         req.usuario.id
       ).session(session);
@@ -873,9 +844,12 @@ await session.withTransaction(async () => {
         }
       }
 
-      /*
-       * A ordem só pode ser criada durante
-       * uma temporada ativa e uma rodada aberta.
+            /*
+       * A negociação depende de uma temporada
+       * TradeSports ativa.
+       *
+       * Rodadas esportivas não controlam mais
+       * a criação de ordens.
        */
       const temporada =
         await RankingSeason.findOne({
@@ -893,154 +867,67 @@ await session.withTransaction(async () => {
         );
       }
 
-      const rodada =
-        await RankingRound.findOne({
-          temporadaId: temporada._id,
-          status: 'aberta',
-        })
-          .sort({
-            numero: -1,
-          })
-          .session(session);
+      /*
+       * Compatibilidade:
+       * temporadas antigas sem o campo
+       * mercadoAberto continuam abertas.
+       *
+       * Apenas o valor false fecha o mercado.
+       */
+      if (
+        temporada.mercadoAberto === false
+      ) {
+        const erroMercado =
+          new Error('MERCADO_FECHADO');
 
-      if (!rodada) {
-        throw new Error(
-          'RODADA_NAO_ABERTA'
-        );
+        erroMercado.temporadaId =
+          String(temporada._id);
+
+        erroMercado.temporadaCodigo =
+          temporada.codigo || null;
+
+        throw erroMercado;
       }
 
       const planoEfetivo =
         obterPlanoEfetivo(usuario);
 
-      const limiteOrdensLite = Number(
-        rodada.limiteOrdensLite ??
-          temporada
-            .limiteOrdensLitePorRodada ??
-          15
-      );
-
-      let usoRodada = null;
+      let quotaSemanal = null;
+      let janelaSemanal =
+        obterJanelaSemanal();
 
       /*
-       * Premium não possui limite comercial.
-       * Lite consome uma unidade por ordem aceita.
+       * Premium possui ordens ilimitadas.
+       *
+       * Lite consome uma ordem da quota semanal.
+       * O consumo ocorre dentro da mesma transação
+       * da criação da ordem.
+       *
+       * Se qualquer etapa falhar, a quota também
+       * será revertida.
        */
       if (planoEfetivo === 'lite') {
-        usoRodada =
-          await UserRoundUsage.findOne({
-            usuarioId: usuario._id,
-            temporadaId: temporada._id,
-            rodadaId: rodada._id,
-          }).session(session);
-
-        const agora = new Date();
-
-        if (!usoRodada) {
-          const criados =
-            await UserRoundUsage.create(
-              [
-                {
-                  usuarioId: usuario._id,
-                  temporadaId:
-                    temporada._id,
-                  rodadaId: rodada._id,
-                  numeroRodada:
-                    rodada.numero,
-                  planoNoMomento: 'lite',
-                  limiteOrdens:
-                    limiteOrdensLite,
-                  ordensUtilizadas: 1,
-                  primeiraOrdemEm: agora,
-                  ultimaOrdemEm: agora,
-                  limiteAtingidoEm:
-                    limiteOrdensLite === 1
-                      ? agora
-                      : null,
-                },
-              ],
-              {
-                session,
-              }
-            );
-
-          usoRodada = criados[0];
-        } else {
-          const ordensUtilizadas =
-            Number(
-              usoRodada.ordensUtilizadas ||
-                0
-            );
-
-          const limiteRegistrado =
-            Number(
-              usoRodada.limiteOrdens ||
-                limiteOrdensLite
-            );
-
-          if (
-            ordensUtilizadas >=
-            limiteRegistrado
-          ) {
-            const erroLimite =
-              new Error(
-                'LIMITE_ORDENS_ATINGIDO'
-              );
-
-            erroLimite.limite =
-              limiteRegistrado;
-
-            erroLimite.utilizadas =
-              ordensUtilizadas;
-
-            erroLimite.rodada =
-              rodada.numero;
-
-            erroLimite.temporada =
-              temporada.codigo;
-
-            throw erroLimite;
-          }
-
-          usoRodada.planoNoMomento =
-            'lite';
-
-          usoRodada.numeroRodada =
-            rodada.numero;
-
-          usoRodada.limiteOrdens =
-            limiteOrdensLite;
-
-          usoRodada.ordensUtilizadas =
-            ordensUtilizadas + 1;
-
-          usoRodada.primeiraOrdemEm =
-            usoRodada.primeiraOrdemEm ||
-            agora;
-
-          usoRodada.ultimaOrdemEm =
-            agora;
-
-          if (
-            usoRodada.ordensUtilizadas >=
-            limiteOrdensLite
-          ) {
-            usoRodada.limiteAtingidoEm =
-              usoRodada
-                .limiteAtingidoEm ||
-              agora;
-          }
-
-          await usoRodada.save({
+        const resultadoQuota =
+          await consumirOrdemQuotaSemanal({
+            usuario,
+            temporada,
             session,
+            limiteLite:
+              LIMITE_SEMANAL_LITE_PADRAO,
           });
-        }
+
+        quotaSemanal =
+          resultadoQuota.quota;
+
+        janelaSemanal =
+          resultadoQuota.janela;
       }
 
-      /*
-       * A franquia já foi validada dentro
+            /*
+       * A quota semanal foi validada dentro
        * da mesma transação.
        *
-       * Se a criação da ordem falhar,
+       * Se a criação ou execução da ordem falhar,
        * o consumo também será revertido.
        */
       const [ordem] = await Order.create(
@@ -1434,16 +1321,21 @@ await session.withTransaction(async () => {
           },
         });
 
-        execucoes.push({
-  quantidade: qtdExec,
-  preco: precoExec,
-  bruto,
-  taxaBuyer,
-  taxaSeller,
-});
+                execucoes.push({
+          quantidade: qtdExec,
+          preco: precoExec,
+          bruto,
+          taxaBuyer,
+          taxaSeller,
+        });
 
-usuariosParaVerificarMilestone.add(String(buyer._id));
-usuariosParaVerificarMilestone.add(String(seller._id));
+        usuariosParaVerificarMilestone.add(
+          String(buyer._id)
+        );
+
+        usuariosParaVerificarMilestone.add(
+          String(seller._id)
+        );
       }
 
       if (
@@ -1470,10 +1362,19 @@ usuariosParaVerificarMilestone.add(String(seller._id));
         session,
       });
 
+            const limiteOrdens =
+        planoEfetivo === 'lite'
+          ? Number(
+              quotaSemanal
+                ?.limiteOrdens ||
+                LIMITE_SEMANAL_LITE_PADRAO
+            )
+          : null;
+
       const ordensUtilizadas =
         planoEfetivo === 'lite'
           ? Number(
-              usoRodada
+              quotaSemanal
                 ?.ordensUtilizadas || 0
             )
           : null;
@@ -1482,7 +1383,7 @@ usuariosParaVerificarMilestone.add(String(seller._id));
         planoEfetivo === 'lite'
           ? Math.max(
               0,
-              limiteOrdensLite -
+              limiteOrdens -
                 ordensUtilizadas
             )
           : null;
@@ -1530,7 +1431,7 @@ usuariosParaVerificarMilestone.add(String(seller._id));
           ),
         },
 
-        temporada: {
+                temporada: {
           id: String(
             temporada._id
           ),
@@ -1540,18 +1441,10 @@ usuariosParaVerificarMilestone.add(String(seller._id));
 
           nome:
             temporada.nome,
-        },
 
-        rodada: {
-          id: String(
-            rodada._id
-          ),
+          ativa: true,
 
-          numero:
-            rodada.numero,
-
-          nome:
-            rodada.nome || '',
+          mercadoAberto: true,
         },
 
         plano: {
@@ -1563,9 +1456,26 @@ usuariosParaVerificarMilestone.add(String(seller._id));
         },
 
         franquiaOrdens: {
+          periodoTipo: 'semanal',
+
+          periodoChave:
+            janelaSemanal.periodoChave,
+
+          periodoInicio:
+            janelaSemanal.periodoInicio,
+
+          periodoFim:
+            janelaSemanal.periodoFim,
+
+          renovaEm:
+            janelaSemanal.renovaEm,
+
+          timezone:
+            janelaSemanal.timezone,
+
           limite:
             planoEfetivo === 'lite'
-              ? limiteOrdensLite
+              ? limiteOrdens
               : null,
 
           utilizadas:
@@ -1662,16 +1572,24 @@ usuariosParaVerificarMilestone.add(String(seller._id));
       });
     }
 
-    if (
+        if (
       err.message ===
-      'RODADA_NAO_ABERTA'
+      'MERCADO_FECHADO'
     ) {
       return res.status(409).json({
         erro:
-          'Não existe uma rodada aberta no momento.',
+          'O mercado está temporariamente fechado para novas ordens.',
 
         codigo:
-          'RODADA_NAO_ABERTA',
+          'MERCADO_FECHADO',
+
+        temporada: {
+          id:
+            err.temporadaId || null,
+
+          codigo:
+            err.temporadaCodigo || null,
+        },
       });
     }
 
