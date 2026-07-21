@@ -1106,36 +1106,6 @@ await adicionarNotificacaoUsuario(req.params.id, {
   },
 });
 
-const followExistente = await UserFollow.findOne({
-  seguidorId: req.usuario.id,
-  seguidoId: req.params.id,
-});
-
-const eraAtivo = followExistente?.status === 'ativo';
-
-const follow = await UserFollow.findOneAndUpdate(
-  {
-    seguidorId: req.usuario.id,
-    seguidoId: req.params.id,
-  },
-  {
-    $set: {
-      status: 'ativo',
-      seguidoEm: new Date(),
-      removidoEm: null,
-      bloqueadoEm: null,
-    },
-  },
-  {
-    new: true,
-    upsert: true,
-    setDefaultsOnInsert: true,
-  }
-);
-
-if (!eraAtivo) {
-  // cria feed + notificação aqui
-}
     return res.json({
       ok: true,
       seguindo: true,
