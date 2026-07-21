@@ -368,8 +368,10 @@ app.post('/esqueci-senha', async (req, res) => {
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    usuario.resetSenhaToken = token;
-    usuario.resetSenhaExpiraEm = Date.now() + 60 * 60 * 1000;
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    usuario.resetSenhaTokenHash = tokenHash;
+    usuario.resetSenhaExpiraEm = new Date(Date.now() + 60 * 60 * 1000);
     await usuario.save();
 
     await enviarEmailResetSenha(usuario.email, token);
@@ -397,9 +399,14 @@ app.post('/resetar-senha', async (req, res) => {
       });
     }
 
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(String(token))
+      .digest('hex');
+
     const usuario = await User.findOne({
-      resetSenhaToken: String(token),
-      resetSenhaExpiraEm: { $gt: Date.now() },
+      resetSenhaTokenHash: tokenHash,
+      resetSenhaExpiraEm: { $gt: new Date() },
     });
 
     if (!usuario) {
@@ -409,7 +416,7 @@ app.post('/resetar-senha', async (req, res) => {
     }
 
     usuario.senha = await bcrypt.hash(String(novaSenha), 10);
-    usuario.resetSenhaToken = null;
+    usuario.resetSenhaTokenHash = null;
     usuario.resetSenhaExpiraEm = null;
     usuario.senhaAlteradaEm = new Date();
     await usuario.save();
@@ -682,3 +689,4 @@ app.get('/admin/system/check', auth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+

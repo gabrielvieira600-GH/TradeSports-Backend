@@ -166,8 +166,9 @@ premiumFim: {
     tokenVerificacao: { type: String, default: null, index: true },
     emailVerificadoEm: { type: Date, default: null },
 
-    resetSenhaToken: { type: String, default: null, index: true },
-    resetSenhaExpiraEm: { type: Number, default: null },
+    // Apenas o hash SHA-256 do token é persistido. O token bruto existe somente no e-mail.
+    resetSenhaTokenHash: { type: String, default: null, index: true },
+    resetSenhaExpiraEm: { type: Date, default: null },
     senhaAlteradaEm: { type: Date, default: null },
 
     failedLoginAttempts: { type: Number, default: 0 },
@@ -293,4 +294,5 @@ UserSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
+
 
