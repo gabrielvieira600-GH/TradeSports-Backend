@@ -1049,157 +1049,642 @@ router.post('/saque', auth, async (req, res) => {
 
 router.get('/extrato', auth, async (req, res) => {
   try {
-    const usuario = await User.findById(req.usuario.id).lean();
+    const usuario = await User.findById(
+      req.usuario.id
+    ).lean();
+
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado.' });
-    }
-
-    const saldoAtual = Number(usuario?.saldo || 0);
-    const { from, to, tipos } = req.query;
-
-    let tiposFiltro = null;
-    if (tipos && String(tipos).trim()) {
-      tiposFiltro = String(tipos)
-        .split(',')
-        .map((t) => t.trim().toUpperCase())
-        .filter(Boolean);
-    }
-
-    const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : null;
-    const toDate = to ? new Date(`${to}T23:59:59.999Z`) : null;
-
-    let movimentos = await Investment.find({
-      $or: [
-        { usuarioId: req.usuario.id },
-        { usuarioLegacyId: usuario.legacyId ?? null },
-      ],
-    })
-      .sort({ data: 1 })
-      .lean();
-
-    movimentos = movimentos
-      .map((i) => {
-        const unit =
-          i.precoUnitario != null
-            ? Number(i.precoUnitario)
-            : i.valorUnitario != null
-            ? Number(i.valorUnitario)
-            : 0;
-
-        const total =
-          i.totalPago != null
-            ? Number(i.totalPago)
-            : i.quantidade != null
-            ? Number(i.quantidade) * Number(unit)
-            : 0;
-
-        const tipo = (i.tipo || 'OPERACAO').toUpperCase();
-
-        return {
-          tipo,
-          clubeId: i.clubeLegacyId ?? null,
-          clubeNome: i.clubeNome || '',
-          quantidade: Number(i.quantidade || 0),
-          valor: Number(total || 0),
-          valorUnitario: unit,
-          data: i.data ? new Date(i.data) : new Date(0),
-        };
-      })
-      .filter((m) => {
-        if (fromDate && m.data < fromDate) return false;
-        if (toDate && m.data > toDate) return false;
-        if (tiposFiltro && !tiposFiltro.includes(m.tipo)) return false;
-        return true;
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
       });
+    }
 
-    function calcularDelta(m) {
-      const t = m.tipo;
+    const saldoAtual = Number(
+      usuario.saldo || 0
+    );
 
-      if (t === 'DEPOSITO') return +m.valor;
-      if (t === 'VENDA') return +m.valor;
-      if (t === 'LIQUIDACAO' || t === 'LIQUIDAÇÃO') return +m.valor;
-      if (t === 'DIVIDENDO' || t === 'DIVIDENDOS') return +m.valor;
+    const saldoInicial = Number(
+      usuario.capitalInicial ?? 1000
+    );
 
-      if (t === 'SAQUE') return -m.valor;
+    const {
+      from,
+      to,
+      tipos,
+    } = req.query;
 
-      if (t.includes('COMPRA')) return -m.valor;
-      if (t === 'IPO') return -m.valor;
+    const tiposFiltro =
+      tipos && String(tipos).trim()
+        ? String(tipos)
+            .split(',')
+            .map((tipo) =>
+              String(tipo)
+                .trim()
+                .toUpperCase()
+            )
+            .filter(Boolean)
+        : null;
+
+    const fromDate = from
+      ? new Date(
+          `${from}T00:00:00.000-03:00`
+        )
+      : null;
+
+    const toDate = to
+      ? new Date(
+          `${to}T23:59:59.999-03:00`
+        )
+      : null;
+
+    /*
+     * Nunca consultar usuarioLegacyId null.
+     * Isso poderia incluir registros pertencentes
+     * a outros usuários sem legacyId.
+     */
+    const criteriosUsuario = [
+      {
+        usuarioId: req.usuario.id,
+      },
+    ];
+
+    if (
+      usuario.legacyId !== null &&
+      usuario.legacyId !== undefined
+    ) {
+      criteriosUsuario.push({
+        usuarioLegacyId:
+          usuario.legacyId,
+      });
+    }
+
+    const investments =
+      await Investment.find({
+        $or: criteriosUsuario,
+      })
+        .sort({
+          data: 1,
+          createdAt: 1,
+        })
+        .lean();
+
+    function normalizarTipo(tipoOriginal) {
+      const tipo = String(
+        tipoOriginal || 'OPERACAO'
+      )
+        .trim()
+        .toUpperCase();
+
+      if (
+        tipo === 'COMPRA_SECUNDARIO' ||
+        tipo.includes('COMPRA')
+      ) {
+        return 'COMPRA';
+      }
+
+      if (
+        tipo === 'DIVIDENDOS'
+      ) {
+        return 'DIVIDENDO';
+      }
+
+      if (
+        tipo === 'LIQUIDAÇÃO'
+      ) {
+        return 'LIQUIDACAO';
+      }
+
+      return tipo;
+    }
+
+    function calcularDelta(movimento) {
+      const tipo = movimento.tipo;
+      const valor = Number(
+        movimento.valor || 0
+      );
+
+      if (
+        [
+          'DEPOSITO',
+          'VENDA',
+          'LIQUIDACAO',
+          'DIVIDENDO',
+        ].includes(tipo)
+      ) {
+        return Math.abs(valor);
+      }
+
+      if (
+        [
+          'SAQUE',
+          'COMPRA',
+          'IPO',
+        ].includes(tipo)
+      ) {
+        return -Math.abs(valor);
+      }
+
+      if (tipo === 'AJUSTE') {
+        const direcao = String(
+          movimento.metadata?.direcao ||
+            movimento.metadata?.direction ||
+            ''
+        ).toUpperCase();
+
+        if (
+          direcao === 'D' ||
+          direcao === 'DEBITO'
+        ) {
+          return -Math.abs(valor);
+        }
+
+        if (
+          direcao === 'C' ||
+          direcao === 'CREDITO'
+        ) {
+          return Math.abs(valor);
+        }
+
+        return Number(valor);
+      }
 
       return 0;
     }
 
-    function descricaoMov(m) {
-      const nome = m.clubeNome ? ` - ${m.clubeNome}` : '';
-      const qtd = m.quantidade
-        ? ` (${m.quantidade} cota${m.quantidade > 1 ? 's' : ''})`
-        : '';
+    function descricaoMovimento(movimento) {
+      const nomeClube =
+        movimento.clubeNome
+          ? ` — ${movimento.clubeNome}`
+          : '';
 
-      if (m.tipo === 'DEPOSITO') return 'Depósito';
-      if (m.tipo === 'SAQUE') return 'Saque';
-      if (m.tipo.includes('COMPRA') || m.tipo === 'IPO') return `Compra${nome}${qtd}`;
-      if (m.tipo === 'VENDA') return `Venda${nome}${qtd}`;
-      if (m.tipo.startsWith('LIQ')) return `Liquidação${nome}${qtd}`;
-      if (m.tipo.startsWith('DIV')) return `Dividendos${nome}`;
-      if (m.tipo === 'AJUSTE') return 'Ajuste de saldo (sincronização)';
-      return `${m.tipo}${nome}${qtd}`;
+      const quantidade =
+        movimento.quantidade > 0
+          ? `${movimento.quantidade} ${
+              movimento.quantidade === 1
+                ? 'cota'
+                : 'cotas'
+            }`
+          : '';
+
+      if (
+        movimento.tipo ===
+        'DEPOSITO'
+      ) {
+        return 'Depósito de saldo fictício';
+      }
+
+      if (
+        movimento.tipo ===
+        'SAQUE'
+      ) {
+        return 'Retirada de saldo fictício';
+      }
+
+      if (
+        movimento.tipo ===
+        'COMPRA'
+      ) {
+        return `Compra de ${quantidade}${nomeClube}`;
+      }
+
+      if (
+        movimento.tipo ===
+        'IPO'
+      ) {
+        return `Compra no IPO de ${quantidade}${nomeClube}`;
+      }
+
+      if (
+        movimento.tipo ===
+        'VENDA'
+      ) {
+        return `Venda de ${quantidade}${nomeClube}`;
+      }
+
+      if (
+        movimento.tipo ===
+        'LIQUIDACAO'
+      ) {
+        return `Liquidação${nomeClube}`;
+      }
+
+      if (
+        movimento.tipo ===
+        'DIVIDENDO'
+      ) {
+        return `Dividendos${nomeClube}`;
+      }
+
+      if (
+        movimento.tipo ===
+        'AJUSTE'
+      ) {
+        return 'Ajuste administrativo de saldo';
+      }
+
+      return `${movimento.tipo}${nomeClube}`;
     }
 
-    let saldo = 0;
-    const linhas = movimentos.map((m) => {
-      const delta = calcularDelta(m);
-      saldo = Number((saldo + delta).toFixed(2));
+    const movimentos =
+      investments.map((investment) => {
+        const tipo =
+          normalizarTipo(
+            investment.tipo
+          );
 
-      return {
-        data: m.data.toISOString(),
-        tipo: m.tipo,
-        descricao: descricaoMov(m),
-        valor: Number(Math.abs(delta).toFixed(2)),
-        direcao: delta >= 0 ? 'C' : 'D',
-        saldoApos: saldo,
-      };
-    });
+        const quantidade = Number(
+          investment.quantidade || 0
+        );
 
-    const saldoCalcFinal = saldo;
-    const diff = Number((saldoAtual - saldoCalcFinal).toFixed(2));
+        const precoUnitario = Number(
+          investment.precoUnitario ??
+            investment.valorUnitario ??
+            0
+        );
 
-    if (Math.abs(diff) >= 0.01) {
-      const dataAjuste =
-        linhas.length > 0 ? linhas[0].data : new Date().toISOString();
+        const valorBruto = Number(
+          (
+            quantidade *
+            precoUnitario
+          ).toFixed(2)
+        );
 
-      const linhasComAjuste = [
-        {
-          data: dataAjuste,
-          tipo: 'AJUSTE',
-          descricao: 'Ajuste de saldo (sincronização)',
-          valor: Math.abs(diff),
-          direcao: diff >= 0 ? 'C' : 'D',
-          saldoApos: 0,
-        },
-        ...linhas,
-      ];
+        const valor = Number(
+          investment.totalPago ??
+            valorBruto ??
+            0
+        );
 
-      let s = 0;
-      const recalculado = linhasComAjuste.map((l) => {
-        const delta = l.direcao === 'C' ? l.valor : -l.valor;
-        s = Number((s + delta).toFixed(2));
-        return { ...l, saldoApos: s };
+        const taxa = Number(
+          investment.metadata?.fee ??
+            investment.metadata?.taxa ??
+            0
+        );
+
+        const movimento = {
+          id: String(
+            investment._id
+          ),
+
+          tipo,
+
+          tipoOriginal:
+            investment.tipo,
+
+          clubeId:
+            investment.clubeLegacyId ??
+            null,
+
+          clubeNome:
+            investment.clubeNome || '',
+
+          quantidade,
+
+          precoUnitario,
+
+          valorBruto,
+
+          valor,
+
+          taxa,
+
+          tipoTaxa:
+            investment.metadata
+              ?.feeType || null,
+
+          orderId:
+            investment.metadata
+              ?.orderId || null,
+
+          origem:
+            investment.origem ||
+            investment.metadata
+              ?.mercado ||
+            null,
+
+          data:
+            investment.data
+              ? new Date(
+                  investment.data
+                )
+              : new Date(0),
+
+          metadata:
+            investment.metadata || {},
+        };
+
+        movimento.delta =
+          calcularDelta(movimento);
+
+        movimento.descricao =
+          descricaoMovimento(
+            movimento
+          );
+
+        return movimento;
       });
 
-      return res.json({
-        saldoAtual,
-        saldoCalculadoFinal: Number(s.toFixed(2)),
-        itens: recalculado.sort((a, b) => new Date(b.data) - new Date(a.data)),
+    /*
+     * O saldo é reconstruído desde o capital
+     * inicial, e não mais a partir de zero.
+     */
+    let saldoCalculado =
+      saldoInicial;
+
+    const linhas = [
+      {
+        id: 'saldo-inicial',
+        data:
+          usuario.createdAt ||
+          movimentos[0]?.data ||
+          new Date(),
+
+        tipo: 'SALDO_INICIAL',
+        tipoOriginal:
+          'SALDO_INICIAL',
+
+        descricao:
+          'Saldo fictício inicial',
+
+        clubeId: null,
+        clubeNome: '',
+        quantidade: 0,
+        precoUnitario: 0,
+        valorBruto:
+          saldoInicial,
+        taxa: 0,
+        tipoTaxa: null,
+        orderId: null,
+        origem: 'SISTEMA',
+        valor:
+          Math.abs(saldoInicial),
+        direcao:
+          saldoInicial >= 0
+            ? 'C'
+            : 'D',
+        saldoApos:
+          Number(
+            saldoInicial.toFixed(2)
+          ),
+      },
+    ];
+
+    for (
+      const movimento of
+      movimentos
+    ) {
+      saldoCalculado = Number(
+        (
+          saldoCalculado +
+          movimento.delta
+        ).toFixed(2)
+      );
+
+      linhas.push({
+        id: movimento.id,
+        data:
+          movimento.data.toISOString(),
+
+        tipo:
+          movimento.tipo,
+
+        tipoOriginal:
+          movimento.tipoOriginal,
+
+        descricao:
+          movimento.descricao,
+
+        clubeId:
+          movimento.clubeId,
+
+        clubeNome:
+          movimento.clubeNome,
+
+        quantidade:
+          movimento.quantidade,
+
+        precoUnitario:
+          movimento.precoUnitario,
+
+        valorBruto:
+          movimento.valorBruto,
+
+        taxa:
+          movimento.taxa,
+
+        tipoTaxa:
+          movimento.tipoTaxa,
+
+        orderId:
+          movimento.orderId,
+
+        origem:
+          movimento.origem,
+
+        valor:
+          Number(
+            Math.abs(
+              movimento.delta
+            ).toFixed(2)
+          ),
+
+        direcao:
+          movimento.delta >= 0
+            ? 'C'
+            : 'D',
+
+        saldoApos:
+          saldoCalculado,
       });
     }
+
+    /*
+     * Diferenças de dados legados permanecem
+     * auditáveis como ajuste de reconciliação.
+     */
+    const diferenca = Number(
+      (
+        saldoAtual -
+        saldoCalculado
+      ).toFixed(2)
+    );
+
+    if (
+      Math.abs(diferenca) >=
+      0.01
+    ) {
+      saldoCalculado = Number(
+        (
+          saldoCalculado +
+          diferenca
+        ).toFixed(2)
+      );
+
+      linhas.push({
+        id:
+          'ajuste-reconciliacao',
+
+        data:
+          new Date().toISOString(),
+
+        tipo: 'AJUSTE',
+        tipoOriginal:
+          'AJUSTE_RECONCILIACAO',
+
+        descricao:
+          'Ajuste de reconciliação de dados anteriores',
+
+        clubeId: null,
+        clubeNome: '',
+        quantidade: 0,
+        precoUnitario: 0,
+        valorBruto:
+          Math.abs(diferenca),
+        taxa: 0,
+        tipoTaxa: null,
+        orderId: null,
+        origem: 'SISTEMA',
+
+        valor:
+          Math.abs(diferenca),
+
+        direcao:
+          diferenca >= 0
+            ? 'C'
+            : 'D',
+
+        saldoApos:
+          saldoCalculado,
+      });
+    }
+
+    /*
+     * Filtros são aplicados somente depois do
+     * cálculo. Assim, saldoApos continua correto
+     * mesmo ao consultar apenas um período.
+     */
+    const itensFiltrados =
+      linhas.filter((linha) => {
+        const dataLinha =
+          new Date(linha.data);
+
+        if (
+          fromDate &&
+          dataLinha < fromDate
+        ) {
+          return false;
+        }
+
+        if (
+          toDate &&
+          dataLinha > toDate
+        ) {
+          return false;
+        }
+
+        if (
+          tiposFiltro &&
+          !tiposFiltro.includes(
+            linha.tipo
+          )
+        ) {
+          return false;
+        }
+
+        return true;
+      });
+
+    const totais = linhas.reduce(
+      (acc, linha) => {
+        if (
+          linha.tipo ===
+          'SALDO_INICIAL'
+        ) {
+          return acc;
+        }
+
+        const valor = Number(
+          linha.valor || 0
+        );
+
+        if (
+          linha.direcao ===
+          'C'
+        ) {
+          acc.creditos += valor;
+        } else {
+          acc.debitos += valor;
+        }
+
+        acc.taxas += Number(
+          linha.taxa || 0
+        );
+
+        return acc;
+      },
+      {
+        creditos: 0,
+        debitos: 0,
+        taxas: 0,
+      }
+    );
 
     return res.json({
-      saldoAtual,
-      saldoCalculadoFinal: Number(saldoCalcFinal.toFixed(2)),
-      itens: linhas.sort((a, b) => new Date(b.data) - new Date(a.data)),
+      saldoInicial:
+        Number(
+          saldoInicial.toFixed(2)
+        ),
+
+      saldoAtual:
+        Number(
+          saldoAtual.toFixed(2)
+        ),
+
+      saldoCalculadoFinal:
+        Number(
+          saldoCalculado.toFixed(2)
+        ),
+
+      reconciliado:
+        Math.abs(
+          saldoAtual -
+            saldoCalculado
+        ) < 0.01,
+
+      resumo: {
+        totalCreditos:
+          Number(
+            totais.creditos.toFixed(2)
+          ),
+
+        totalDebitos:
+          Number(
+            totais.debitos.toFixed(2)
+          ),
+
+        totalTaxas:
+          Number(
+            totais.taxas.toFixed(2)
+          ),
+      },
+
+      itens:
+        itensFiltrados.sort(
+          (a, b) =>
+            new Date(b.data) -
+            new Date(a.data)
+        ),
     });
   } catch (err) {
-    console.error('Erro ao gerar extrato:', err);
-    return res.status(500).json({ erro: 'Erro ao gerar extrato.' });
+    console.error(
+      'Erro ao gerar extrato:',
+      err
+    );
+
+    return res.status(500).json({
+      erro:
+        'Erro ao gerar extrato.',
+    });
   }
 });
 
