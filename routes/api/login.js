@@ -74,14 +74,14 @@ router.post('/', loginLimiter, async (req, res) => {
       body.username;
 
     const senha = body.senha || body.password;
-    const identificadorOriginal = String(identificador || '').trim();
-    const emailNormalizado = identificadorOriginal.toLowerCase();
+const identificadorOriginal = String(identificadorRaw || '').trim();
+const emailNormalizado = identificadorOriginal.toLowerCase();
 
-    if (!identNorm || !senha) {
-      return res
-        .status(400)
-        .json({ erro: 'Preencha e-mail ou nome de usuário e senha.' });
-    }
+if (!identificadorOriginal || !senha) {
+  return res
+    .status(400)
+    .json({ erro: 'Preencha e-mail ou nome de usuário e senha.' });
+}
 
     const usuario = await User.findOne({
   $or: [
