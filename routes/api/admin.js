@@ -21,6 +21,12 @@ const Dividendo = require('../../models/dividendos');
 const Liquidacao = require('../../models/Liquidacao');
 const RankingSeason = require('../../models/RankingSeason');
 const RankingRound = require('../../models/RankingRound');
+const {
+  mesAtual,
+  validarMes,
+  deslocarMes,
+  obterOuAtualizarSnapshot,
+} = require('../../utils/adminMetrics');
 
 function round2(n) {
   return Math.round(
@@ -30,6 +36,48 @@ function round2(n) {
 
 router.use(auth);
 router.use(isAdmin);
+
+router.get('/dashboard/metricas', async (req, res) => {
+  try {
+    const mes = validarMes(req.query.mes || mesAtual());
+    const mesesSerie = Array.from({ length: 12 }, (_, indice) =>
+      deslocarMes(mes, indice - 11)
+    );
+    const mesAnterior = deslocarMes(mes, -1);
+    const mesesUnicos = [...new Set([...mesesSerie, mes, mesAnterior])];
+    const snapshots = await Promise.all(
+      mesesUnicos.map((item) => obterOuAtualizarSnapshot(item))
+    );
+    const porMes = new Map(snapshots.map((item) => [item.mes, item]));
+    const selecionado = porMes.get(mes);
+    const anterior = porMes.get(mesAnterior);
+    const serie = mesesSerie.map((item) => porMes.get(item));
+    return res.json({ ok: true, mes, selecionado, anterior, serie });
+  } catch (err) {
+    console.error('[ADMIN METRICAS] Erro ao montar dashboard:', err);
+    return res.status(err.status || 500).json({
+      erro: err.status ? err.message : 'Erro interno ao montar métricas administrativas.',
+    });
+  }
+});
+
+router.post('/dashboard/metricas/recalcular', async (req, res) => {
+  try {
+    const mes = validarMes(req.body?.mes || mesAtual());
+    const snapshot = await obterOuAtualizarSnapshot(mes, { forcar: true });
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'ADMIN_METRICS_RECALCULATED',
+      userId: req.usuario?.id || null,
+      meta: { mes },
+    });
+    return res.json({ ok: true, snapshot });
+  } catch (err) {
+    return res.status(err.status || 500).json({
+      erro: err.status ? err.message : 'Erro interno ao recalcular métricas.',
+    });
+  }
+});
 
 router.get('/status', async (req, res) => {
   const usuarios = await User.countDocuments();
