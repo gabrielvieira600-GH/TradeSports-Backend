@@ -58,6 +58,8 @@ const app = express();
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 4001;
 const CAPITAL_INICIAL_SIMULADO = 1000;
+const VERIFICACAO_EMAIL_TTL_MS = 24 * 60 * 60 * 1000;
+const INTERVALO_REENVIO_EMAIL_MS = 60 * 1000;
 
 if (!JWT_SECRET) {
   console.warn('[SEGURANCA] JWT_SECRET não definido no .env.');
@@ -122,7 +124,7 @@ try {
   );
 
   app.use(
-    ['/esqueci-senha', '/resetar-senha'],
+    ['/esqueci-senha', '/resetar-senha', '/reenviar-verificacao'],
     rateLimit({
       windowMs: 30 * 60 * 1000,
       max: 12,
@@ -211,6 +213,19 @@ function normalizarEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+function criarTokenVerificacao() {
+  const token = crypto.randomBytes(32).toString('hex');
+  return {
+    token,
+    tokenHash: hashToken(token),
+    expiraEm: new Date(Date.now() + VERIFICACAO_EMAIL_TTL_MS),
+  };
+}
+
 function senhaEhForte(senha) {
   const s = String(senha || '');
   return s.length >= 8 && /[a-z]/.test(s) && /[A-Z]/.test(s) && /\d/.test(s);
@@ -271,21 +286,38 @@ app.post('/cadastro', async (req, res) => {
     }
 
     const hashSenha = await bcrypt.hash(String(senha), 10);
-    const tokenVerificacao = crypto.randomBytes(32).toString('hex');
+    const {
+      token: tokenVerificacao,
+      tokenHash: tokenVerificacaoHash,
+      expiraEm: tokenVerificacaoExpiraEm,
+    } = criarTokenVerificacao();
 
     const now = new Date();
     const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip;
     const userAgent = req.headers['user-agent'] || '';
 
     const aceitesCadastro = typeof aceites === 'object' && aceites ? { ...aceites } : {};
-    aceitesCadastro.termosUso = aceitesCadastro.termosUso || {
-      versao: versaoTermos || 'v1-beta',
+
+    aceitesCadastro.termosUso = {
+      ...(aceitesCadastro.termosUso || {}),
+      versao: aceitesCadastro.termosUso?.versao || versaoTermos || 'v1-beta',
       aceitoEm: now,
       ip,
       userAgent,
     };
 
-    await User.create({
+    for (const chave of ['politicaRisco', 'politicaPrivacidade']) {
+      if (aceitesCadastro[chave]) {
+        aceitesCadastro[chave] = {
+          ...aceitesCadastro[chave],
+          aceitoEm: now,
+          ip,
+          userAgent,
+        };
+      }
+    }
+
+    const novoUsuario = await User.create({
       legacyId: Date.now(),
       nome: String(nome).trim(),
       sobrenome: String(sobrenome || '').trim(),
@@ -305,16 +337,32 @@ app.post('/cadastro', async (req, res) => {
       aceitouTermosEm: now,
       versaoTermosAceita: versaoTermos || 'v1-beta',
       emailVerificado: false,
-      tokenVerificacao,
+      verificacaoEmailObrigatoria: true,
+      tokenVerificacao: null,
+      tokenVerificacaoHash,
+      tokenVerificacaoExpiraEm,
+      emailVerificacaoEnviadaEm: null,
       role: 'user',
       admin: false,
     });
 
-    await enviarEmailVerificacao(emailNormalizado, tokenVerificacao);
+    try {
+      await enviarEmailVerificacao(emailNormalizado, tokenVerificacao);
+      novoUsuario.emailVerificacaoEnviadaEm = new Date();
+      await novoUsuario.save();
 
-    return res.status(201).json({
-      mensagem: 'Cadastro realizado com sucesso! Enviamos um e-mail com o link para confirmar seu cadastro.',
-    });
+      return res.status(201).json({
+        mensagem: 'Cadastro realizado com sucesso! Enviamos um e-mail com o link para confirmar seu cadastro.',
+        requerVerificacaoEmail: true,
+      });
+    } catch (emailErr) {
+      console.error('[CADASTRO] Conta criada, mas o e-mail de verificação falhou:', emailErr);
+      return res.status(202).json({
+        mensagem: 'Sua conta foi criada, mas o e-mail de confirmação não pôde ser enviado agora. Solicite um novo envio.',
+        codigo: 'EMAIL_VERIFICACAO_PENDENTE',
+        requerVerificacaoEmail: true,
+      });
+    }
   } catch (err) {
     console.error('[CADASTRO] Erro no cadastro:', err);
 
@@ -326,19 +374,94 @@ app.post('/cadastro', async (req, res) => {
   }
 });
 
-// Verificação de e-mail Mongo
+// Reenvio com resposta genérica para não revelar contas cadastradas.
+app.post('/reenviar-verificacao', async (req, res) => {
+  const respostaGenerica = {
+    mensagem: 'Se a conta existir e ainda precisar de confirmação, enviaremos um novo e-mail.',
+  };
+
+  try {
+    const identificador = String(req.body?.emailOuUsuario || '').trim().toLowerCase();
+    if (!identificador) {
+      return res.status(400).json({ erro: 'Informe seu e-mail ou nome de usuário.' });
+    }
+
+    const usuario = await User.findOne({
+      $or: [{ email: identificador }, { nomeUsuario: identificador }],
+    });
+
+    if (!usuario || usuario.emailVerificado === true) {
+      return res.json(respostaGenerica);
+    }
+
+    const ultimoEnvio = usuario.emailVerificacaoEnviadaEm
+      ? new Date(usuario.emailVerificacaoEnviadaEm).getTime()
+      : 0;
+
+    if (ultimoEnvio && Date.now() - ultimoEnvio < INTERVALO_REENVIO_EMAIL_MS) {
+      return res.json(respostaGenerica);
+    }
+
+    const { token, tokenHash, expiraEm } = criarTokenVerificacao();
+    usuario.tokenVerificacao = null;
+    usuario.tokenVerificacaoHash = tokenHash;
+    usuario.tokenVerificacaoExpiraEm = expiraEm;
+    usuario.emailVerificacaoEnviadaEm = new Date();
+    await usuario.save();
+
+    try {
+      await enviarEmailVerificacao(usuario.email, token);
+    } catch (emailErr) {
+      usuario.emailVerificacaoEnviadaEm = null;
+      await usuario.save().catch(() => {});
+      throw emailErr;
+    }
+
+    return res.json(respostaGenerica);
+  } catch (err) {
+    console.error('[REENVIAR VERIFICACAO] Erro:', err);
+    return res.status(500).json({
+      erro: 'Não foi possível enviar o e-mail de confirmação agora. Tente novamente.',
+    });
+  }
+});
+
+// Token armazenado somente como hash, válido por 24 horas e de uso único.
 app.get('/verificar-email', async (req, res) => {
   try {
-    const { token } = req.query || {};
-    if (!token) return res.status(400).json({ erro: 'Token de verificação não informado.' });
+    const token = req.query?.token;
+    if (!token) {
+      return res.status(400).json({
+        erro: 'Token de verificação não informado.',
+        codigo: 'TOKEN_VERIFICACAO_INVALIDO',
+      });
+    }
 
-    const usuario = await User.findOne({ tokenVerificacao: String(token) });
-    if (!usuario) return res.status(400).json({ erro: 'Token de verificação inválido ou expirado.' });
+    const usuario = await User.findOneAndUpdate(
+      {
+        tokenVerificacaoHash: hashToken(token),
+        tokenVerificacaoExpiraEm: { $gt: new Date() },
+        emailVerificado: { $ne: true },
+      },
+      {
+        $set: {
+          emailVerificado: true,
+          emailVerificadoEm: new Date(),
+          verificacaoEmailObrigatoria: false,
+          tokenVerificacao: null,
+          tokenVerificacaoHash: null,
+          tokenVerificacaoExpiraEm: null,
+        },
+      },
+      { new: true }
+    );
 
-    usuario.emailVerificado = true;
-    usuario.tokenVerificacao = null;
-    usuario.emailVerificadoEm = new Date();
-    await usuario.save();
+    if (!usuario) {
+      return res.status(400).json({
+        erro: 'Este link é inválido, já foi utilizado ou expirou. Solicite um novo e-mail.',
+        codigo: 'TOKEN_VERIFICACAO_INVALIDO',
+      });
+    }
 
     return res.json({ mensagem: 'E-mail verificado com sucesso! Você já pode fazer login.' });
   } catch (err) {
@@ -689,4 +812,5 @@ app.get('/admin/system/check', auth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+
 

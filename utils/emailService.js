@@ -50,7 +50,19 @@ function layoutEmail({ titulo, preheader, conteudo, botao, aviso }) {
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#0d1b2e;border:1px solid #1e3552;border-radius:18px;overflow:hidden;">
             <tr>
               <td style="padding:26px 30px;border-bottom:1px solid #1e3552;">
-                <div style="font-size:22px;font-weight:900;color:#ffffff;">Trade<span style="color:#22c55e;">Sports</span></div>
+                <img
+
+  src="https://www.tradesports.com.br/tradesports-logo.png"
+
+  width="260"
+
+  height="56"
+
+  alt="TradeSports"
+
+  style="display:block;width:260px;max-width:100%;height:56px;object-fit:cover;object-position:center;border:0;outline:none;text-decoration:none;"
+
+>
               </td>
             </tr>
             <tr>
@@ -102,12 +114,12 @@ async function enviarEmailVerificacao(para, token) {
   return enviar({
     para,
     assunto,
-    texto: `Confirme seu cadastro na TradeSports: ${link}`,
+    texto: `Confirme seu cadastro na TradeSports. O link é de uso único e expira em 24 horas: ${link}`,
     html: layoutEmail({
       titulo: 'Confirme seu cadastro',
       preheader: 'Ative sua conta TradeSports.',
       conteudo:
-        '<p>Seu cadastro foi recebido. Confirme seu endereço de e-mail para ativar a conta e acessar a plataforma.</p>',
+        '<p>Seu cadastro foi recebido. Confirme seu endereço de e-mail para ativar a conta e acessar a plataforma.</p><p>Este link é de <strong style="color:#ffffff;">uso único</strong> e expira em <strong style="color:#ffffff;">24 horas</strong>.</p>',
       botao: criarBotao(link, 'Confirmar meu e-mail'),
       aviso:
         'Se você não criou uma conta na TradeSports, ignore esta mensagem.',
@@ -139,4 +151,5 @@ module.exports = {
   enviarEmailVerificacao,
   enviarEmailResetSenha,
 };
+
 

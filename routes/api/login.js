@@ -142,6 +142,22 @@ router.post('/', loginLimiter, async (req, res) => {
       return res.status(401).json({ erro: 'Credenciais inválidas.' });
     }
 
+    if (
+      usuario.verificacaoEmailObrigatoria === true &&
+      usuario.emailVerificado !== true
+    ) {
+      usuario.failedLoginAttempts = 0;
+      usuario.lockUntil = null;
+      usuario.lastFailedLoginAt = null;
+      await usuario.save();
+
+      return res.status(403).json({
+        erro: 'Confirme seu e-mail antes de acessar a TradeSports.',
+        codigo: 'EMAIL_NAO_VERIFICADO',
+        reenviarVerificacao: true,
+      });
+    }
+
     usuario.failedLoginAttempts = 0;
     usuario.lockUntil = null;
     usuario.lastFailedLoginAt = null;

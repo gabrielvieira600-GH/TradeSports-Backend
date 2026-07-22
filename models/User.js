@@ -163,8 +163,17 @@ premiumFim: {
     versaoTermosAceita: { type: String, default: null },
 
     emailVerificado: { type: Boolean, default: false },
-    tokenVerificacao: { type: String, default: null, index: true },
     emailVerificadoEm: { type: Date, default: null },
+
+    // Somente contas criadas a partir da confirmação obrigatória são bloqueadas.
+    // O padrão false preserva o acesso das contas legadas.
+    verificacaoEmailObrigatoria: { type: Boolean, default: false, index: true },
+
+    // Campo legado mantido apenas para compatibilidade; novos tokens nunca são salvos em texto puro.
+    tokenVerificacao: { type: String, default: null, select: false },
+    tokenVerificacaoHash: { type: String, default: null, index: true },
+    tokenVerificacaoExpiraEm: { type: Date, default: null },
+    emailVerificacaoEnviadaEm: { type: Date, default: null },
 
     // Apenas o hash SHA-256 do token é persistido. O token bruto existe somente no e-mail.
     resetSenhaTokenHash: { type: String, default: null, index: true },
@@ -294,5 +303,6 @@ UserSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
+
 
 
