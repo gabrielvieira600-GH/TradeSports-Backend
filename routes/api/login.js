@@ -74,7 +74,8 @@ router.post('/', loginLimiter, async (req, res) => {
       body.username;
 
     const senha = body.senha || body.password;
-    const identNorm = String(identificadorRaw || '').trim().toLowerCase();
+    const identificadorOriginal = String(identificador || '').trim();
+    const emailNormalizado = identificadorOriginal.toLowerCase();
 
     if (!identNorm || !senha) {
       return res
@@ -83,8 +84,11 @@ router.post('/', loginLimiter, async (req, res) => {
     }
 
     const usuario = await User.findOne({
-      $or: [{ email: identNorm }, { nomeUsuario: identNorm }],
-    });
+  $or: [
+    { email: emailNormalizado },
+    { nomeUsuario: identificadorOriginal },
+  ],
+});
 
     if (!usuario) {
       antifraude.logEvent({
