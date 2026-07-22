@@ -638,7 +638,11 @@ router.get('/limite-ordens', auth, async (req, res) => {
       usuario,
       temporada,
       limiteLite:
-        LIMITE_SEMANAL_LITE_PADRAO,
+        Number(
+          temporada.limiteOrdensLiteSemanal ??
+            temporada.limiteOrdensLitePorRodada ??
+            LIMITE_SEMANAL_LITE_PADRAO
+        ),
     });
 
     const limite = Math.max(
@@ -913,7 +917,11 @@ router.post('/ordem', auth, async (req, res) => {
             temporada,
             session,
             limiteLite:
-              LIMITE_SEMANAL_LITE_PADRAO,
+              Number(
+                temporada.limiteOrdensLiteSemanal ??
+                  temporada.limiteOrdensLitePorRodada ??
+                  LIMITE_SEMANAL_LITE_PADRAO
+              ),
           });
 
         quotaSemanal =
@@ -1704,7 +1712,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
 
 
 

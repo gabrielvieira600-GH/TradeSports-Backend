@@ -47,6 +47,14 @@ const RankingSeasonSchema = new mongoose.Schema(
       min: 1,
     },
 
+    // Regra vigente. O campo acima permanece apenas para compatibilidade
+    // com temporadas criadas antes da adoção da quota semanal.
+    limiteOrdensLiteSemanal: {
+      type: Number,
+      default: 15,
+      min: 1,
+    },
+
     rodadaAtual: {
       type: Number,
       default: null,

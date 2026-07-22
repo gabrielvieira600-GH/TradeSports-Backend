@@ -59,9 +59,8 @@ router.get('/atual', auth, async (req, res) => {
       resumoPlano.plano === 'premium'
         ? null
         : Number(
-            rodada?.limiteOrdensLite ??
+            temporada.limiteOrdensLiteSemanal ??
               temporada.limiteOrdensLitePorRodada ??
-              resumoPlano.limites.ordensPorRodada ??
               15
           );
 
@@ -80,8 +79,6 @@ router.get('/atual', auth, async (req, res) => {
         ),
         rodadaAtual:
           temporada.rodadaAtual || null,
-        totalRodadas:
-          temporada.totalRodadas || null,
         inicioPrevisto:
           temporada.inicioPrevisto || null,
         fimPrevisto:
@@ -96,11 +93,6 @@ router.get('/atual', auth, async (req, res) => {
             numero: rodada.numero,
             nome: rodada.nome || '',
             status: rodada.status,
-            limiteOrdensLite: Number(
-              rodada.limiteOrdensLite ??
-                temporada.limiteOrdensLitePorRodada ??
-                15
-            ),
             inicioPrevisto:
               rodada.inicioPrevisto || null,
             fimPrevisto:
@@ -125,7 +117,8 @@ router.get('/atual', auth, async (req, res) => {
       ordens: {
         ilimitadas:
           resumoPlano.plano === 'premium',
-        limitePorRodada: limiteOrdens,
+        periodo: 'semanal',
+        limiteSemanal: limiteOrdens,
       },
     });
   } catch (err) {

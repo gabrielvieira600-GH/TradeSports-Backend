@@ -304,8 +304,7 @@ router.post(
         nome,
         descricao = '',
         capitalInicial = 1000,
-        limiteOrdensLitePorRodada = 15,
-        totalRodadas = null,
+        limiteOrdensLiteSemanal = 15,
         inicioPrevisto = null,
         fimPrevisto = null,
         configuracoes = {},
@@ -351,15 +350,10 @@ router.post(
             capitalInicial
           ),
 
-          limiteOrdensLitePorRodada:
+          limiteOrdensLiteSemanal:
             Number(
-              limiteOrdensLitePorRodada
+              limiteOrdensLiteSemanal
             ),
-
-          totalRodadas:
-            totalRodadas != null
-              ? Number(totalRodadas)
-              : null,
 
           inicioPrevisto:
             inicioPrevisto
