@@ -1,10 +1,11 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
-const antifraude = require('../../utils/antifraude');
-const User = require('../../models/User');
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const antifraude = require("../../utils/antifraude");
+const User = require("../../models/User");
+const { pendenciasAceite } = require("../../config/legalDocuments");
 
 const MAX_TENTATIVAS = 5;
 const JANELA_TENTATIVAS_MS = 15 * 60 * 1000;
@@ -32,10 +33,12 @@ const loginLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { erro: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' },
+  message: {
+    erro: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+  },
 });
 
-router.post('/', loginLimiter, async (req, res) => {
+router.post("/", loginLimiter, async (req, res) => {
   try {
     const body = req.body || {};
 
@@ -43,7 +46,7 @@ router.post('/', loginLimiter, async (req, res) => {
 
     const vLoginIp = antifraude.checkVelocity({
       key: `ip:${ip}`,
-      action: 'LOGIN_ATTEMPT',
+      action: "LOGIN_ATTEMPT",
       limit: 8,
       windowMs: 10 * 60 * 1000,
     });
@@ -52,14 +55,14 @@ router.post('/', loginLimiter, async (req, res) => {
       antifraude.logEvent({
         userId: null,
         ip,
-        action: 'LOGIN_BLOCK_IP',
-        decision: 'BLOCK',
-        reason: 'rate limit login ip',
+        action: "LOGIN_BLOCK_IP",
+        decision: "BLOCK",
+        reason: "rate limit login ip",
         retryAfterMs: vLoginIp.retryAfterMs,
       });
 
       return res.status(429).json({
-        erro: 'Muitas tentativas de login. Aguarde alguns minutos.',
+        erro: "Muitas tentativas de login. Aguarde alguns minutos.",
         cooldownMs: vLoginIp.retryAfterMs,
       });
     }
@@ -74,32 +77,32 @@ router.post('/', loginLimiter, async (req, res) => {
       body.username;
 
     const senha = body.senha || body.password;
-const identificadorOriginal = String(identificadorRaw || '').trim();
-const emailNormalizado = identificadorOriginal.toLowerCase();
+    const identificadorOriginal = String(identificadorRaw || "").trim();
+    const emailNormalizado = identificadorOriginal.toLowerCase();
 
-if (!identificadorOriginal || !senha) {
-  return res
-    .status(400)
-    .json({ erro: 'Preencha e-mail ou nome de usuário e senha.' });
-}
+    if (!identificadorOriginal || !senha) {
+      return res
+        .status(400)
+        .json({ erro: "Preencha e-mail ou nome de usuário e senha." });
+    }
 
     const usuario = await User.findOne({
-  $or: [
-    { email: emailNormalizado },
-    { nomeUsuario: identificadorOriginal },
-  ],
-});
+      $or: [
+        { email: emailNormalizado },
+        { nomeUsuario: identificadorOriginal },
+      ],
+    });
 
     if (!usuario) {
       antifraude.logEvent({
         userId: null,
         ip,
-        action: 'LOGIN_FAIL',
-        decision: 'ALLOW',
-        reason: 'usuario inexistente',
+        action: "LOGIN_FAIL",
+        decision: "ALLOW",
+        reason: "usuario inexistente",
       });
 
-      return res.status(401).json({ erro: 'Credenciais inválidas.' });
+      return res.status(401).json({ erro: "Credenciais inválidas." });
     }
 
     limparTentativasSeJanelaExpirou(usuario);
@@ -109,7 +112,7 @@ if (!identificadorOriginal || !senha) {
       if (lockTs > Date.now()) {
         const restante = Math.ceil((lockTs - Date.now()) / 1000);
         return res.status(423).json({
-          erro: 'Conta temporariamente bloqueada por tentativas inválidas.',
+          erro: "Conta temporariamente bloqueada por tentativas inválidas.",
           segundosRestantes: restante,
         });
       } else {
@@ -118,7 +121,7 @@ if (!identificadorOriginal || !senha) {
       }
     }
 
-    const hash = String(usuario.senha || '');
+    const hash = String(usuario.senha || "");
     const senhaStr = String(senha);
     const pareceHashBcrypt = /^\$2[aby]\$/.test(hash);
     const ok = pareceHashBcrypt
@@ -126,7 +129,8 @@ if (!identificadorOriginal || !senha) {
       : senhaStr === hash;
 
     if (!ok) {
-      usuario.failedLoginAttempts = Number(usuario.failedLoginAttempts || 0) + 1;
+      usuario.failedLoginAttempts =
+        Number(usuario.failedLoginAttempts || 0) + 1;
       usuario.lastFailedLoginAt = agoraISO();
 
       if (usuario.failedLoginAttempts >= MAX_TENTATIVAS) {
@@ -136,14 +140,14 @@ if (!identificadorOriginal || !senha) {
       antifraude.logEvent({
         userId: String(usuario.legacyId || usuario._id),
         ip,
-        action: 'LOGIN_FAIL',
-        decision: 'ALLOW',
-        reason: 'senha incorreta',
+        action: "LOGIN_FAIL",
+        decision: "ALLOW",
+        reason: "senha incorreta",
         failedAttempts: usuario.failedLoginAttempts,
       });
 
       await usuario.save();
-      return res.status(401).json({ erro: 'Credenciais inválidas.' });
+      return res.status(401).json({ erro: "Credenciais inválidas." });
     }
 
     if (
@@ -156,8 +160,8 @@ if (!identificadorOriginal || !senha) {
       await usuario.save();
 
       return res.status(403).json({
-        erro: 'Confirme seu e-mail antes de acessar a TradeSports.',
-        codigo: 'EMAIL_NAO_VERIFICADO',
+        erro: "Confirme seu e-mail antes de acessar a TradeSports.",
+        codigo: "EMAIL_NAO_VERIFICADO",
         reenviarVerificacao: true,
       });
     }
@@ -168,8 +172,9 @@ if (!identificadorOriginal || !senha) {
 
     usuario.lastLoginAt = new Date();
     usuario.lastLoginIp =
-      req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.ip;
-    usuario.lastLoginUserAgent = req.headers['user-agent'] || '';
+      req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
+      req.ip;
+    usuario.lastLoginUserAgent = req.headers["user-agent"] || "";
 
     usuario.loginHistory = Array.isArray(usuario.loginHistory)
       ? usuario.loginHistory
@@ -188,8 +193,8 @@ if (!identificadorOriginal || !senha) {
     antifraude.logEvent({
       userId: String(usuario.legacyId || usuario._id),
       ip,
-      action: 'LOGIN_SUCCESS',
-      decision: 'ALLOW',
+      action: "LOGIN_SUCCESS",
+      decision: "ALLOW",
     });
 
     const token = jwt.sign(
@@ -198,26 +203,32 @@ if (!identificadorOriginal || !senha) {
         legacyId: usuario.legacyId ?? null,
         email: usuario.email,
         nomeUsuario: usuario.nomeUsuario,
-        role: usuario.role || (usuario.admin ? 'admin' : 'user'),
+        role: usuario.role || (usuario.admin ? "admin" : "user"),
       },
-      process.env.JWT_SECRET || 'segredo_nao_definido',
-      { expiresIn: '2h' }
+      process.env.JWT_SECRET || "segredo_nao_definido",
+      { expiresIn: "2h" },
     );
 
+    const aceitesPendentes = pendenciasAceite(usuario.aceites);
+
     return res.status(200).json({
-      mensagem: 'Login realizado com sucesso!',
+      mensagem: "Login realizado com sucesso!",
       token,
+      aceitesJuridicos: {
+        pendencias: aceitesPendentes,
+        exigeNovoAceite: aceitesPendentes.length > 0,
+      },
       usuario: {
         id: String(usuario._id),
         legacyId: usuario.legacyId ?? null,
         nomeUsuario: usuario.nomeUsuario,
         saldo: Number(usuario.saldo || 0),
-        role: usuario.role || (usuario.admin ? 'admin' : 'user'),
+        role: usuario.role || (usuario.admin ? "admin" : "user"),
       },
     });
   } catch (err) {
-    console.error('Erro no /api/login:', err);
-    return res.status(500).json({ erro: 'Erro interno ao realizar login.' });
+    console.error("Erro no /api/login:", err);
+    return res.status(500).json({ erro: "Erro interno ao realizar login." });
   }
 });
 
