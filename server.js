@@ -1,56 +1,64 @@
 // server.js
-require('dotenv').config();
-require('./LoadEnv');
+require("dotenv").config();
+require("./LoadEnv");
 
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
+const express = require("express");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 
-const { connectDB } = require('./config/db');
-const audit = require('./utils/audit');
-const antifraude = require('./utils/antifraude');
+const { connectDB } = require("./config/db");
+const audit = require("./utils/audit");
+const antifraude = require("./utils/antifraude");
 
 let operationalChecks = {};
 try {
-  operationalChecks = require('./utils/operationalChecks');
+  operationalChecks = require("./utils/operationalChecks");
 } catch (_) {
   operationalChecks = {};
 }
 
-const { checkLiquidacao } = require('./middleware/checkLiquidacao');
-const auth = require('./middleware/auth');
+const { checkLiquidacao } = require("./middleware/checkLiquidacao");
+const auth = require("./middleware/auth");
 
-const User = require('./models/User');
-const Club = require('./models/Club');
-require('./models/Top4Rodada');
-require('./models/HistoricoPosse');
-require('./models/Investment');
-require('./models/Order');
-require('./models/Liquidacao');
-require('./models/dividendos');
+const User = require("./models/User");
+const LegalAcceptance = require("./models/LegalAcceptance");
+const Club = require("./models/Club");
+const {
+  LEGAL_DOCUMENTS,
+  LEGAL_DOCUMENT_TYPES,
+} = require("./config/legalDocuments");
+require("./models/Top4Rodada");
+require("./models/HistoricoPosse");
+require("./models/Investment");
+require("./models/Order");
+require("./models/Liquidacao");
+require("./models/dividendos");
 
-const { enviarEmailVerificacao, enviarEmailResetSenha } = require('./utils/emailService');
+const {
+  enviarEmailVerificacao,
+  enviarEmailResetSenha,
+} = require("./utils/emailService");
 
-const adminRoutes = require('./routes/api/admin');
-const loginRoute = require('./routes/api/login');
+const adminRoutes = require("./routes/api/admin");
+const loginRoute = require("./routes/api/login");
 
-const clubeRoutes = require('./routes/clube');
-const investimentoRoutes = require('./routes/investimento');
-const mercadoRoutes = require('./routes/mercado');
-const usuarioRoutes = require('./routes/usuario');
-const ordemRoutes = require('./routes/ordens');
-const classificacaoRoutes = require('./routes/classificacao');
-const depositoRoutes = require('./routes/deposito');
-const saqueRoutes = require('./routes/saque');
-const temporadaRoutes = require('./routes/temporada');
-const rankingsPrivadosRoutes = require('./routes/rankingsPrivados');
-const socialRoutes = require('./routes/social');
-const rankingConvitesRoutes = require('./routes/rankingConvites');
+const clubeRoutes = require("./routes/clube");
+const investimentoRoutes = require("./routes/investimento");
+const mercadoRoutes = require("./routes/mercado");
+const usuarioRoutes = require("./routes/usuario");
+const ordemRoutes = require("./routes/ordens");
+const classificacaoRoutes = require("./routes/classificacao");
+const depositoRoutes = require("./routes/deposito");
+const saqueRoutes = require("./routes/saque");
+const temporadaRoutes = require("./routes/temporada");
+const rankingsPrivadosRoutes = require("./routes/rankingsPrivados");
+const socialRoutes = require("./routes/social");
+const rankingConvitesRoutes = require("./routes/rankingConvites");
 
 let watchlistRoutes = null;
 try {
-  watchlistRoutes = require('./routes/watchlist');
+  watchlistRoutes = require("./routes/watchlist");
 } catch (_) {}
 
 const app = express();
@@ -62,34 +70,34 @@ const VERIFICACAO_EMAIL_TTL_MS = 24 * 60 * 60 * 1000;
 const INTERVALO_REENVIO_EMAIL_MS = 60 * 1000;
 
 if (!JWT_SECRET) {
-  console.warn('[SEGURANCA] JWT_SECRET não definido no .env.');
+  console.warn("[SEGURANCA] JWT_SECRET não definido no .env.");
 }
 
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
 connectDB()
-  .then(() => console.log('Mongo inicializado.'))
+  .then(() => console.log("Mongo inicializado."))
   .catch((err) => {
-    console.error('Erro ao conectar no Mongo:', err);
+    console.error("Erro ao conectar no Mongo:", err);
     process.exit(1);
   });
 
 let helmet;
 try {
-  helmet = require('helmet');
+  helmet = require("helmet");
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
-    })
+    }),
   );
 } catch (_) {
-  console.warn('[SEGURANCA] helmet não instalado. Instale: npm i helmet');
+  console.warn("[SEGURANCA] helmet não instalado. Instale: npm i helmet");
 }
 
 let rateLimit;
 try {
-  rateLimit = require('express-rate-limit');
+  rateLimit = require("express-rate-limit");
 
   app.use(
     rateLimit({
@@ -97,58 +105,72 @@ try {
       max: 900,
       standardHeaders: true,
       legacyHeaders: false,
-      message: { erro: 'Muitas requisições. Tente novamente em alguns minutos.' },
-    })
+      message: {
+        erro: "Muitas requisições. Tente novamente em alguns minutos.",
+      },
+    }),
   );
 
   app.use(
-    '/api/login',
+    "/api/login",
     rateLimit({
       windowMs: 15 * 60 * 1000,
       max: 20,
       standardHeaders: true,
       legacyHeaders: false,
-      message: { erro: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' },
-    })
+      message: {
+        erro: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+      },
+    }),
   );
 
   app.use(
-    '/cadastro',
+    "/cadastro",
     rateLimit({
       windowMs: 30 * 60 * 1000,
       max: 12,
       standardHeaders: true,
       legacyHeaders: false,
-      message: { erro: 'Muitos cadastros/tentativas. Aguarde e tente novamente.' },
-    })
+      message: {
+        erro: "Muitos cadastros/tentativas. Aguarde e tente novamente.",
+      },
+    }),
   );
 
   app.use(
-    ['/esqueci-senha', '/resetar-senha', '/reenviar-verificacao'],
+    ["/esqueci-senha", "/resetar-senha", "/reenviar-verificacao"],
     rateLimit({
       windowMs: 30 * 60 * 1000,
       max: 12,
       standardHeaders: true,
       legacyHeaders: false,
-      message: { erro: 'Muitas solicitações. Aguarde e tente novamente.' },
-    })
+      message: { erro: "Muitas solicitações. Aguarde e tente novamente." },
+    }),
   );
 } catch (_) {
-  console.warn('[SEGURANCA] express-rate-limit não instalado. Instale: npm i express-rate-limit');
+  console.warn(
+    "[SEGURANCA] express-rate-limit não instalado. Instale: npm i express-rate-limit",
+  );
 }
 
-app.use(express.json({ limit: '250kb' }));
+app.use(express.json({ limit: "250kb" }));
 
 app.use((req, res, next) => {
-  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 
   const hasBadKeys = (obj) => {
     if (!isObj(obj)) return false;
 
     for (const k of Object.keys(obj)) {
-      if (k === '__proto__' || k === 'constructor' || k === 'prototype') return true;
-      if (k.includes('__proto__') || k.includes('constructor') || k.includes('prototype')) return true;
-      if (k.startsWith('$') || k.includes('.')) return true;
+      if (k === "__proto__" || k === "constructor" || k === "prototype")
+        return true;
+      if (
+        k.includes("__proto__") ||
+        k.includes("constructor") ||
+        k.includes("prototype")
+      )
+        return true;
+      if (k.startsWith("$") || k.includes(".")) return true;
       if (hasBadKeys(obj[k])) return true;
     }
 
@@ -156,7 +178,7 @@ app.use((req, res, next) => {
   };
 
   if (hasBadKeys(req.body)) {
-    return res.status(400).json({ erro: 'Payload inválido.' });
+    return res.status(400).json({ erro: "Payload inválido." });
   }
 
   next();
@@ -164,11 +186,11 @@ app.use((req, res, next) => {
 
 const allowedOrigins = [
   process.env.FRONTEND_ORIGIN,
-  'https://www.tradesports.com.br',
-  'https://tradesports.com.br',
-  'https://trade-sports-frontend-ok.vercel.app',
-  'https://trade-sports-frontend-ok-om3a.vercel.app',
-  'http://localhost:3000',
+  "https://www.tradesports.com.br",
+  "https://tradesports.com.br",
+  "https://trade-sports-frontend-ok.vercel.app",
+  "https://trade-sports-frontend-ok-om3a.vercel.app",
+  "http://localhost:3000",
 ].filter(Boolean);
 
 app.use(
@@ -178,47 +200,49 @@ app.use(
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error(`CORS bloqueado para origin: ${origin}`));
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
     credentials: false,
-  })
+  }),
 );
 
 app.use(checkLiquidacao);
 
 // Rotas principais
-app.use('/api/admin', adminRoutes);
-app.use('/admin', adminRoutes); // compatibilidade com endpoints antigos
+app.use("/api/admin", adminRoutes);
+app.use("/admin", adminRoutes); // compatibilidade com endpoints antigos
 
-app.use('/api/login', loginRoute);
-app.use('/api', classificacaoRoutes);
+app.use("/api/login", loginRoute);
+app.use("/api", classificacaoRoutes);
 
-app.use('/clube', clubeRoutes);
-app.use('/investimentos', investimentoRoutes);
-app.use('/mercado', mercadoRoutes);
-app.use('/ordens', ordemRoutes);
-app.use('/usuario', usuarioRoutes);
-app.use('/deposito', depositoRoutes);
-app.use('/saque', saqueRoutes);
-app.use('/temporada', temporadaRoutes);
-app.use('/rankings-privados', rankingsPrivadosRoutes);
-app.use('/social', socialRoutes);
-app.use('/ranking-convites', rankingConvitesRoutes);
+app.use("/clube", clubeRoutes);
+app.use("/investimentos", investimentoRoutes);
+app.use("/mercado", mercadoRoutes);
+app.use("/ordens", ordemRoutes);
+app.use("/usuario", usuarioRoutes);
+app.use("/deposito", depositoRoutes);
+app.use("/saque", saqueRoutes);
+app.use("/temporada", temporadaRoutes);
+app.use("/rankings-privados", rankingsPrivadosRoutes);
+app.use("/social", socialRoutes);
+app.use("/ranking-convites", rankingConvitesRoutes);
 
 if (watchlistRoutes) {
-  app.use('/watchlist', watchlistRoutes);
+  app.use("/watchlist", watchlistRoutes);
 }
 
 function normalizarEmail(email) {
-  return String(email || '').trim().toLowerCase();
+  return String(email || "")
+    .trim()
+    .toLowerCase();
 }
 
 function hashToken(token) {
-  return crypto.createHash('sha256').update(String(token)).digest('hex');
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
 }
 
 function criarTokenVerificacao() {
-  const token = crypto.randomBytes(32).toString('hex');
+  const token = crypto.randomBytes(32).toString("hex");
   return {
     token,
     tokenHash: hashToken(token),
@@ -227,16 +251,16 @@ function criarTokenVerificacao() {
 }
 
 function senhaEhForte(senha) {
-  const s = String(senha || '');
+  const s = String(senha || "");
   return s.length >= 8 && /[a-z]/.test(s) && /[A-Z]/.test(s) && /\d/.test(s);
 }
 
 // Cadastro Mongo com verificação por e-mail
-app.post('/cadastro', async (req, res) => {
+app.post("/cadastro", async (req, res) => {
   try {
     const {
       nome,
-      sobrenome = '',
+      sobrenome = "",
       email,
       cpf,
       dataNascimento,
@@ -244,21 +268,39 @@ app.post('/cadastro', async (req, res) => {
       nomeUsuario,
       senha,
       aceitouTermos,
-      versaoTermos,
       aceites,
     } = req.body || {};
 
     if (!nome || !email || !nomeUsuario || !senha) {
-      return res.status(400).json({ erro: 'Preencha todos os campos obrigatórios.' });
+      return res
+        .status(400)
+        .json({ erro: "Preencha todos os campos obrigatórios." });
     }
 
-    if (aceitouTermos !== true) {
-      return res.status(400).json({ erro: 'Você precisa aceitar os Termos de Uso para concluir o cadastro.' });
+    const todosAceitesValidos = LEGAL_DOCUMENT_TYPES.every((tipo) => {
+      const aceite = aceites?.[tipo];
+      return (
+        aceite?.aceitou === true &&
+        String(aceite?.versao || "") === LEGAL_DOCUMENTS[tipo].versao
+      );
+    });
+
+    if (aceitouTermos !== true || !todosAceitesValidos) {
+      return res.status(400).json({
+        erro: "Confirme os Termos de Uso, a Política de Risco e a ciência da Política de Privacidade nas versões vigentes.",
+        codigo: "ACEITES_JURIDICOS_OBRIGATORIOS",
+        versoesVigentes: Object.fromEntries(
+          LEGAL_DOCUMENT_TYPES.map((tipo) => [
+            tipo,
+            LEGAL_DOCUMENTS[tipo].versao,
+          ]),
+        ),
+      });
     }
 
     if (!senhaEhForte(senha)) {
       return res.status(400).json({
-        erro: 'A senha deve ter pelo menos 8 caracteres, com letra maiúscula, minúscula e número.',
+        erro: "A senha deve ter pelo menos 8 caracteres, com letra maiúscula, minúscula e número.",
       });
     }
 
@@ -274,15 +316,15 @@ app.post('/cadastro', async (req, res) => {
     }).lean();
 
     if (jaExiste?.email === emailNormalizado) {
-      return res.status(400).json({ erro: 'E-mail já cadastrado.' });
+      return res.status(400).json({ erro: "E-mail já cadastrado." });
     }
 
     if (jaExiste?.nomeUsuario === nomeUsuarioNormalizado) {
-      return res.status(400).json({ erro: 'Nome de usuário já em uso.' });
+      return res.status(400).json({ erro: "Nome de usuário já em uso." });
     }
 
     if (cpf && jaExiste?.cpf === String(cpf).trim()) {
-      return res.status(400).json({ erro: 'CPF já cadastrado.' });
+      return res.status(400).json({ erro: "CPF já cadastrado." });
     }
 
     const hashSenha = await bcrypt.hash(String(senha), 10);
@@ -293,34 +335,26 @@ app.post('/cadastro', async (req, res) => {
     } = criarTokenVerificacao();
 
     const now = new Date();
-    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip;
-    const userAgent = req.headers['user-agent'] || '';
+    const ip =
+      req.headers["x-forwarded-for"]?.toString().split(",")[0].trim() || req.ip;
+    const userAgent = req.headers["user-agent"] || "";
 
-    const aceitesCadastro = typeof aceites === 'object' && aceites ? { ...aceites } : {};
-
-    aceitesCadastro.termosUso = {
-      ...(aceitesCadastro.termosUso || {}),
-      versao: aceitesCadastro.termosUso?.versao || versaoTermos || 'v1-beta',
-      aceitoEm: now,
-      ip,
-      userAgent,
-    };
-
-    for (const chave of ['politicaRisco', 'politicaPrivacidade']) {
-      if (aceitesCadastro[chave]) {
-        aceitesCadastro[chave] = {
-          ...aceitesCadastro[chave],
+    const aceitesCadastro = Object.fromEntries(
+      LEGAL_DOCUMENT_TYPES.map((tipo) => [
+        tipo,
+        {
+          versao: LEGAL_DOCUMENTS[tipo].versao,
           aceitoEm: now,
           ip,
           userAgent,
-        };
-      }
-    }
+        },
+      ]),
+    );
 
     const novoUsuario = await User.create({
       legacyId: Date.now(),
       nome: String(nome).trim(),
-      sobrenome: String(sobrenome || '').trim(),
+      sobrenome: String(sobrenome || "").trim(),
       email: emailNormalizado,
       cpf: cpf ? String(cpf).trim() : undefined,
       dataNascimento: dataNascimento || null,
@@ -335,16 +369,34 @@ app.post('/cadastro', async (req, res) => {
       aceites: aceitesCadastro,
       aceitouTermos: true,
       aceitouTermosEm: now,
-      versaoTermosAceita: versaoTermos || 'v1-beta',
+      versaoTermosAceita: LEGAL_DOCUMENTS.termosUso.versao,
       emailVerificado: false,
       verificacaoEmailObrigatoria: true,
       tokenVerificacao: null,
       tokenVerificacaoHash,
       tokenVerificacaoExpiraEm,
       emailVerificacaoEnviadaEm: null,
-      role: 'user',
+      role: "user",
       admin: false,
     });
+
+    try {
+      await LegalAcceptance.insertMany(
+        LEGAL_DOCUMENT_TYPES.map((tipo) => ({
+          usuarioId: novoUsuario._id,
+          tipo,
+          versao: LEGAL_DOCUMENTS[tipo].versao,
+          aceitoEm: now,
+          ip,
+          userAgent,
+          origem: "cadastro",
+        })),
+        { ordered: true },
+      );
+    } catch (acceptanceErr) {
+      await User.deleteOne({ _id: novoUsuario._id }).catch(() => {});
+      throw acceptanceErr;
+    }
 
     try {
       await enviarEmailVerificacao(emailNormalizado, tokenVerificacao);
@@ -352,38 +404,48 @@ app.post('/cadastro', async (req, res) => {
       await novoUsuario.save();
 
       return res.status(201).json({
-        mensagem: 'Cadastro realizado com sucesso! Enviamos um e-mail com o link para confirmar seu cadastro.',
+        mensagem:
+          "Cadastro realizado com sucesso! Enviamos um e-mail com o link para confirmar seu cadastro.",
         requerVerificacaoEmail: true,
       });
     } catch (emailErr) {
-      console.error('[CADASTRO] Conta criada, mas o e-mail de verificação falhou:', emailErr);
+      console.error(
+        "[CADASTRO] Conta criada, mas o e-mail de verificação falhou:",
+        emailErr,
+      );
       return res.status(202).json({
-        mensagem: 'Sua conta foi criada, mas o e-mail de confirmação não pôde ser enviado agora. Solicite um novo envio.',
-        codigo: 'EMAIL_VERIFICACAO_PENDENTE',
+        mensagem:
+          "Sua conta foi criada, mas o e-mail de confirmação não pôde ser enviado agora. Solicite um novo envio.",
+        codigo: "EMAIL_VERIFICACAO_PENDENTE",
         requerVerificacaoEmail: true,
       });
     }
   } catch (err) {
-    console.error('[CADASTRO] Erro no cadastro:', err);
+    console.error("[CADASTRO] Erro no cadastro:", err);
 
     if (err?.code === 11000) {
-      return res.status(400).json({ erro: 'Dados já cadastrados.' });
+      return res.status(400).json({ erro: "Dados já cadastrados." });
     }
 
-    return res.status(500).json({ erro: 'Erro interno ao realizar cadastro.' });
+    return res.status(500).json({ erro: "Erro interno ao realizar cadastro." });
   }
 });
 
 // Reenvio com resposta genérica para não revelar contas cadastradas.
-app.post('/reenviar-verificacao', async (req, res) => {
+app.post("/reenviar-verificacao", async (req, res) => {
   const respostaGenerica = {
-    mensagem: 'Se a conta existir e ainda precisar de confirmação, enviaremos um novo e-mail.',
+    mensagem:
+      "Se a conta existir e ainda precisar de confirmação, enviaremos um novo e-mail.",
   };
 
   try {
-    const identificador = String(req.body?.emailOuUsuario || '').trim().toLowerCase();
+    const identificador = String(req.body?.emailOuUsuario || "")
+      .trim()
+      .toLowerCase();
     if (!identificador) {
-      return res.status(400).json({ erro: 'Informe seu e-mail ou nome de usuário.' });
+      return res
+        .status(400)
+        .json({ erro: "Informe seu e-mail ou nome de usuário." });
     }
 
     const usuario = await User.findOne({
@@ -419,21 +481,21 @@ app.post('/reenviar-verificacao', async (req, res) => {
 
     return res.json(respostaGenerica);
   } catch (err) {
-    console.error('[REENVIAR VERIFICACAO] Erro:', err);
+    console.error("[REENVIAR VERIFICACAO] Erro:", err);
     return res.status(500).json({
-      erro: 'Não foi possível enviar o e-mail de confirmação agora. Tente novamente.',
+      erro: "Não foi possível enviar o e-mail de confirmação agora. Tente novamente.",
     });
   }
 });
 
 // Token armazenado somente como hash, válido por 24 horas e de uso único.
-app.get('/verificar-email', async (req, res) => {
+app.get("/verificar-email", async (req, res) => {
   try {
     const token = req.query?.token;
     if (!token) {
       return res.status(400).json({
-        erro: 'Token de verificação não informado.',
-        codigo: 'TOKEN_VERIFICACAO_INVALIDO',
+        erro: "Token de verificação não informado.",
+        codigo: "TOKEN_VERIFICACAO_INVALIDO",
       });
     }
 
@@ -453,29 +515,33 @@ app.get('/verificar-email', async (req, res) => {
           tokenVerificacaoExpiraEm: null,
         },
       },
-      { new: true }
+      { new: true },
     );
 
     if (!usuario) {
       return res.status(400).json({
-        erro: 'Este link é inválido, já foi utilizado ou expirou. Solicite um novo e-mail.',
-        codigo: 'TOKEN_VERIFICACAO_INVALIDO',
+        erro: "Este link é inválido, já foi utilizado ou expirou. Solicite um novo e-mail.",
+        codigo: "TOKEN_VERIFICACAO_INVALIDO",
       });
     }
 
-    return res.json({ mensagem: 'E-mail verificado com sucesso! Você já pode fazer login.' });
+    return res.json({
+      mensagem: "E-mail verificado com sucesso! Você já pode fazer login.",
+    });
   } catch (err) {
-    console.error('[VERIFICAR EMAIL] Erro:', err);
-    return res.status(500).json({ erro: 'Erro interno ao verificar e-mail.' });
+    console.error("[VERIFICAR EMAIL] Erro:", err);
+    return res.status(500).json({ erro: "Erro interno ao verificar e-mail." });
   }
 });
 
 // Solicitar reset de senha Mongo
-app.post('/esqueci-senha', async (req, res) => {
+app.post("/esqueci-senha", async (req, res) => {
   try {
     const { emailOuUsuario } = req.body || {};
     if (!emailOuUsuario) {
-      return res.status(400).json({ erro: 'Informe seu e-mail ou nome de usuário.' });
+      return res
+        .status(400)
+        .json({ erro: "Informe seu e-mail ou nome de usuário." });
     }
 
     const termo = String(emailOuUsuario).trim().toLowerCase();
@@ -486,12 +552,13 @@ app.post('/esqueci-senha', async (req, res) => {
 
     if (!usuario) {
       return res.json({
-        mensagem: 'Se o usuário existir, enviaremos um e-mail com instruções para redefinir a senha.',
+        mensagem:
+          "Se o usuário existir, enviaremos um e-mail com instruções para redefinir a senha.",
       });
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
     usuario.resetSenhaTokenHash = tokenHash;
     usuario.resetSenhaExpiraEm = new Date(Date.now() + 60 * 60 * 1000);
@@ -500,32 +567,35 @@ app.post('/esqueci-senha', async (req, res) => {
     await enviarEmailResetSenha(usuario.email, token);
 
     return res.json({
-      mensagem: 'Se o usuário existir, enviaremos um e-mail com instruções para redefinir a senha.',
+      mensagem:
+        "Se o usuário existir, enviaremos um e-mail com instruções para redefinir a senha.",
     });
   } catch (err) {
-    console.error('[RESET SENHA] Erro no /esqueci-senha:', err);
-    return res.status(500).json({ erro: 'Erro interno.' });
+    console.error("[RESET SENHA] Erro no /esqueci-senha:", err);
+    return res.status(500).json({ erro: "Erro interno." });
   }
 });
 
 // Redefinir senha Mongo
-app.post('/resetar-senha', async (req, res) => {
+app.post("/resetar-senha", async (req, res) => {
   try {
     const { token, novaSenha } = req.body || {};
     if (!token || !novaSenha) {
-      return res.status(400).json({ erro: 'Token e nova senha são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ erro: "Token e nova senha são obrigatórios." });
     }
 
     if (!senhaEhForte(novaSenha)) {
       return res.status(400).json({
-        erro: 'A senha deve ter pelo menos 8 caracteres, com letra maiúscula, minúscula e número.',
+        erro: "A senha deve ter pelo menos 8 caracteres, com letra maiúscula, minúscula e número.",
       });
     }
 
     const tokenHash = crypto
-      .createHash('sha256')
+      .createHash("sha256")
       .update(String(token))
-      .digest('hex');
+      .digest("hex");
 
     const usuario = await User.findOne({
       resetSenhaTokenHash: tokenHash,
@@ -534,7 +604,7 @@ app.post('/resetar-senha', async (req, res) => {
 
     if (!usuario) {
       return res.status(400).json({
-        erro: 'Token inválido ou expirado. Solicite uma nova redefinição de senha.',
+        erro: "Token inválido ou expirado. Solicite uma nova redefinição de senha.",
       });
     }
 
@@ -544,10 +614,12 @@ app.post('/resetar-senha', async (req, res) => {
     usuario.senhaAlteradaEm = new Date();
     await usuario.save();
 
-    return res.json({ mensagem: 'Senha alterada com sucesso! Você já pode fazer login.' });
+    return res.json({
+      mensagem: "Senha alterada com sucesso! Você já pode fazer login.",
+    });
   } catch (err) {
-    console.error('[RESET SENHA] Erro no /resetar-senha:', err);
-    return res.status(500).json({ erro: 'Erro interno ao redefinir senha.' });
+    console.error("[RESET SENHA] Erro no /resetar-senha:", err);
+    return res.status(500).json({ erro: "Erro interno ao redefinir senha." });
   }
 });
 
@@ -579,12 +651,15 @@ async function synthesizeWatchlistNotifications(user) {
 
   let mudou = false;
 
-  if (!user.alertState || typeof user.alertState !== 'object') {
+  if (!user.alertState || typeof user.alertState !== "object") {
     user.alertState = { clubPrices: {} };
     mudou = true;
   }
 
-  if (!user.alertState.clubPrices || typeof user.alertState.clubPrices !== 'object') {
+  if (
+    !user.alertState.clubPrices ||
+    typeof user.alertState.clubPrices !== "object"
+  ) {
     user.alertState.clubPrices = {};
     mudou = true;
   }
@@ -614,7 +689,8 @@ async function synthesizeWatchlistNotifications(user) {
       continue;
     }
 
-    const variacaoPercentual = ((precoAtual - precoAnterior) / precoAnterior) * 100;
+    const variacaoPercentual =
+      ((precoAtual - precoAnterior) / precoAnterior) * 100;
     const variacaoAbs = Math.abs(variacaoPercentual);
 
     // Só notifica se a alteração for acima de 3%.
@@ -625,8 +701,8 @@ async function synthesizeWatchlistNotifications(user) {
     }
 
     const subiu = variacaoPercentual > 0;
-    const direcao = subiu ? 'subiu' : 'caiu';
-    const tipo = subiu ? 'PRICE_UP' : 'PRICE_DOWN';
+    const direcao = subiu ? "subiu" : "caiu";
+    const tipo = subiu ? "PRICE_UP" : "PRICE_DOWN";
 
     const variacaoFormatada = Number(variacaoAbs.toFixed(2));
     const precoAtualFormatado = Number(precoAtual.toFixed(2));
@@ -638,12 +714,11 @@ async function synthesizeWatchlistNotifications(user) {
       const meta = n?.metadata || {};
 
       return (
-        String(meta.notificationKey || '') === notificationKey ||
-        (
-          String(meta.clubeId) === key &&
-          String(meta.tipo || '') === tipo &&
-          Number(meta.precoAtual || 0).toFixed(2) === precoAtualFormatado.toFixed(2)
-        )
+        String(meta.notificationKey || "") === notificationKey ||
+        (String(meta.clubeId) === key &&
+          String(meta.tipo || "") === tipo &&
+          Number(meta.precoAtual || 0).toFixed(2) ===
+            precoAtualFormatado.toFixed(2))
       );
     });
 
@@ -657,7 +732,7 @@ async function synthesizeWatchlistNotifications(user) {
         metadata: {
           notificationKey,
           tipo,
-          entityType: 'clube',
+          entityType: "clube",
           clubeId: clube.legacyId,
           clubeNome: clube.nome,
           precoAnterior: precoAnteriorFormatado,
@@ -680,85 +755,92 @@ async function synthesizeWatchlistNotifications(user) {
   user.notificacoes = user.notificacoes.slice(0, 100);
 
   if (mudou) {
-    user.markModified('alertState');
-    user.markModified('notificacoes');
+    user.markModified("alertState");
+    user.markModified("notificacoes");
   }
 
   return mudou;
 }
 
-app.get('/notifications', auth, async (req, res) => {
+app.get("/notifications", auth, async (req, res) => {
   try {
     const user = await User.findById(req.usuario.id);
-    if (!user) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    if (!user) return res.status(404).json({ erro: "Usuário não encontrado." });
 
     ensureUserNotificationFields(user);
     await synthesizeWatchlistNotifications(user);
     await user.save();
 
-    const notifications = Array.isArray(user.notificacoes) ? user.notificacoes : [];
+    const notifications = Array.isArray(user.notificacoes)
+      ? user.notificacoes
+      : [];
     const unreadCount = notifications.filter((n) => !n.read).length;
 
     return res.json({ ok: true, notifications, unreadCount });
   } catch (err) {
-    console.error('[NOTIFICATIONS GET] erro:', err);
-    return res.status(500).json({ erro: 'Erro ao carregar notificações.' });
+    console.error("[NOTIFICATIONS GET] erro:", err);
+    return res.status(500).json({ erro: "Erro ao carregar notificações." });
   }
 });
 
-app.post('/notifications/read-all', auth, async (req, res) => {
+app.post("/notifications/read-all", auth, async (req, res) => {
   try {
     const user = await User.findById(req.usuario.id);
-    if (!user) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    if (!user) return res.status(404).json({ erro: "Usuário não encontrado." });
 
     ensureUserNotificationFields(user);
-    user.notificacoes = user.notificacoes.map((n) => ({ ...n.toObject?.() || n, read: true }));
+    user.notificacoes = user.notificacoes.map((n) => ({
+      ...(n.toObject?.() || n),
+      read: true,
+    }));
     await user.save();
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('[NOTIFICATIONS READ ALL] erro:', err);
-    return res.status(500).json({ erro: 'Erro ao marcar notificações.' });
+    console.error("[NOTIFICATIONS READ ALL] erro:", err);
+    return res.status(500).json({ erro: "Erro ao marcar notificações." });
   }
 });
 
-app.post('/notifications/:id/read', auth, async (req, res) => {
+app.post("/notifications/:id/read", auth, async (req, res) => {
   try {
     const user = await User.findById(req.usuario.id);
-    if (!user) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    if (!user) return res.status(404).json({ erro: "Usuário não encontrado." });
 
     ensureUserNotificationFields(user);
     user.notificacoes = user.notificacoes.map((n) => {
       const obj = n.toObject?.() || n;
-      return String(obj.id) === String(req.params.id) ? { ...obj, read: true } : obj;
+      return String(obj.id) === String(req.params.id)
+        ? { ...obj, read: true }
+        : obj;
     });
 
     await user.save();
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('[NOTIFICATIONS READ] erro:', err);
-    return res.status(500).json({ erro: 'Erro ao marcar notificação.' });
+    console.error("[NOTIFICATIONS READ] erro:", err);
+    return res.status(500).json({ erro: "Erro ao marcar notificação." });
   }
 });
 
 // Healthcheck
-app.get('/health', async (req, res) => {
+app.get("/health", async (req, res) => {
   try {
-    if (typeof operationalChecks.buildHealthPayload === 'function') {
+    if (typeof operationalChecks.buildHealthPayload === "function") {
       return res.json(await operationalChecks.buildHealthPayload());
     }
 
     return res.json({
       ok: true,
-      service: 'TradeSports API',
+      service: "TradeSports API",
       ts: new Date().toISOString(),
     });
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      status: 'CRITICO',
-      erro: 'Erro ao executar healthcheck.',
+      status: "CRITICO",
+      erro: "Erro ao executar healthcheck.",
       detalhe: String(err.message || err),
       ts: new Date().toISOString(),
     });
@@ -766,13 +848,15 @@ app.get('/health', async (req, res) => {
 });
 
 // Admin antifraude status compatível
-app.get('/admin/antifraude/status', auth, async (req, res) => {
+app.get("/admin/antifraude/status", auth, async (req, res) => {
   try {
-    if (String(req.usuario?.role || '').toLowerCase() !== 'admin') {
-      return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+    if (String(req.usuario?.role || "").toLowerCase() !== "admin") {
+      return res
+        .status(403)
+        .json({ erro: "Acesso restrito a administradores." });
     }
 
-    if (typeof antifraude.getAntifraudeStatus === 'function') {
+    if (typeof antifraude.getAntifraudeStatus === "function") {
       const status = await antifraude.getAntifraudeStatus();
       return res.json({ ok: true, ...status });
     }
@@ -787,30 +871,34 @@ app.get('/admin/antifraude/status', auth, async (req, res) => {
       clubes: Object.keys(state.clubes || {}).length,
     });
   } catch (err) {
-    console.error('[ANTIFRAUDE STATUS] erro:', err);
-    return res.status(500).json({ erro: 'Erro interno ao consultar antifraude.' });
+    console.error("[ANTIFRAUDE STATUS] erro:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao consultar antifraude." });
   }
 });
 
-app.get('/admin/system/check', auth, async (req, res) => {
+app.get("/admin/system/check", auth, async (req, res) => {
   try {
-    if (String(req.usuario?.role || '').toLowerCase() !== 'admin') {
-      return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+    if (String(req.usuario?.role || "").toLowerCase() !== "admin") {
+      return res
+        .status(403)
+        .json({ erro: "Acesso restrito a administradores." });
     }
 
-    if (typeof operationalChecks.runSystemCheck === 'function') {
+    if (typeof operationalChecks.runSystemCheck === "function") {
       return res.json({ ok: true, ...operationalChecks.runSystemCheck() });
     }
     const check = await operationalChecks.runSystemCheck();
-    return res.json({ ok: true, statusGeral: 'OK', resumo: {}, flags: {} });
+    return res.json({ ok: true, statusGeral: "OK", resumo: {}, flags: {} });
   } catch (err) {
-    console.error('[SYSTEM CHECK] erro:', err);
-    return res.status(500).json({ erro: 'Erro interno ao executar checagem do sistema.' });
+    console.error("[SYSTEM CHECK] erro:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao executar checagem do sistema." });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
-
-

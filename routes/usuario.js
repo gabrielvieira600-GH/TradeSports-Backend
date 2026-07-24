@@ -1,50 +1,56 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const auth = require('../middleware/auth');
-const Dividendo = require('../models/dividendos');
-const Liquidacao = require('../models/Liquidacao');
-const User = require('../models/User');
-const Investment = require('../models/Investment');
-const Club = require('../models/Club');
-const jwt = require('jsonwebtoken');
-const Order = require('../models/Order');
-const antifraude = require('../utils/antifraude');
+const auth = require("../middleware/auth");
+const Dividendo = require("../models/dividendos");
+const Liquidacao = require("../models/Liquidacao");
+const User = require("../models/User");
+const LegalAcceptance = require("../models/LegalAcceptance");
+const Investment = require("../models/Investment");
+const Club = require("../models/Club");
+const jwt = require("jsonwebtoken");
+const Order = require("../models/Order");
+const antifraude = require("../utils/antifraude");
 const {
   obterResumoDoPlano,
   obterPlanoEfetivo,
-} = require('../utils/planFeatures');
+} = require("../utils/planFeatures");
+const {
+  LEGAL_DOCUMENTS,
+  documentoLegal,
+  pendenciasAceite,
+} = require("../config/legalDocuments");
 
 async function obterAntifraudeState() {
-  if (typeof antifraude.getStateSnapshot === 'function') {
+  if (typeof antifraude.getStateSnapshot === "function") {
     return antifraude.getStateSnapshot();
   }
-  if (typeof antifraude.loadState === 'function') {
+  if (typeof antifraude.loadState === "function") {
     return antifraude.loadState();
   }
   return { users: {}, ips: {}, clubes: {} };
 }
 
 async function obterAntifraudeLogs(limit = 200) {
-  if (typeof antifraude.getLogs === 'function') {
+  if (typeof antifraude.getLogs === "function") {
     return antifraude.getLogs({ limit });
   }
-  if (typeof antifraude.listLogs === 'function') {
+  if (typeof antifraude.listLogs === "function") {
     return antifraude.listLogs({ limit });
   }
-  if (typeof antifraude.getRecentLogs === 'function') {
+  if (typeof antifraude.getRecentLogs === "function") {
     return antifraude.getRecentLogs(limit);
   }
   return [];
 }
 
-router.get('/atual', async (req, res) => {
+router.get("/atual", async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
       return res.status(200).json(null);
     }
 
-    const tokenParts = token.split('.');
+    const tokenParts = token.split(".");
     if (tokenParts.length !== 3) {
       return res.status(200).json(null);
     }
@@ -60,103 +66,76 @@ router.get('/atual', async (req, res) => {
 
     return res.json(usuario);
   } catch (err) {
-    if (err.name === 'JsonWebTokenError') {
-      console.warn('Token JWT inválido:', err.message);
+    if (err.name === "JsonWebTokenError") {
+      console.warn("Token JWT inválido:", err.message);
       return res.status(200).json(null);
     }
 
-    console.error('Erro ao buscar usuário atual:', err);
-    return res.status(500).json({ erro: 'Erro interno no servidor' });
+    console.error("Erro ao buscar usuário atual:", err);
+    return res.status(500).json({ erro: "Erro interno no servidor" });
   }
 });
 
-router.get('/', auth, async (req, res) => {
+router.get("/", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      return res.status(404).json({ erro: "Usuário não encontrado." });
     }
     res.json(usuario);
   } catch (err) {
-    console.error('Erro ao obter usuário:', err);
-    res.status(500).json({ erro: 'Erro interno ao obter usuário.' });
+    console.error("Erro ao obter usuário:", err);
+    res.status(500).json({ erro: "Erro interno ao obter usuário." });
   }
 });
 
-router.get('/plano', auth, async (req, res) => {
+router.get("/plano", auth, async (req, res) => {
   try {
-    const usuario = await User.findById(
-      req.usuario.id
-    )
+    const usuario = await User.findById(req.usuario.id)
       .select(
-        [
-          '_id',
-          'plano',
-          'premiumAtivo',
-          'premiumInicio',
-          'premiumFim',
-        ].join(' ')
+        ["_id", "plano", "premiumAtivo", "premiumInicio", "premiumFim"].join(
+          " ",
+        ),
       )
       .lean();
 
     if (!usuario) {
       return res.status(404).json({
-        erro: 'Usuário não encontrado.',
+        erro: "Usuário não encontrado.",
       });
     }
 
-    const resumoPlano =
-      obterResumoDoPlano(usuario);
+    const resumoPlano = obterResumoDoPlano(usuario);
 
     return res.json(resumoPlano);
   } catch (err) {
-    console.error(
-      'Erro ao obter plano do usuário:',
-      err
-    );
+    console.error("Erro ao obter plano do usuário:", err);
 
     return res.status(500).json({
-      erro:
-        'Erro interno ao obter plano do usuário.',
+      erro: "Erro interno ao obter plano do usuário.",
     });
   }
 });
 
 // Ranking geral, Lite e Premium do mercado simulado
-router.get('/ranking', auth, async (req, res) => {
+router.get("/ranking", auth, async (req, res) => {
   try {
-    const page = Math.max(
-      1,
-      Number.parseInt(req.query.page, 10) || 1
-    );
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
 
     const limit = Math.min(
       100,
-      Math.max(
-        1,
-        Number.parseInt(req.query.limit, 10) || 100
-      )
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 100),
     );
 
-    const categoriasPermitidas = [
-      'geral',
-      'lite',
-      'premium',
-    ];
+    const categoriasPermitidas = ["geral", "lite", "premium"];
 
-    const categoriaSolicitada = String(
-      req.query.categoria || 'geral'
-    )
+    const categoriaSolicitada = String(req.query.categoria || "geral")
       .trim()
       .toLowerCase();
 
-    if (
-      !categoriasPermitidas.includes(
-        categoriaSolicitada
-      )
-    ) {
+    if (!categoriasPermitidas.includes(categoriaSolicitada)) {
       return res.status(400).json({
-        erro: 'Categoria de ranking inválida.',
+        erro: "Categoria de ranking inválida.",
         categoriasPermitidas,
       });
     }
@@ -167,54 +146,40 @@ router.get('/ranking', auth, async (req, res) => {
       })
         .select(
           [
-            '_id',
-            'nome',
-            'nomeUsuario',
-            'saldo',
-            'capitalInicial',
-            'carteira',
-            'createdAt',
-            'temporadaRanking',
-            'patrimonioInicialTemporada',
-            'saldoInicialTemporada',
-            'inicioTemporadaRanking',
-            'rankingAtivo',
-            'plano',
-            'premiumAtivo',
-            'premiumInicio',
-            'premiumFim',
-          ].join(' ')
+            "_id",
+            "nome",
+            "nomeUsuario",
+            "saldo",
+            "capitalInicial",
+            "carteira",
+            "createdAt",
+            "temporadaRanking",
+            "patrimonioInicialTemporada",
+            "saldoInicialTemporada",
+            "inicioTemporadaRanking",
+            "rankingAtivo",
+            "plano",
+            "premiumAtivo",
+            "premiumInicio",
+            "premiumFim",
+          ].join(" "),
         )
         .lean(),
 
-      Club.find({})
-        .select(
-          'legacyId precoAtual preco'
-        )
-        .lean(),
+      Club.find({}).select("legacyId precoAtual preco").lean(),
     ]);
 
     const precosPorClube = new Map(
       clubes.map((clube) => [
         String(clube.legacyId),
-        Number(
-          clube.precoAtual ??
-            clube.preco ??
-            0
-        ),
-      ])
+        Number(clube.precoAtual ?? clube.preco ?? 0),
+      ]),
     );
 
     function calcularDadosRanking(usuario) {
-      const saldo = Number(
-        usuario.saldo || 0
-      );
+      const saldo = Number(usuario.saldo || 0);
 
-      const carteira = Array.isArray(
-        usuario.carteira
-      )
-        ? usuario.carteira
-        : [];
+      const carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
 
       let valorPosicoes = 0;
       let quantidadeUnidades = 0;
@@ -226,14 +191,10 @@ router.get('/ranking', auth, async (req, res) => {
             ativo.clubeLegacyId ??
             ativo.idClube ??
             ativo.clube?.id ??
-            ativo.clube?.legacyId
+            ativo.clube?.legacyId,
         );
 
-        const quantidade = Number(
-          ativo.quantidade ??
-            ativo.cotas ??
-            0
-        );
+        const quantidade = Number(ativo.quantidade ?? ativo.cotas ?? 0);
 
         if (
           !Number.isFinite(clubeId) ||
@@ -244,145 +205,80 @@ router.get('/ranking', auth, async (req, res) => {
           continue;
         }
 
-        const precoAtualDoClube =
-          precosPorClube.get(
-            String(clubeId)
-          );
+        const precoAtualDoClube = precosPorClube.get(String(clubeId));
 
-        const precoAtual =
-          Number.isFinite(
-            precoAtualDoClube
-          )
-            ? precoAtualDoClube
-            : Number(
-                ativo.precoMedio ??
-                  ativo.valorUnitario ??
-                  0
-              );
+        const precoAtual = Number.isFinite(precoAtualDoClube)
+          ? precoAtualDoClube
+          : Number(ativo.precoMedio ?? ativo.valorUnitario ?? 0);
 
-        valorPosicoes +=
-          quantidade * precoAtual;
+        valorPosicoes += quantidade * precoAtual;
 
-        quantidadeUnidades +=
-          quantidade;
+        quantidadeUnidades += quantidade;
 
         quantidadePosicoes += 1;
       }
 
-      valorPosicoes = Number(
-        valorPosicoes.toFixed(2)
-      );
+      valorPosicoes = Number(valorPosicoes.toFixed(2));
 
-      const patrimonio = Number(
-        (
-          saldo +
-          valorPosicoes
-        ).toFixed(2)
-      );
+      const patrimonio = Number((saldo + valorPosicoes).toFixed(2));
 
-      const patrimonioInicialTemporadaRaw =
-        Number(
-          usuario
-            .patrimonioInicialTemporada
-        );
+      const patrimonioInicialTemporadaRaw = Number(
+        usuario.patrimonioInicialTemporada,
+      );
 
       const temporadaInicializada =
-        Boolean(
-          usuario.temporadaRanking
-        ) &&
-        Number.isFinite(
-          patrimonioInicialTemporadaRaw
-        ) &&
+        Boolean(usuario.temporadaRanking) &&
+        Number.isFinite(patrimonioInicialTemporadaRaw) &&
         patrimonioInicialTemporadaRaw > 0;
 
-      const patrimonioInicialTemporada =
-        temporadaInicializada
-          ? patrimonioInicialTemporadaRaw
-          : Number(
-              usuario.capitalInicial ??
-                1000
-            );
+      const patrimonioInicialTemporada = temporadaInicializada
+        ? patrimonioInicialTemporadaRaw
+        : Number(usuario.capitalInicial ?? 1000);
 
       const resultado = Number(
-        (
-          patrimonio -
-          patrimonioInicialTemporada
-        ).toFixed(2)
+        (patrimonio - patrimonioInicialTemporada).toFixed(2),
       );
 
       const rentabilidade =
         patrimonioInicialTemporada > 0
-          ? Number(
-              (
-                (
-                  resultado /
-                  patrimonioInicialTemporada
-                ) * 100
-              ).toFixed(2)
-            )
+          ? Number(((resultado / patrimonioInicialTemporada) * 100).toFixed(2))
           : 0;
 
-      const planoEfetivo =
-        obterPlanoEfetivo(usuario);
+      const planoEfetivo = obterPlanoEfetivo(usuario);
 
       return {
-        usuarioId:
-          String(usuario._id),
+        usuarioId: String(usuario._id),
 
-        nome:
-          usuario.nome || '',
+        nome: usuario.nome || "",
 
-        nomeUsuario:
-          usuario.nomeUsuario || '',
+        nomeUsuario: usuario.nomeUsuario || "",
 
-        plano:
-          planoEfetivo,
+        plano: planoEfetivo,
 
-        planoCadastrado:
-          usuario.plano || 'lite',
+        planoCadastrado: usuario.plano || "lite",
 
-        premiumAtivo:
-          planoEfetivo === 'premium',
+        premiumAtivo: planoEfetivo === "premium",
 
-        temporadaRanking:
-          usuario.temporadaRanking ||
-          null,
+        temporadaRanking: usuario.temporadaRanking || null,
 
         temporadaInicializada,
 
         capitalInicial: Number(
-          Number(
-            usuario.capitalInicial ??
-              1000
-          ).toFixed(2)
+          Number(usuario.capitalInicial ?? 1000).toFixed(2),
         ),
 
         saldoInicialTemporada:
-          usuario
-            .saldoInicialTemporada !=
-          null
-            ? Number(
-                Number(
-                  usuario
-                    .saldoInicialTemporada
-                ).toFixed(2)
-              )
+          usuario.saldoInicialTemporada != null
+            ? Number(Number(usuario.saldoInicialTemporada).toFixed(2))
             : null,
 
-        patrimonioInicialTemporada:
-          Number(
-            patrimonioInicialTemporada.toFixed(
-              2
-            )
-          ),
+        patrimonioInicialTemporada: Number(
+          patrimonioInicialTemporada.toFixed(2),
+        ),
 
-        inicioTemporadaRanking:
-          usuario
-            .inicioTemporadaRanking ||
-          null,
+        inicioTemporadaRanking: usuario.inicioTemporadaRanking || null,
 
-        saldo:
-          Number(saldo.toFixed(2)),
+        saldo: Number(saldo.toFixed(2)),
 
         valorPosicoes,
 
@@ -394,239 +290,140 @@ router.get('/ranking', auth, async (req, res) => {
 
         quantidadePosicoes,
 
-        quantidadeUnidades: Number(
-          quantidadeUnidades.toFixed(4)
-        ),
+        quantidadeUnidades: Number(quantidadeUnidades.toFixed(4)),
 
-        criadoEm:
-          usuario.createdAt || null,
+        criadoEm: usuario.createdAt || null,
       };
     }
 
     function ordenarRanking(a, b) {
-      if (
-        b.rentabilidade !==
-        a.rentabilidade
-      ) {
-        return (
-          b.rentabilidade -
-          a.rentabilidade
-        );
+      if (b.rentabilidade !== a.rentabilidade) {
+        return b.rentabilidade - a.rentabilidade;
       }
 
-      if (
-        b.resultado !==
-        a.resultado
-      ) {
-        return (
-          b.resultado -
-          a.resultado
-        );
+      if (b.resultado !== a.resultado) {
+        return b.resultado - a.resultado;
       }
 
-      if (
-        b.patrimonio !==
-        a.patrimonio
-      ) {
-        return (
-          b.patrimonio -
-          a.patrimonio
-        );
+      if (b.patrimonio !== a.patrimonio) {
+        return b.patrimonio - a.patrimonio;
       }
 
-      return String(
-        a.nomeUsuario
-      ).localeCompare(
+      return String(a.nomeUsuario).localeCompare(
         String(b.nomeUsuario),
-        'pt-BR'
+        "pt-BR",
       );
     }
 
-    const rankingBase = usuarios
-      .map(calcularDadosRanking)
-      .sort(ordenarRanking);
+    const rankingBase = usuarios.map(calcularDadosRanking).sort(ordenarRanking);
 
-    const rankingGeral =
-      rankingBase.map(
-        (item, index) => ({
-          ...item,
-          posicaoGeral:
-            index + 1,
-        })
-      );
+    const rankingGeral = rankingBase.map((item, index) => ({
+      ...item,
+      posicaoGeral: index + 1,
+    }));
 
-    const rankingLite =
-      rankingGeral
-        .filter(
-          (item) =>
-            item.plano === 'lite'
-        )
-        .map(
-          (item, index) => ({
-            ...item,
-            posicaoPlano:
-              index + 1,
-          })
-        );
+    const rankingLite = rankingGeral
+      .filter((item) => item.plano === "lite")
+      .map((item, index) => ({
+        ...item,
+        posicaoPlano: index + 1,
+      }));
 
-    const rankingPremium =
-      rankingGeral
-        .filter(
-          (item) =>
-            item.plano === 'premium'
-        )
-        .map(
-          (item, index) => ({
-            ...item,
-            posicaoPlano:
-              index + 1,
-          })
-        );
+    const rankingPremium = rankingGeral
+      .filter((item) => item.plano === "premium")
+      .map((item, index) => ({
+        ...item,
+        posicaoPlano: index + 1,
+      }));
 
-    const posicaoPlanoPorUsuario =
-      new Map();
+    const posicaoPlanoPorUsuario = new Map();
 
-    for (const item of [
-      ...rankingLite,
-      ...rankingPremium,
-    ]) {
-      posicaoPlanoPorUsuario.set(
-        item.usuarioId,
-        item.posicaoPlano
-      );
+    for (const item of [...rankingLite, ...rankingPremium]) {
+      posicaoPlanoPorUsuario.set(item.usuarioId, item.posicaoPlano);
     }
 
-    const rankingGeralCompleto =
-      rankingGeral.map(
-        (item) => ({
-          ...item,
+    const rankingGeralCompleto = rankingGeral.map((item) => ({
+      ...item,
 
-          posicao:
-            item.posicaoGeral,
+      posicao: item.posicaoGeral,
 
-          posicaoPlano:
-            posicaoPlanoPorUsuario.get(
-              item.usuarioId
-            ) || null,
-        })
-      );
+      posicaoPlano: posicaoPlanoPorUsuario.get(item.usuarioId) || null,
+    }));
 
-    const rankingLiteCompleto =
-      rankingLite.map(
-        (item) => ({
-          ...item,
+    const rankingLiteCompleto = rankingLite.map((item) => ({
+      ...item,
 
-          posicao:
-            item.posicaoPlano,
-        })
-      );
+      posicao: item.posicaoPlano,
+    }));
 
-    const rankingPremiumCompleto =
-      rankingPremium.map(
-        (item) => ({
-          ...item,
+    const rankingPremiumCompleto = rankingPremium.map((item) => ({
+      ...item,
 
-          posicao:
-            item.posicaoPlano,
-        })
-      );
+      posicao: item.posicaoPlano,
+    }));
 
-    let rankingSelecionado =
-      rankingGeralCompleto;
+    let rankingSelecionado = rankingGeralCompleto;
 
-    if (
-      categoriaSolicitada === 'lite'
-    ) {
-      rankingSelecionado =
-        rankingLiteCompleto;
+    if (categoriaSolicitada === "lite") {
+      rankingSelecionado = rankingLiteCompleto;
     }
 
-    if (
-      categoriaSolicitada ===
-      'premium'
-    ) {
-      rankingSelecionado =
-        rankingPremiumCompleto;
+    if (categoriaSolicitada === "premium") {
+      rankingSelecionado = rankingPremiumCompleto;
     }
 
     const usuarioAtualGeral =
       rankingGeralCompleto.find(
-        (item) =>
-          item.usuarioId ===
-          String(req.usuario.id)
+        (item) => item.usuarioId === String(req.usuario.id),
       ) || null;
 
     const usuarioAtualCategoria =
       rankingSelecionado.find(
-        (item) =>
-          item.usuarioId ===
-          String(req.usuario.id)
+        (item) => item.usuarioId === String(req.usuario.id),
       ) || null;
 
-    const planoUsuarioAtual =
-      usuarioAtualGeral?.plano ||
-      'lite';
+    const planoUsuarioAtual = usuarioAtualGeral?.plano || "lite";
 
     const rankingDoPlanoAtual =
-      planoUsuarioAtual === 'premium'
+      planoUsuarioAtual === "premium"
         ? rankingPremiumCompleto
         : rankingLiteCompleto;
 
     const usuarioAtualNoPlano =
       rankingDoPlanoAtual.find(
-        (item) =>
-          item.usuarioId ===
-          String(req.usuario.id)
+        (item) => item.usuarioId === String(req.usuario.id),
       ) || null;
 
-    const totalUsuarios =
-      rankingSelecionado.length;
+    const totalUsuarios = rankingSelecionado.length;
 
-    const totalPages = Math.max(
-      1,
-      Math.ceil(
-        totalUsuarios / limit
-      )
-    );
+    const totalPages = Math.max(1, Math.ceil(totalUsuarios / limit));
 
-    const pageNormalizada =
-      Math.min(page, totalPages);
+    const pageNormalizada = Math.min(page, totalPages);
 
-    const inicio =
-      (pageNormalizada - 1) *
-      limit;
+    const inicio = (pageNormalizada - 1) * limit;
 
-    const fim =
-      inicio + limit;
+    const fim = inicio + limit;
 
     const temporadasAtivas = [
       ...new Set(
-        rankingBase
-          .map(
-            (item) =>
-              item.temporadaRanking
-          )
-          .filter(Boolean)
+        rankingBase.map((item) => item.temporadaRanking).filter(Boolean),
       ),
     ];
 
     return res.json({
-      moeda: 'T$',
+      moeda: "T$",
 
-      criterio:
-        'RENTABILIDADE_TEMPORADA',
+      criterio: "RENTABILIDADE_TEMPORADA",
 
       capitalInicialPadrao: 1000,
 
-      categoria:
-        categoriaSolicitada,
+      categoria: categoriaSolicitada,
 
       categoriasPermitidas,
 
       temporadasAtivas,
 
-      page:
-        pageNormalizada,
+      page: pageNormalizada,
 
       limit,
 
@@ -635,62 +432,43 @@ router.get('/ranking', auth, async (req, res) => {
       totalUsuarios,
 
       totaisPorCategoria: {
-        geral:
-          rankingGeralCompleto.length,
+        geral: rankingGeralCompleto.length,
 
-        lite:
-          rankingLiteCompleto.length,
+        lite: rankingLiteCompleto.length,
 
-        premium:
-          rankingPremiumCompleto.length,
+        premium: rankingPremiumCompleto.length,
       },
 
       usuarioAtual: usuarioAtualGeral
         ? {
             ...usuarioAtualGeral,
 
-            posicaoGeral:
-              usuarioAtualGeral
-                .posicaoGeral,
+            posicaoGeral: usuarioAtualGeral.posicaoGeral,
 
-            posicaoNoPlano:
-              usuarioAtualNoPlano
-                ?.posicaoPlano ||
-              null,
+            posicaoNoPlano: usuarioAtualNoPlano?.posicaoPlano || null,
 
             categoriaSolicitada,
 
-            apareceNaCategoria:
-              Boolean(
-                usuarioAtualCategoria
-              ),
+            apareceNaCategoria: Boolean(usuarioAtualCategoria),
           }
         : null,
 
-      ranking:
-        rankingSelecionado.slice(
-          inicio,
-          fim
-        ),
+      ranking: rankingSelecionado.slice(inicio, fim),
     });
   } catch (err) {
-    console.error(
-      'Erro ao gerar ranking de usuários:',
-      err
-    );
+    console.error("Erro ao gerar ranking de usuários:", err);
 
     return res.status(500).json({
-      erro:
-        'Erro interno ao gerar ranking de usuários.',
+      erro: "Erro interno ao gerar ranking de usuários.",
     });
   }
 });
 
-router.get('/dividendos', auth, async (req, res) => {
+router.get("/dividendos", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
     const dividendos = await Dividendo.find({
@@ -699,20 +477,20 @@ router.get('/dividendos', auth, async (req, res) => {
         { usuarioId: usuario.legacyId ?? null },
       ],
     })
-      .populate('clubeId', 'nome')
+      .populate("clubeId", "nome")
       .sort({ data: -1 });
 
     res.json(dividendos);
   } catch (err) {
-    res.status(500).json({ erro: 'Erro ao buscar dividendos.' });
+    res.status(500).json({ erro: "Erro ao buscar dividendos." });
   }
 });
 
-router.get('/historico', auth, async (req, res) => {
+router.get("/historico", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
     const inv = await Investment.find({
@@ -729,19 +507,19 @@ router.get('/historico', auth, async (req, res) => {
         i.precoUnitario != null
           ? i.precoUnitario
           : i.valorUnitario != null
-          ? i.valorUnitario
-          : 0;
+            ? i.valorUnitario
+            : 0;
 
       const total =
         i.totalPago != null
           ? i.totalPago
           : i.quantidade != null
-          ? Number(i.quantidade) * Number(unit)
-          : 0;
+            ? Number(i.quantidade) * Number(unit)
+            : 0;
 
       return {
-        tipo: i.tipo || 'OPERACAO',
-        clubeNome: i.clubeNome || '',
+        tipo: i.tipo || "OPERACAO",
+        clubeNome: i.clubeNome || "",
         clubeId: i.clubeLegacyId ?? null,
         quantidade: i.quantidade,
         valorUnitario: unit,
@@ -752,23 +530,23 @@ router.get('/historico', auth, async (req, res) => {
 
     res.json(formatado);
   } catch (err) {
-    console.error('Erro ao buscar histórico:', err);
-    res.status(500).json({ erro: 'Erro ao buscar histórico' });
+    console.error("Erro ao buscar histórico:", err);
+    res.status(500).json({ erro: "Erro ao buscar histórico" });
   }
 });
 
-router.get('/carteira', auth, async (req, res) => {
+router.get("/carteira", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
 
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado' });
+      return res.status(404).json({ erro: "Usuário não encontrado" });
     }
 
     const clubesData = await Club.find({}).lean();
 
     const clubesPorLegacyId = new Map(
-      clubesData.map((c) => [String(c.legacyId), c])
+      clubesData.map((c) => [String(c.legacyId), c]),
     );
 
     const carteiraMap = new Map();
@@ -784,7 +562,7 @@ router.get('/carteira', auth, async (req, res) => {
           ativo.clubeLegacyId ??
           ativo.idClube ??
           ativo.clube?.id ??
-          ativo.clube?.legacyId
+          ativo.clube?.legacyId,
       );
 
       if (!Number.isFinite(clubeId) || clubeId <= 0) continue;
@@ -794,12 +572,12 @@ router.get('/carteira', auth, async (req, res) => {
 
       const precoMedio = Number(ativo.precoMedio ?? ativo.valorUnitario ?? 0);
       const totalInvestido = Number(
-        ativo.totalInvestido ?? quantidade * precoMedio
+        ativo.totalInvestido ?? quantidade * precoMedio,
       );
 
       carteiraMap.set(String(clubeId), {
         clubeId,
-        nomeClube: ativo.nomeClube || ativo.clubeNome || ativo.nome || '',
+        nomeClube: ativo.nomeClube || ativo.clubeNome || ativo.nome || "",
         quantidade,
         precoMedio,
         totalInvestido,
@@ -817,13 +595,13 @@ router.get('/carteira', auth, async (req, res) => {
       .lean();
 
     for (const mov of movimentos) {
-      const tipo = String(mov.tipo || '').toUpperCase();
+      const tipo = String(mov.tipo || "").toUpperCase();
 
       const clubeId = Number(
         mov.clubeLegacyId ??
           mov.clubeId?.legacyId ??
           mov.clubeId ??
-          mov.clube?.id
+          mov.clube?.id,
       );
 
       if (!Number.isFinite(clubeId) || clubeId <= 0) continue;
@@ -831,35 +609,26 @@ router.get('/carteira', auth, async (req, res) => {
       const quantidade = Number(mov.quantidade || 0);
       if (!Number.isFinite(quantidade) || quantidade <= 0) continue;
 
-      const precoUnitario = Number(
-        mov.precoUnitario ?? mov.valorUnitario ?? 0
-      );
+      const precoUnitario = Number(mov.precoUnitario ?? mov.valorUnitario ?? 0);
 
-      const total = Number(
-        mov.totalPago ?? quantidade * precoUnitario
-      );
+      const total = Number(mov.totalPago ?? quantidade * precoUnitario);
 
-      const atual =
-        carteiraMap.get(String(clubeId)) || {
-          clubeId,
-          nomeClube: mov.clubeNome || '',
-          quantidade: 0,
-          precoMedio: 0,
-          totalInvestido: 0,
-        };
+      const atual = carteiraMap.get(String(clubeId)) || {
+        clubeId,
+        nomeClube: mov.clubeNome || "",
+        quantidade: 0,
+        precoMedio: 0,
+        totalInvestido: 0,
+      };
 
-      if (
-        tipo === 'IPO' ||
-        tipo === 'COMPRA' ||
-        tipo === 'COMPRA_SECUNDARIO'
-      ) {
+      if (tipo === "IPO" || tipo === "COMPRA" || tipo === "COMPRA_SECUNDARIO") {
         const novaQtd = Number(atual.quantidade || 0) + quantidade;
         const novoTotal =
           Number(atual.totalInvestido || 0) + Number(total || 0);
 
         carteiraMap.set(String(clubeId), {
           ...atual,
-          nomeClube: atual.nomeClube || mov.clubeNome || '',
+          nomeClube: atual.nomeClube || mov.clubeNome || "",
           quantidade: novaQtd,
           totalInvestido: Number(novoTotal.toFixed(2)),
           precoMedio:
@@ -867,11 +636,7 @@ router.get('/carteira', auth, async (req, res) => {
         });
       }
 
-      if (
-        tipo === 'VENDA' ||
-        tipo === 'LIQUIDACAO' ||
-        tipo === 'LIQUIDAÇÃO'
-      ) {
+      if (tipo === "VENDA" || tipo === "LIQUIDACAO" || tipo === "LIQUIDAÇÃO") {
         const qtdAtual = Number(atual.quantidade || 0);
         const novaQtd = Math.max(0, qtdAtual - quantidade);
 
@@ -895,18 +660,18 @@ router.get('/carteira', auth, async (req, res) => {
         const clube = clubesPorLegacyId.get(String(ativo.clubeId));
 
         const precoAtual = Number(
-          clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0
+          clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0,
         );
 
         const valorAtual = Number(
-          (Number(ativo.quantidade || 0) * precoAtual).toFixed(2)
+          (Number(ativo.quantidade || 0) * precoAtual).toFixed(2),
         );
 
         return {
           ...ativo,
-          nome: clube?.nome || ativo.nomeClube || 'Desconhecido',
-          nomeClube: clube?.nome || ativo.nomeClube || 'Desconhecido',
-          escudo: clube?.escudo || '',
+          nome: clube?.nome || ativo.nomeClube || "Desconhecido",
+          nomeClube: clube?.nome || ativo.nomeClube || "Desconhecido",
+          escudo: clube?.escudo || "",
           precoAtual,
           valorAtual,
         };
@@ -927,37 +692,37 @@ router.get('/carteira', auth, async (req, res) => {
 
     return res.json(carteiraDetalhada);
   } catch (err) {
-    console.error('Erro ao buscar carteira:', err);
-    return res.status(500).json({ erro: 'Erro interno ao buscar carteira' });
+    console.error("Erro ao buscar carteira:", err);
+    return res.status(500).json({ erro: "Erro interno ao buscar carteira" });
   }
 });
 
-router.get('/saldo', auth, async (req, res) => {
+router.get("/saldo", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado' });
+      return res.status(404).json({ erro: "Usuário não encontrado" });
     }
 
     const saldo = Number(usuario.saldo || 0);
     return res.json({ saldo });
   } catch (err) {
-    console.error('Erro ao buscar saldo do usuário:', err);
-    return res.status(500).json({ erro: 'Erro interno ao buscar saldo' });
+    console.error("Erro ao buscar saldo do usuário:", err);
+    return res.status(500).json({ erro: "Erro interno ao buscar saldo" });
   }
 });
 
-router.post('/deposito', auth, async (req, res) => {
+router.post("/deposito", auth, async (req, res) => {
   try {
     const valor = Number(req.body.valor);
 
     if (!Number.isFinite(valor) || valor <= 0) {
-      return res.status(400).json({ erro: 'Valor de depósito inválido.' });
+      return res.status(400).json({ erro: "Valor de depósito inválido." });
     }
 
     const usuario = await User.findById(req.usuario.id);
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
     const saldoAtual = Number(usuario.saldo || 0);
@@ -971,12 +736,12 @@ router.post('/deposito', auth, async (req, res) => {
       usuarioLegacyId: usuario.legacyId ?? null,
       clubeId: null,
       clubeLegacyId: null,
-      clubeNome: '',
+      clubeNome: "",
       quantidade: 0,
       precoUnitario: valor,
       valorUnitario: valor,
       totalPago: valor,
-      tipo: 'DEPOSITO',
+      tipo: "DEPOSITO",
       data: new Date(),
     });
 
@@ -989,22 +754,24 @@ router.post('/deposito', auth, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Erro ao processar depósito:', err);
-    return res.status(500).json({ erro: 'Erro interno ao processar depósito.' });
+    console.error("Erro ao processar depósito:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao processar depósito." });
   }
 });
 
-router.post('/saque', auth, async (req, res) => {
+router.post("/saque", auth, async (req, res) => {
   try {
     const valor = Number(req.body.valor);
 
     if (!Number.isFinite(valor) || valor <= 0) {
-      return res.status(400).json({ erro: 'Valor de saque inválido.' });
+      return res.status(400).json({ erro: "Valor de saque inválido." });
     }
 
     const usuario = await User.findById(req.usuario.id);
     if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
     const saldoAtual = Number(usuario.saldo || 0);
@@ -1012,7 +779,7 @@ router.post('/saque', auth, async (req, res) => {
     if (valor > saldoAtual) {
       return res
         .status(400)
-        .json({ erro: 'Saldo insuficiente para realizar o saque.' });
+        .json({ erro: "Saldo insuficiente para realizar o saque." });
     }
 
     const novoSaldo = Number((saldoAtual - valor).toFixed(2));
@@ -1024,12 +791,12 @@ router.post('/saque', auth, async (req, res) => {
       usuarioLegacyId: usuario.legacyId ?? null,
       clubeId: null,
       clubeLegacyId: null,
-      clubeNome: '',
+      clubeNome: "",
       quantidade: 0,
       precoUnitario: valor,
       valorUnitario: valor,
       totalPago: valor,
-      tipo: 'SAQUE',
+      tipo: "SAQUE",
       data: new Date(),
     });
 
@@ -1042,60 +809,38 @@ router.post('/saque', auth, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Erro ao processar saque:', err);
-    return res.status(500).json({ erro: 'Erro interno ao processar saque.' });
+    console.error("Erro ao processar saque:", err);
+    return res.status(500).json({ erro: "Erro interno ao processar saque." });
   }
 });
 
-router.get('/extrato', auth, async (req, res) => {
+router.get("/extrato", auth, async (req, res) => {
   try {
-    const usuario = await User.findById(
-      req.usuario.id
-    ).lean();
+    const usuario = await User.findById(req.usuario.id).lean();
 
     if (!usuario) {
       return res.status(404).json({
-        erro: 'Usuário não encontrado.',
+        erro: "Usuário não encontrado.",
       });
     }
 
-    const saldoAtual = Number(
-      usuario.saldo || 0
-    );
+    const saldoAtual = Number(usuario.saldo || 0);
 
-    const saldoInicial = Number(
-      usuario.capitalInicial ?? 1000
-    );
+    const saldoInicial = Number(usuario.capitalInicial ?? 1000);
 
-    const {
-      from,
-      to,
-      tipos,
-    } = req.query;
+    const { from, to, tipos } = req.query;
 
     const tiposFiltro =
       tipos && String(tipos).trim()
         ? String(tipos)
-            .split(',')
-            .map((tipo) =>
-              String(tipo)
-                .trim()
-                .toUpperCase()
-            )
+            .split(",")
+            .map((tipo) => String(tipo).trim().toUpperCase())
             .filter(Boolean)
         : null;
 
-    const fromDate = from
-      ? new Date(
-          `${from}T00:00:00.000-03:00`
-        )
-      : null;
+    const fromDate = from ? new Date(`${from}T00:00:00.000-03:00`) : null;
 
-    const toDate = to
-      ? new Date(
-          `${to}T23:59:59.999-03:00`
-        )
-      : null;
+    const toDate = to ? new Date(`${to}T23:59:59.999-03:00`) : null;
 
     /*
      * Nunca consultar usuarioLegacyId null.
@@ -1108,50 +853,36 @@ router.get('/extrato', auth, async (req, res) => {
       },
     ];
 
-    if (
-      usuario.legacyId !== null &&
-      usuario.legacyId !== undefined
-    ) {
+    if (usuario.legacyId !== null && usuario.legacyId !== undefined) {
       criteriosUsuario.push({
-        usuarioLegacyId:
-          usuario.legacyId,
+        usuarioLegacyId: usuario.legacyId,
       });
     }
 
-    const investments =
-      await Investment.find({
-        $or: criteriosUsuario,
+    const investments = await Investment.find({
+      $or: criteriosUsuario,
+    })
+      .sort({
+        data: 1,
+        createdAt: 1,
       })
-        .sort({
-          data: 1,
-          createdAt: 1,
-        })
-        .lean();
+      .lean();
 
     function normalizarTipo(tipoOriginal) {
-      const tipo = String(
-        tipoOriginal || 'OPERACAO'
-      )
+      const tipo = String(tipoOriginal || "OPERACAO")
         .trim()
         .toUpperCase();
 
-      if (
-        tipo === 'COMPRA_SECUNDARIO' ||
-        tipo.includes('COMPRA')
-      ) {
-        return 'COMPRA';
+      if (tipo === "COMPRA_SECUNDARIO" || tipo.includes("COMPRA")) {
+        return "COMPRA";
       }
 
-      if (
-        tipo === 'DIVIDENDOS'
-      ) {
-        return 'DIVIDENDO';
+      if (tipo === "DIVIDENDOS") {
+        return "DIVIDENDO";
       }
 
-      if (
-        tipo === 'LIQUIDAÇÃO'
-      ) {
-        return 'LIQUIDACAO';
+      if (tipo === "LIQUIDAÇÃO") {
+        return "LIQUIDACAO";
       }
 
       return tipo;
@@ -1159,49 +890,26 @@ router.get('/extrato', auth, async (req, res) => {
 
     function calcularDelta(movimento) {
       const tipo = movimento.tipo;
-      const valor = Number(
-        movimento.valor || 0
-      );
+      const valor = Number(movimento.valor || 0);
 
-      if (
-        [
-          'DEPOSITO',
-          'VENDA',
-          'LIQUIDACAO',
-          'DIVIDENDO',
-        ].includes(tipo)
-      ) {
+      if (["DEPOSITO", "VENDA", "LIQUIDACAO", "DIVIDENDO"].includes(tipo)) {
         return Math.abs(valor);
       }
 
-      if (
-        [
-          'SAQUE',
-          'COMPRA',
-          'IPO',
-        ].includes(tipo)
-      ) {
+      if (["SAQUE", "COMPRA", "IPO"].includes(tipo)) {
         return -Math.abs(valor);
       }
 
-      if (tipo === 'AJUSTE') {
+      if (tipo === "AJUSTE") {
         const direcao = String(
-          movimento.metadata?.direcao ||
-            movimento.metadata?.direction ||
-            ''
+          movimento.metadata?.direcao || movimento.metadata?.direction || "",
         ).toUpperCase();
 
-        if (
-          direcao === 'D' ||
-          direcao === 'DEBITO'
-        ) {
+        if (direcao === "D" || direcao === "DEBITO") {
           return -Math.abs(valor);
         }
 
-        if (
-          direcao === 'C' ||
-          direcao === 'CREDITO'
-        ) {
+        if (direcao === "C" || direcao === "CREDITO") {
           return Math.abs(valor);
         }
 
@@ -1212,289 +920,173 @@ router.get('/extrato', auth, async (req, res) => {
     }
 
     function descricaoMovimento(movimento) {
-      const nomeClube =
-        movimento.clubeNome
-          ? ` — ${movimento.clubeNome}`
-          : '';
+      const nomeClube = movimento.clubeNome ? ` — ${movimento.clubeNome}` : "";
 
       const quantidade =
         movimento.quantidade > 0
           ? `${movimento.quantidade} ${
-              movimento.quantidade === 1
-                ? 'cota'
-                : 'cotas'
+              movimento.quantidade === 1 ? "cota" : "cotas"
             }`
-          : '';
+          : "";
 
-      if (
-        movimento.tipo ===
-        'DEPOSITO'
-      ) {
-        return 'Depósito de saldo fictício';
+      if (movimento.tipo === "DEPOSITO") {
+        return "Depósito de saldo fictício";
       }
 
-      if (
-        movimento.tipo ===
-        'SAQUE'
-      ) {
-        return 'Retirada de saldo fictício';
+      if (movimento.tipo === "SAQUE") {
+        return "Retirada de saldo fictício";
       }
 
-      if (
-        movimento.tipo ===
-        'COMPRA'
-      ) {
+      if (movimento.tipo === "COMPRA") {
         return `Compra de ${quantidade}${nomeClube}`;
       }
 
-      if (
-        movimento.tipo ===
-        'IPO'
-      ) {
+      if (movimento.tipo === "IPO") {
         return `Compra no IPO de ${quantidade}${nomeClube}`;
       }
 
-      if (
-        movimento.tipo ===
-        'VENDA'
-      ) {
+      if (movimento.tipo === "VENDA") {
         return `Venda de ${quantidade}${nomeClube}`;
       }
 
-      if (
-        movimento.tipo ===
-        'LIQUIDACAO'
-      ) {
+      if (movimento.tipo === "LIQUIDACAO") {
         return `Liquidação${nomeClube}`;
       }
 
-      if (
-        movimento.tipo ===
-        'DIVIDENDO'
-      ) {
+      if (movimento.tipo === "DIVIDENDO") {
         return `Dividendos${nomeClube}`;
       }
 
-      if (
-        movimento.tipo ===
-        'AJUSTE'
-      ) {
-        return 'Ajuste administrativo de saldo';
+      if (movimento.tipo === "AJUSTE") {
+        return "Ajuste administrativo de saldo";
       }
 
       return `${movimento.tipo}${nomeClube}`;
     }
 
-    const movimentos =
-      investments.map((investment) => {
-        const tipo =
-          normalizarTipo(
-            investment.tipo
-          );
+    const movimentos = investments.map((investment) => {
+      const tipo = normalizarTipo(investment.tipo);
 
-        const quantidade = Number(
-          investment.quantidade || 0
-        );
+      const quantidade = Number(investment.quantidade || 0);
 
-        const precoUnitario = Number(
-          investment.precoUnitario ??
-            investment.valorUnitario ??
-            0
-        );
+      const precoUnitario = Number(
+        investment.precoUnitario ?? investment.valorUnitario ?? 0,
+      );
 
-        const valorBruto = Number(
-          (
-            quantidade *
-            precoUnitario
-          ).toFixed(2)
-        );
+      const valorBruto = Number((quantidade * precoUnitario).toFixed(2));
 
-        const valor = Number(
-          investment.totalPago ??
-            valorBruto ??
-            0
-        );
+      const valor = Number(investment.totalPago ?? valorBruto ?? 0);
 
-        const taxa = Number(
-          investment.metadata?.fee ??
-            investment.metadata?.taxa ??
-            0
-        );
+      const taxa = Number(
+        investment.metadata?.fee ?? investment.metadata?.taxa ?? 0,
+      );
 
-        const movimento = {
-          id: String(
-            investment._id
-          ),
+      const movimento = {
+        id: String(investment._id),
 
-          tipo,
+        tipo,
 
-          tipoOriginal:
-            investment.tipo,
+        tipoOriginal: investment.tipo,
 
-          clubeId:
-            investment.clubeLegacyId ??
-            null,
+        clubeId: investment.clubeLegacyId ?? null,
 
-          clubeNome:
-            investment.clubeNome || '',
+        clubeNome: investment.clubeNome || "",
 
-          quantidade,
+        quantidade,
 
-          precoUnitario,
+        precoUnitario,
 
-          valorBruto,
+        valorBruto,
 
-          valor,
+        valor,
 
-          taxa,
+        taxa,
 
-          tipoTaxa:
-            investment.metadata
-              ?.feeType || null,
+        tipoTaxa: investment.metadata?.feeType || null,
 
-          orderId:
-            investment.metadata
-              ?.orderId || null,
+        orderId: investment.metadata?.orderId || null,
 
-          origem:
-            investment.origem ||
-            investment.metadata
-              ?.mercado ||
-            null,
+        origem: investment.origem || investment.metadata?.mercado || null,
 
-          data:
-            investment.data
-              ? new Date(
-                  investment.data
-                )
-              : new Date(0),
+        data: investment.data ? new Date(investment.data) : new Date(0),
 
-          metadata:
-            investment.metadata || {},
-        };
+        metadata: investment.metadata || {},
+      };
 
-        movimento.delta =
-          calcularDelta(movimento);
+      movimento.delta = calcularDelta(movimento);
 
-        movimento.descricao =
-          descricaoMovimento(
-            movimento
-          );
+      movimento.descricao = descricaoMovimento(movimento);
 
-        return movimento;
-      });
+      return movimento;
+    });
 
     /*
      * O saldo é reconstruído desde o capital
      * inicial, e não mais a partir de zero.
      */
-    let saldoCalculado =
-      saldoInicial;
+    let saldoCalculado = saldoInicial;
 
     const linhas = [
       {
-        id: 'saldo-inicial',
-        data:
-          usuario.createdAt ||
-          movimentos[0]?.data ||
-          new Date(),
+        id: "saldo-inicial",
+        data: usuario.createdAt || movimentos[0]?.data || new Date(),
 
-        tipo: 'SALDO_INICIAL',
-        tipoOriginal:
-          'SALDO_INICIAL',
+        tipo: "SALDO_INICIAL",
+        tipoOriginal: "SALDO_INICIAL",
 
-        descricao:
-          'Saldo fictício inicial',
+        descricao: "Saldo fictício inicial",
 
         clubeId: null,
-        clubeNome: '',
+        clubeNome: "",
         quantidade: 0,
         precoUnitario: 0,
-        valorBruto:
-          saldoInicial,
+        valorBruto: saldoInicial,
         taxa: 0,
         tipoTaxa: null,
         orderId: null,
-        origem: 'SISTEMA',
-        valor:
-          Math.abs(saldoInicial),
-        direcao:
-          saldoInicial >= 0
-            ? 'C'
-            : 'D',
-        saldoApos:
-          Number(
-            saldoInicial.toFixed(2)
-          ),
+        origem: "SISTEMA",
+        valor: Math.abs(saldoInicial),
+        direcao: saldoInicial >= 0 ? "C" : "D",
+        saldoApos: Number(saldoInicial.toFixed(2)),
       },
     ];
 
-    for (
-      const movimento of
-      movimentos
-    ) {
-      saldoCalculado = Number(
-        (
-          saldoCalculado +
-          movimento.delta
-        ).toFixed(2)
-      );
+    for (const movimento of movimentos) {
+      saldoCalculado = Number((saldoCalculado + movimento.delta).toFixed(2));
 
       linhas.push({
         id: movimento.id,
-        data:
-          movimento.data.toISOString(),
+        data: movimento.data.toISOString(),
 
-        tipo:
-          movimento.tipo,
+        tipo: movimento.tipo,
 
-        tipoOriginal:
-          movimento.tipoOriginal,
+        tipoOriginal: movimento.tipoOriginal,
 
-        descricao:
-          movimento.descricao,
+        descricao: movimento.descricao,
 
-        clubeId:
-          movimento.clubeId,
+        clubeId: movimento.clubeId,
 
-        clubeNome:
-          movimento.clubeNome,
+        clubeNome: movimento.clubeNome,
 
-        quantidade:
-          movimento.quantidade,
+        quantidade: movimento.quantidade,
 
-        precoUnitario:
-          movimento.precoUnitario,
+        precoUnitario: movimento.precoUnitario,
 
-        valorBruto:
-          movimento.valorBruto,
+        valorBruto: movimento.valorBruto,
 
-        taxa:
-          movimento.taxa,
+        taxa: movimento.taxa,
 
-        tipoTaxa:
-          movimento.tipoTaxa,
+        tipoTaxa: movimento.tipoTaxa,
 
-        orderId:
-          movimento.orderId,
+        orderId: movimento.orderId,
 
-        origem:
-          movimento.origem,
+        origem: movimento.origem,
 
-        valor:
-          Number(
-            Math.abs(
-              movimento.delta
-            ).toFixed(2)
-          ),
+        valor: Number(Math.abs(movimento.delta).toFixed(2)),
 
-        direcao:
-          movimento.delta >= 0
-            ? 'C'
-            : 'D',
+        direcao: movimento.delta >= 0 ? "C" : "D",
 
-        saldoApos:
-          saldoCalculado,
+        saldoApos: saldoCalculado,
       });
     }
 
@@ -1502,59 +1094,36 @@ router.get('/extrato', auth, async (req, res) => {
      * Diferenças de dados legados permanecem
      * auditáveis como ajuste de reconciliação.
      */
-    const diferenca = Number(
-      (
-        saldoAtual -
-        saldoCalculado
-      ).toFixed(2)
-    );
+    const diferenca = Number((saldoAtual - saldoCalculado).toFixed(2));
 
-    if (
-      Math.abs(diferenca) >=
-      0.01
-    ) {
-      saldoCalculado = Number(
-        (
-          saldoCalculado +
-          diferenca
-        ).toFixed(2)
-      );
+    if (Math.abs(diferenca) >= 0.01) {
+      saldoCalculado = Number((saldoCalculado + diferenca).toFixed(2));
 
       linhas.push({
-        id:
-          'ajuste-reconciliacao',
+        id: "ajuste-reconciliacao",
 
-        data:
-          new Date().toISOString(),
+        data: new Date().toISOString(),
 
-        tipo: 'AJUSTE',
-        tipoOriginal:
-          'AJUSTE_RECONCILIACAO',
+        tipo: "AJUSTE",
+        tipoOriginal: "AJUSTE_RECONCILIACAO",
 
-        descricao:
-          'Ajuste de reconciliação de dados anteriores',
+        descricao: "Ajuste de reconciliação de dados anteriores",
 
         clubeId: null,
-        clubeNome: '',
+        clubeNome: "",
         quantidade: 0,
         precoUnitario: 0,
-        valorBruto:
-          Math.abs(diferenca),
+        valorBruto: Math.abs(diferenca),
         taxa: 0,
         tipoTaxa: null,
         orderId: null,
-        origem: 'SISTEMA',
+        origem: "SISTEMA",
 
-        valor:
-          Math.abs(diferenca),
+        valor: Math.abs(diferenca),
 
-        direcao:
-          diferenca >= 0
-            ? 'C'
-            : 'D',
+        direcao: diferenca >= 0 ? "C" : "D",
 
-        saldoApos:
-          saldoCalculado,
+        saldoApos: saldoCalculado,
       });
     }
 
@@ -1563,62 +1132,39 @@ router.get('/extrato', auth, async (req, res) => {
      * cálculo. Assim, saldoApos continua correto
      * mesmo ao consultar apenas um período.
      */
-    const itensFiltrados =
-      linhas.filter((linha) => {
-        const dataLinha =
-          new Date(linha.data);
+    const itensFiltrados = linhas.filter((linha) => {
+      const dataLinha = new Date(linha.data);
 
-        if (
-          fromDate &&
-          dataLinha < fromDate
-        ) {
-          return false;
-        }
+      if (fromDate && dataLinha < fromDate) {
+        return false;
+      }
 
-        if (
-          toDate &&
-          dataLinha > toDate
-        ) {
-          return false;
-        }
+      if (toDate && dataLinha > toDate) {
+        return false;
+      }
 
-        if (
-          tiposFiltro &&
-          !tiposFiltro.includes(
-            linha.tipo
-          )
-        ) {
-          return false;
-        }
+      if (tiposFiltro && !tiposFiltro.includes(linha.tipo)) {
+        return false;
+      }
 
-        return true;
-      });
+      return true;
+    });
 
     const totais = linhas.reduce(
       (acc, linha) => {
-        if (
-          linha.tipo ===
-          'SALDO_INICIAL'
-        ) {
+        if (linha.tipo === "SALDO_INICIAL") {
           return acc;
         }
 
-        const valor = Number(
-          linha.valor || 0
-        );
+        const valor = Number(linha.valor || 0);
 
-        if (
-          linha.direcao ===
-          'C'
-        ) {
+        if (linha.direcao === "C") {
           acc.creditos += valor;
         } else {
           acc.debitos += valor;
         }
 
-        acc.taxas += Number(
-          linha.taxa || 0
-        );
+        acc.taxas += Number(linha.taxa || 0);
 
         return acc;
       },
@@ -1626,104 +1172,133 @@ router.get('/extrato', auth, async (req, res) => {
         creditos: 0,
         debitos: 0,
         taxas: 0,
-      }
+      },
     );
 
     return res.json({
-      saldoInicial:
-        Number(
-          saldoInicial.toFixed(2)
-        ),
+      saldoInicial: Number(saldoInicial.toFixed(2)),
 
-      saldoAtual:
-        Number(
-          saldoAtual.toFixed(2)
-        ),
+      saldoAtual: Number(saldoAtual.toFixed(2)),
 
-      saldoCalculadoFinal:
-        Number(
-          saldoCalculado.toFixed(2)
-        ),
+      saldoCalculadoFinal: Number(saldoCalculado.toFixed(2)),
 
-      reconciliado:
-        Math.abs(
-          saldoAtual -
-            saldoCalculado
-        ) < 0.01,
+      reconciliado: Math.abs(saldoAtual - saldoCalculado) < 0.01,
 
       resumo: {
-        totalCreditos:
-          Number(
-            totais.creditos.toFixed(2)
-          ),
+        totalCreditos: Number(totais.creditos.toFixed(2)),
 
-        totalDebitos:
-          Number(
-            totais.debitos.toFixed(2)
-          ),
+        totalDebitos: Number(totais.debitos.toFixed(2)),
 
-        totalTaxas:
-          Number(
-            totais.taxas.toFixed(2)
-          ),
+        totalTaxas: Number(totais.taxas.toFixed(2)),
       },
 
-      itens:
-        itensFiltrados.sort(
-          (a, b) =>
-            new Date(b.data) -
-            new Date(a.data)
-        ),
+      itens: itensFiltrados.sort((a, b) => new Date(b.data) - new Date(a.data)),
     });
   } catch (err) {
-    console.error(
-      'Erro ao gerar extrato:',
-      err
-    );
+    console.error("Erro ao gerar extrato:", err);
 
     return res.status(500).json({
-      erro:
-        'Erro ao gerar extrato.',
+      erro: "Erro ao gerar extrato.",
     });
   }
 });
 
-router.post('/aceites', auth, async (req, res) => {
+router.get("/aceites/status", auth, async (req, res) => {
   try {
-    const { tipo, versao } = req.body || {};
-    if (!tipo || !versao) {
-      return res.status(400).json({ erro: 'tipo e versao são obrigatórios' });
+    const usuario = await User.findById(req.usuario.id)
+      .select("aceites")
+      .lean();
+    if (!usuario)
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+
+    const pendencias = pendenciasAceite(usuario.aceites);
+    return res.json({
+      versoesVigentes: Object.fromEntries(
+        Object.entries(LEGAL_DOCUMENTS).map(([tipo, doc]) => [
+          tipo,
+          doc.versao,
+        ]),
+      ),
+      aceitesAtuais: usuario.aceites || {},
+      pendencias,
+      exigeNovoAceite: pendencias.length > 0,
+    });
+  } catch (err) {
+    console.error("Erro ao consultar aceites:", err);
+    return res.status(500).json({ erro: "Erro ao consultar aceites" });
+  }
+});
+
+router.post("/aceites", auth, async (req, res) => {
+  try {
+    const { tipo, aceitou } = req.body || {};
+    const documento = documentoLegal(tipo);
+
+    if (!documento || aceitou !== true) {
+      return res.status(400).json({
+        erro: "Documento inválido ou confirmação de aceite ausente.",
+      });
     }
 
     const usuario = await User.findById(req.usuario.id);
-    if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    if (!usuario)
+      return res.status(404).json({ erro: "Usuário não encontrado" });
 
-    const nowIso = new Date().toISOString();
-    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip;
-    const userAgent = req.headers['user-agent'] || '';
+    const now = new Date();
+    const ip =
+      req.headers["x-forwarded-for"]?.toString().split(",")[0].trim() || req.ip;
+    const userAgent = req.headers["user-agent"] || "";
 
     if (!usuario.aceites) usuario.aceites = {};
     usuario.aceites[tipo] = {
-      versao,
-      aceitoEm: nowIso,
+      versao: documento.versao,
+      aceitoEm: now,
       ip,
       userAgent,
     };
+    usuario.markModified("aceites");
+
+    await LegalAcceptance.updateOne(
+      {
+        usuarioId: usuario._id,
+        tipo,
+        versao: documento.versao,
+      },
+      {
+        $setOnInsert: {
+          usuarioId: usuario._id,
+          tipo,
+          versao: documento.versao,
+          aceitoEm: now,
+          ip,
+          userAgent,
+          origem: "reaceite",
+        },
+      },
+      { upsert: true },
+    );
 
     await usuario.save();
-    return res.json({ ok: true, tipo, versao, aceitoEm: nowIso });
+    return res.json({
+      ok: true,
+      tipo,
+      versao: documento.versao,
+      aceitoEm: now.toISOString(),
+    });
   } catch (err) {
-    console.error('Erro ao registrar aceite:', err);
-    return res.status(500).json({ erro: 'Erro ao registrar aceite' });
+    console.error("Erro ao registrar aceite:", err);
+    return res.status(500).json({ erro: "Erro ao registrar aceite" });
   }
 });
 
-router.get('/admin/antifraude/logs', auth, async (req, res) => {
+router.get("/admin/antifraude/logs", auth, async (req, res) => {
   try {
     const usuario = req.usuario;
 
-    if (!usuario || usuario.role !== 'admin') {
-      return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+    if (!usuario || usuario.role !== "admin") {
+      return res
+        .status(403)
+        .json({ erro: "Acesso restrito a administradores." });
     }
 
     const limit = Math.min(Number(req.query.limit || 200), 1000);
@@ -1731,57 +1306,84 @@ router.get('/admin/antifraude/logs', auth, async (req, res) => {
 
     const recentes = (Array.isArray(logs) ? logs : [])
       .slice()
-      .sort((a, b) => new Date(b.ts || b.createdAt || b.data || 0) - new Date(a.ts || a.createdAt || a.data || 0))
+      .sort(
+        (a, b) =>
+          new Date(b.ts || b.createdAt || b.data || 0) -
+          new Date(a.ts || a.createdAt || a.data || 0),
+      )
       .slice(0, limit);
 
     return res.json({ total: recentes.length, logs: recentes });
   } catch (err) {
-    console.error('Erro ao buscar logs antifraude:', err);
-    return res.status(500).json({ erro: 'Erro interno ao buscar logs antifraude.' });
+    console.error("Erro ao buscar logs antifraude:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao buscar logs antifraude." });
   }
 });
 
-router.get('/admin/antifraude/state', auth, async (req, res) => {
+router.get("/admin/antifraude/state", auth, async (req, res) => {
   try {
     const usuario = req.usuario;
-    if (!usuario || usuario.role !== 'admin') {
-      return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+    if (!usuario || usuario.role !== "admin") {
+      return res
+        .status(403)
+        .json({ erro: "Acesso restrito a administradores." });
     }
 
     const state = await obterAntifraudeState();
     return res.json(state || { users: {}, ips: {}, clubes: {} });
   } catch (err) {
-    console.error('Erro ao buscar antifraude state:', err);
-    return res.status(500).json({ erro: 'Erro interno ao buscar antifraude state.' });
+    console.error("Erro ao buscar antifraude state:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao buscar antifraude state." });
   }
 });
 
-router.post('/admin/freeze-user', auth, async (req, res) => {
-  if (req.usuario.role !== 'admin') return res.status(403).json({ erro: 'Admin only' });
-  const { userId, minutos = 10, motivo = 'freeze manual' } = req.body;
+router.post("/admin/freeze-user", auth, async (req, res) => {
+  if (req.usuario.role !== "admin")
+    return res.status(403).json({ erro: "Admin only" });
+  const { userId, minutos = 10, motivo = "freeze manual" } = req.body;
   const state = await obterAntifraudeState();
   antifraude.freezeUser(state, userId, Number(minutos) * 60_000, motivo);
-  antifraude.logEvent({ userId: String(userId), action: 'ADMIN_FREEZE', decision: 'BLOCK', reason: motivo });
+  antifraude.logEvent({
+    userId: String(userId),
+    action: "ADMIN_FREEZE",
+    decision: "BLOCK",
+    reason: motivo,
+  });
   res.json({ ok: true });
 });
 
-router.post('/admin/unfreeze-user', auth, async (req, res) => {
-  if (req.usuario.role !== 'admin') return res.status(403).json({ erro: 'Admin only' });
+router.post("/admin/unfreeze-user", auth, async (req, res) => {
+  if (req.usuario.role !== "admin")
+    return res.status(403).json({ erro: "Admin only" });
   const { userId } = req.body;
   const state = await obterAntifraudeState();
   antifraude.unfreezeUser(state, userId);
-  antifraude.logEvent({ userId: String(userId), action: 'ADMIN_UNFREEZE', decision: 'ALLOW' });
+  antifraude.logEvent({
+    userId: String(userId),
+    action: "ADMIN_UNFREEZE",
+    decision: "ALLOW",
+  });
   res.json({ ok: true });
 });
 
-router.get('/admin/dashboard/antifraude', auth, async (req, res) => {
+router.get("/admin/dashboard/antifraude", auth, async (req, res) => {
   try {
     const usuario = req.usuario;
-    if (!usuario || usuario.role !== 'admin') {
-      return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+    if (!usuario || usuario.role !== "admin") {
+      return res
+        .status(403)
+        .json({ erro: "Acesso restrito a administradores." });
     }
 
-    const state = (await obterAntifraudeState()) || { users: {}, ips: {}, clubes: {} };
+    const state = (await obterAntifraudeState()) || {
+      users: {},
+      ips: {},
+      clubes: {},
+    };
 
     const usersArr = Object.entries(state.users || {}).map(([userId, u]) => ({
       userId,
@@ -1793,31 +1395,41 @@ router.get('/admin/dashboard/antifraude', auth, async (req, res) => {
 
     usersArr.sort((a, b) => b.score - a.score);
 
-    const frozenUsers = usersArr.filter((u) => u.frozenUntil > Date.now()).slice(0, 50);
+    const frozenUsers = usersArr
+      .filter((u) => u.frozenUntil > Date.now())
+      .slice(0, 50);
 
-    const clubesArr = Object.entries(state.clubes || {}).map(([clubeId, c]) => ({
-      clubeId,
-      frozenUntil: Number(c.frozenUntil || 0),
-      last: c.last || {},
-      trades5m: Array.isArray(c.stats?.trades) ? c.stats.trades.length : null,
-      cancels10m: Array.isArray(c.stats?.cancels) ? c.stats.cancels.length : null,
-    }));
+    const clubesArr = Object.entries(state.clubes || {}).map(
+      ([clubeId, c]) => ({
+        clubeId,
+        frozenUntil: Number(c.frozenUntil || 0),
+        last: c.last || {},
+        trades5m: Array.isArray(c.stats?.trades) ? c.stats.trades.length : null,
+        cancels10m: Array.isArray(c.stats?.cancels)
+          ? c.stats.cancels.length
+          : null,
+      }),
+    );
     const frozenClubes = clubesArr.filter((c) => c.frozenUntil > Date.now());
 
     const logs = await obterAntifraudeLogs(500);
     const recent = (Array.isArray(logs) ? logs : [])
       .slice()
-      .sort((a, b) => new Date(b.ts || b.createdAt || b.data || 0) - new Date(a.ts || a.createdAt || a.data || 0))
+      .sort(
+        (a, b) =>
+          new Date(b.ts || b.createdAt || b.data || 0) -
+          new Date(a.ts || a.createdAt || a.data || 0),
+      )
       .filter((l) =>
         [
-          'CANCEL_RATIO_SIGNAL',
-          'CLUBE_VOLUME_SPIKE',
-          'ADMIN_FREEZE',
-          'ADMIN_FREEZE_CLUBE',
-          'WASH_TRADING_SIGNAL',
-          'SPOOFING_SIGNAL',
-          'SELF_TRADE_BLOCK',
-        ].includes(String(l.action || ''))
+          "CANCEL_RATIO_SIGNAL",
+          "CLUBE_VOLUME_SPIKE",
+          "ADMIN_FREEZE",
+          "ADMIN_FREEZE_CLUBE",
+          "WASH_TRADING_SIGNAL",
+          "SPOOFING_SIGNAL",
+          "SELF_TRADE_BLOCK",
+        ].includes(String(l.action || "")),
       )
       .slice(0, 100);
 
@@ -1828,22 +1440,26 @@ router.get('/admin/dashboard/antifraude', auth, async (req, res) => {
       recentSignals: recent,
     });
   } catch (err) {
-    console.error('Erro dashboard antifraude:', err);
-    return res.status(500).json({ erro: 'Erro interno ao montar dashboard antifraude.' });
+    console.error("Erro dashboard antifraude:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao montar dashboard antifraude." });
   }
 });
 
-router.get('/admin/dashboard/mercado', auth, async (req, res) => {
+router.get("/admin/dashboard/mercado", auth, async (req, res) => {
   try {
     const usuario = req.usuario;
-    if (!usuario || usuario.role !== 'admin') {
-      return res.status(403).json({ erro: 'Acesso restrito a administradores.' });
+    if (!usuario || usuario.role !== "admin") {
+      return res
+        .status(403)
+        .json({ erro: "Acesso restrito a administradores." });
     }
 
     const agora = new Date();
 
     const clubesTravados = await Club.find({ travadoAte: { $gt: Date.now() } })
-      .select('legacyId nome travadoAte precoAtual preco')
+      .select("legacyId nome travadoAte precoAtual preco")
       .lean();
 
     const travados = clubesTravados.map((c) => ({
@@ -1856,13 +1472,13 @@ router.get('/admin/dashboard/mercado', auth, async (req, res) => {
     const agrupadas = await Order.aggregate([
       {
         $match: {
-          status: { $in: ['aberta', 'parcial'] },
+          status: { $in: ["aberta", "parcial"] },
           restante: { $gt: 0 },
         },
       },
       {
         $group: {
-          _id: '$clubeLegacyId',
+          _id: "$clubeLegacyId",
           ordensAbertas: { $sum: 1 },
         },
       },
@@ -1881,8 +1497,10 @@ router.get('/admin/dashboard/mercado', auth, async (req, res) => {
       topClubesPorOrdens,
     });
   } catch (err) {
-    console.error('Erro dashboard mercado:', err);
-    return res.status(500).json({ erro: 'Erro interno ao montar dashboard mercado.' });
+    console.error("Erro dashboard mercado:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao montar dashboard mercado." });
   }
 });
 
