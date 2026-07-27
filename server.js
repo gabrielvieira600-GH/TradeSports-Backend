@@ -52,6 +52,7 @@ const classificacaoRoutes = require("./routes/classificacao");
 const depositoRoutes = require("./routes/deposito");
 const saqueRoutes = require("./routes/saque");
 const temporadaRoutes = require("./routes/temporada");
+const dashboardRoutes = require("./routes/dashboard");
 const rankingsPrivadosRoutes = require("./routes/rankingsPrivados");
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
@@ -223,6 +224,7 @@ app.use("/usuario", usuarioRoutes);
 app.use("/deposito", depositoRoutes);
 app.use("/saque", saqueRoutes);
 app.use("/temporada", temporadaRoutes);
+app.use("/dashboard", dashboardRoutes);
 app.use("/rankings-privados", rankingsPrivadosRoutes);
 app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
@@ -902,4 +904,3 @@ app.get("/admin/system/check", auth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
-
