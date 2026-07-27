@@ -287,7 +287,7 @@ app.post("/cadastro", async (req, res) => {
 
     if (aceitouTermos !== true || !todosAceitesValidos) {
       return res.status(400).json({
-        erro: "Confirme os Termos de Uso, a Política de Risco e a ciência da Política de Privacidade nas versões vigentes.",
+        erro: "Confirme os Termos de Uso, a Política de Risco, a ciência da Política de Privacidade e a Política da Comunidade nas versões vigentes.",
         codigo: "ACEITES_JURIDICOS_OBRIGATORIOS",
         versoesVigentes: Object.fromEntries(
           LEGAL_DOCUMENT_TYPES.map((tipo) => [
@@ -902,3 +902,4 @@ app.get("/admin/system/check", auth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+

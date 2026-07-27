@@ -14,6 +14,11 @@ const LEGAL_DOCUMENTS = Object.freeze({
     versao: "1.0",
     exigeAceite: true,
   }),
+  politicaComunidade: Object.freeze({
+    tipo: "politicaComunidade",
+    versao: "1.0",
+    exigeAceite: true,
+  }),
 });
 
 const LEGAL_DOCUMENT_TYPES = Object.freeze(Object.keys(LEGAL_DOCUMENTS));
@@ -46,3 +51,4 @@ module.exports = {
   normalizarVersao,
   pendenciasAceite,
 };
+

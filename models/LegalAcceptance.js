@@ -11,7 +11,12 @@ const LegalAcceptanceSchema = new mongoose.Schema(
     },
     tipo: {
       type: String,
-      enum: ["termosUso", "politicaRisco", "politicaPrivacidade"],
+      enum: [
+        "termosUso",
+        "politicaRisco",
+        "politicaPrivacidade",
+        "politicaComunidade",
+      ],
       required: true,
       immutable: true,
     },
@@ -57,3 +62,4 @@ LegalAcceptanceSchema.index(
 module.exports =
   mongoose.models.LegalAcceptance ||
   mongoose.model("LegalAcceptance", LegalAcceptanceSchema);
+
