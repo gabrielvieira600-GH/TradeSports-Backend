@@ -34,6 +34,8 @@ require("./models/Investment");
 require("./models/Order");
 require("./models/Liquidacao");
 require("./models/dividendos");
+require("./models/AdvancedAlert");
+require("./models/AdvancedAlertTrigger");
 
 const {
   enviarEmailVerificacao,
@@ -55,6 +57,7 @@ const temporadaRoutes = require("./routes/temporada");
 const dashboardRoutes = require("./routes/dashboard");
 const performanceRoutes = require("./routes/performance");
 const weeklyReportsRoutes = require("./routes/weeklyReports");
+const advancedAlertsRoutes = require("./routes/advancedAlerts");
 const rankingsPrivadosRoutes = require("./routes/rankingsPrivados");
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
@@ -229,6 +232,7 @@ app.use("/temporada", temporadaRoutes);
 app.use("/dashboard", dashboardRoutes);
 app.use("/performance", performanceRoutes);
 app.use("/weekly-reports", weeklyReportsRoutes);
+app.use("/advanced-alerts", advancedAlertsRoutes);
 app.use("/rankings-privados", rankingsPrivadosRoutes);
 app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
@@ -780,6 +784,15 @@ app.get("/notifications", auth, async (req, res) => {
       await garantirRelatorioSemanal(user);
     } catch (weeklyErr) {
       console.error("[WEEKLY REPORT] erro não bloqueante:", weeklyErr);
+    }
+    try {
+      const { obterPlanoEfetivo } = require("./utils/planFeatures");
+      if (obterPlanoEfetivo(user) === "premium") {
+        const { avaliarAlertasDoUsuario } = require("./utils/advancedAlerts");
+        await avaliarAlertasDoUsuario(user);
+      }
+    } catch (alertErr) {
+      console.error("[ADVANCED ALERTS] erro não bloqueante:", alertErr);
     }
     await user.save();
 
