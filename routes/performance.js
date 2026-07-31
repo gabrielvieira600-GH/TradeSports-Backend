@@ -211,6 +211,12 @@ async function registrarSnapshot(usuario, carteira) {
         resultadoAcumulado: carteira.resultadoAcumulado,
         rentabilidadeAcumulada: carteira.rentabilidadeAcumulada,
         quantidadePosicoes: carteira.posicoes.length,
+        posicoes: carteira.posicoes.map((item) => ({
+          clubeId: item.clubeId,
+          nome: item.nome,
+          quantidade: item.quantidade,
+          valorAtual: item.valorAtual,
+        })),
       },
       $setOnInsert: { usuarioId: usuario._id, chaveDia },
     },

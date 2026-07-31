@@ -54,6 +54,7 @@ const saqueRoutes = require("./routes/saque");
 const temporadaRoutes = require("./routes/temporada");
 const dashboardRoutes = require("./routes/dashboard");
 const performanceRoutes = require("./routes/performance");
+const weeklyReportsRoutes = require("./routes/weeklyReports");
 const rankingsPrivadosRoutes = require("./routes/rankingsPrivados");
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
@@ -227,6 +228,7 @@ app.use("/saque", saqueRoutes);
 app.use("/temporada", temporadaRoutes);
 app.use("/dashboard", dashboardRoutes);
 app.use("/performance", performanceRoutes);
+app.use("/weekly-reports", weeklyReportsRoutes);
 app.use("/rankings-privados", rankingsPrivadosRoutes);
 app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
@@ -773,6 +775,12 @@ app.get("/notifications", auth, async (req, res) => {
 
     ensureUserNotificationFields(user);
     await synthesizeWatchlistNotifications(user);
+    try {
+      const { garantirRelatorioSemanal } = require("./utils/weeklyPerformanceReport");
+      await garantirRelatorioSemanal(user);
+    } catch (weeklyErr) {
+      console.error("[WEEKLY REPORT] erro não bloqueante:", weeklyErr);
+    }
     await user.save();
 
     const notifications = Array.isArray(user.notificacoes)

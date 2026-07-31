@@ -16,6 +16,8 @@ const PerformanceSnapshotSchema = new mongoose.Schema(
     resultadoAcumulado: { type: Number, default: 0 },
     rentabilidadeAcumulada: { type: Number, default: 0 },
     quantidadePosicoes: { type: Number, default: 0 },
+    posicoes: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    ranking: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   {
     timestamps: true,
