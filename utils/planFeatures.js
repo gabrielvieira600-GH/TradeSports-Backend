@@ -47,7 +47,7 @@ const LIMITES = Object.freeze({
     ligasWatchlist: 2,
     diasHistorico: 30,
     rankingsPrivadosCriados: 0,
-    rankingsPrivadosParticipando: 0,
+    rankingsPrivadosParticipando: 2,
   },
 
   [PLANOS.PREMIUM]: {
@@ -55,8 +55,8 @@ const LIMITES = Object.freeze({
     clubesWatchlist: null,
     ligasWatchlist: null,
     diasHistorico: null,
-    rankingsPrivadosCriados: 5,
-    rankingsPrivadosParticipando: 20,
+    rankingsPrivadosCriados: null,
+    rankingsPrivadosParticipando: null,
   },
 });
 
@@ -66,7 +66,6 @@ const FEATURES_POR_PLANO = Object.freeze({
   [PLANOS.PREMIUM]: new Set([
     FEATURES.ORDENS_ILIMITADAS,
     FEATURES.CRIAR_RANKING_PRIVADO,
-    FEATURES.PARTICIPAR_RANKING_PRIVADO,
     FEATURES.HISTORICO_COMPLETO,
     FEATURES.WATCHLIST_ILIMITADA,
     FEATURES.ALERTAS_PERSONALIZADOS,

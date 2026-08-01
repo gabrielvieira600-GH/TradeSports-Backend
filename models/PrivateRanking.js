@@ -47,7 +47,7 @@ const PrivateRankingSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['ativo', 'cancelado', 'encerrado'],
+      enum: ['rascunho', 'ativo', 'encerrado', 'arquivado', 'cancelado'],
       default: 'ativo',
       index: true,
     },
@@ -63,6 +63,35 @@ const PrivateRankingSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    visibilidade: {
+      type: String,
+      enum: ['publico', 'convite'],
+      default: 'convite',
+      index: true,
+    },
+
+    criterioClassificacao: {
+      type: String,
+      enum: ['rentabilidade', 'patrimonio', 'resultado'],
+      default: 'rentabilidade',
+    },
+
+    regras: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 3000,
+    },
+
+    encerradoEm: { type: Date, default: null },
+    arquivadoEm: { type: Date, default: null },
+    campeaoUsuarioId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    resultadoFinal: { type: mongoose.Schema.Types.Mixed, default: null },
 
     dataInicio: {
       type: Date,

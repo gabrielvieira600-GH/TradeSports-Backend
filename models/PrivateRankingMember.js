@@ -18,10 +18,24 @@ const PrivateRankingMemberSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['pendente', 'aprovado', 'recusado', 'removido', 'saiu'],
+      enum: ['pendente', 'aprovado', 'recusado', 'removido', 'bloqueado', 'saiu'],
       default: 'aprovado',
       index: true,
     },
+
+    papel: {
+      type: String,
+      enum: ['proprietario', 'administrador', 'participante'],
+      default: 'participante',
+      index: true,
+    },
+
+    trofeus: [{
+      tipo: { type: String, trim: true },
+      titulo: { type: String, trim: true },
+      concedidoEm: { type: Date, default: Date.now },
+      temporadaId: { type: mongoose.Schema.Types.ObjectId, ref: 'RankingSeason', default: null },
+    }],
 
     entrouEm: {
       type: Date,

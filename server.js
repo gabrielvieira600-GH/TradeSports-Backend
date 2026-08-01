@@ -60,6 +60,7 @@ const weeklyReportsRoutes = require("./routes/weeklyReports");
 const advancedAlertsRoutes = require("./routes/advancedAlerts");
 const scenarioSimulatorRoutes = require("./routes/scenarioSimulator");
 const rankingsPrivadosRoutes = require("./routes/rankingsPrivados");
+const privateRankingsCompleteRoutes = require("./routes/privateRankingsComplete");
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
 
@@ -236,6 +237,7 @@ app.use("/scenario-simulator", scenarioSimulatorRoutes);
 app.use("/weekly-reports", weeklyReportsRoutes);
 app.use("/advanced-alerts", advancedAlertsRoutes);
 app.use("/rankings-privados", rankingsPrivadosRoutes);
+app.use("/private-rankings", privateRankingsCompleteRoutes);
 app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
 
