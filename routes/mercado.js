@@ -253,13 +253,13 @@ router.get('/livro', async (req, res) => {
     const clubeLegacyId = Number(req.query.clubeId);
 
     if (!Number.isInteger(clubeLegacyId) || clubeLegacyId <= 0) {
-      return res.status(400).json({ erro: 'clubeId inválido.' });
+      return res.status(400).json({ erro: 'clubeId invÃ¡lido.' });
     }
 
     const clube = await Club.findOne({ legacyId: clubeLegacyId }).lean();
 
     if (!clube) {
-      return res.status(404).json({ erro: 'Clube não encontrado.' });
+      return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
     }
 
     const ordens = await Order.find({
@@ -343,7 +343,7 @@ router.get('/livro/:clubeId', async (req, res) => {
 
     if (!clube) {
 
-      return res.status(404).json({ erro: 'Clube não encontrado.' });
+      return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
 
     }
 
@@ -521,7 +521,7 @@ router.get('/limite-ordens', auth, async (req, res) => {
 
     if (!usuario) {
       return res.status(404).json({
-        erro: 'Usuário não encontrado.',
+        erro: 'UsuÃ¡rio nÃ£o encontrado.',
         codigo: 'USUARIO_NAO_ENCONTRADO',
       });
     }
@@ -579,8 +579,8 @@ router.get('/limite-ordens', auth, async (req, res) => {
     }
 
     /*
-     * Enquanto o campo mercadoAberto ainda não existir
-     * nos documentos antigos, o mercado será considerado
+     * Enquanto o campo mercadoAberto ainda nÃ£o existir
+     * nos documentos antigos, o mercado serÃ¡ considerado
      * aberto por compatibilidade.
      *
      * Apenas mercadoAberto === false fecha o mercado.
@@ -732,7 +732,7 @@ router.post('/ordem', auth, async (req, res) => {
 
     if (!['compra', 'venda'].includes(tipo)) {
       return res.status(400).json({
-        erro: 'Tipo de ordem inválido.',
+        erro: 'Tipo de ordem invÃ¡lido.',
       });
     }
 
@@ -741,18 +741,7 @@ router.post('/ordem', auth, async (req, res) => {
       clubeLegacyId <= 0
     ) {
       return res.status(400).json({
-        erro: 'clubeId inválido.',
-      });
-    }
-
-    if (
-      !Number.isFinite(preco) ||
-      preco <= 0 ||
-      !validaTick(preco)
-    ) {
-      return res.status(400).json({
-        erro:
-          `Preço inválido. Tick mínimo: R$ ${TICK_SIZE.toFixed(2)}`,
+        erro: 'clubeId invÃ¡lido.',
       });
     }
 
@@ -761,7 +750,7 @@ router.post('/ordem', auth, async (req, res) => {
       quantidade <= 0
     ) {
       return res.status(400).json({
-        erro: 'Quantidade inválida.',
+        erro: 'Quantidade invÃ¡lida.',
       });
     }
 
@@ -797,6 +786,19 @@ router.post('/ordem', auth, async (req, res) => {
         );
       }
 
+      /*
+       * O tick pertence exclusivamente ao mercado secundÃ¡rio. A validaÃ§Ã£o
+       * acontece somente depois de confirmar, pelo estado persistido do
+       * clube, que o IPO foi encerrado.
+       */
+      if (
+        !Number.isFinite(preco) ||
+        preco <= 0 ||
+        !validaTick(preco)
+      ) {
+        throw new Error('PRECO_TICK_INVALIDO');
+      }
+
       usuario.carteira = Array.isArray(
         usuario.carteira
       )
@@ -805,7 +807,7 @@ router.post('/ordem', auth, async (req, res) => {
 
       /*
        * Primeiro validamos saldo ou cotas.
-       * Uma ordem inválida não deve consumir franquia.
+       * Uma ordem invÃ¡lida nÃ£o deve consumir franquia.
        */
       if (tipo === 'venda') {
         const ativo = getCarteiraAtivo(
@@ -849,11 +851,11 @@ router.post('/ordem', auth, async (req, res) => {
       }
 
             /*
-       * A negociação depende de uma temporada
+       * A negociaÃ§Ã£o depende de uma temporada
        * TradeSports ativa.
        *
-       * Rodadas esportivas não controlam mais
-       * a criação de ordens.
+       * Rodadas esportivas nÃ£o controlam mais
+       * a criaÃ§Ã£o de ordens.
        */
       const temporada =
         await RankingSeason.findOne({
@@ -904,11 +906,11 @@ router.post('/ordem', auth, async (req, res) => {
        * Premium possui ordens ilimitadas.
        *
        * Lite consome uma ordem da quota semanal.
-       * O consumo ocorre dentro da mesma transação
-       * da criação da ordem.
+       * O consumo ocorre dentro da mesma transaÃ§Ã£o
+       * da criaÃ§Ã£o da ordem.
        *
-       * Se qualquer etapa falhar, a quota também
-       * será revertida.
+       * Se qualquer etapa falhar, a quota tambÃ©m
+       * serÃ¡ revertida.
        */
       if (planoEfetivo === 'lite') {
         const resultadoQuota =
@@ -933,10 +935,10 @@ router.post('/ordem', auth, async (req, res) => {
 
             /*
        * A quota semanal foi validada dentro
-       * da mesma transação.
+       * da mesma transaÃ§Ã£o.
        *
-       * Se a criação ou execução da ordem falhar,
-       * o consumo também será revertido.
+       * Se a criaÃ§Ã£o ou execuÃ§Ã£o da ordem falhar,
+       * o consumo tambÃ©m serÃ¡ revertido.
        */
       const [ordem] = await Order.create(
         [
@@ -1152,14 +1154,14 @@ router.post('/ordem', auth, async (req, res) => {
               'brasileirao-a',
 
             ligaNome:
-              'Brasileirão Série A',
+              'BrasileirÃ£o SÃ©rie A',
 
             criarNotificacao: true,
           }
         );
 
         /*
-         * Correção:
+         * CorreÃ§Ã£o:
          * o saldo era alterado duas vezes
          * no arquivo anterior.
          */
@@ -1523,7 +1525,7 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(404).json({
         erro:
-          'Usuário não encontrado.',
+          'UsuÃ¡rio nÃ£o encontrado.',
       });
     }
 
@@ -1533,7 +1535,7 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(404).json({
         erro:
-          'Clube não encontrado.',
+          'Clube nÃ£o encontrado.',
       });
     }
 
@@ -1543,7 +1545,14 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(400).json({
         erro:
-          'Mercado secundário só abre após o fim do IPO.',
+          'Mercado secundÃ¡rio sÃ³ abre apÃ³s o fim do IPO.',
+      });
+    }
+
+    if (err.message === 'PRECO_TICK_INVALIDO') {
+      return res.status(400).json({
+        erro: `PreÃ§o invÃ¡lido. Tick mÃ­nimo: T$ ${TICK_SIZE.toFixed(2)}`,
+        codigo: 'PRECO_TICK_INVALIDO',
       });
     }
 
@@ -1553,7 +1562,7 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(400).json({
         erro:
-          'Você não possui cotas livres suficientes para vender.',
+          'VocÃª nÃ£o possui cotas livres suficientes para vender.',
       });
     }
 
@@ -1573,7 +1582,7 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(409).json({
         erro:
-          'Não existe uma temporada ativa no momento.',
+          'NÃ£o existe uma temporada ativa no momento.',
 
         codigo:
           'TEMPORADA_NAO_ATIVA',
@@ -1586,7 +1595,7 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(409).json({
         erro:
-          'O mercado está temporariamente fechado para novas ordens.',
+          'O mercado estÃ¡ temporariamente fechado para novas ordens.',
 
         codigo:
           'MERCADO_FECHADO',
@@ -1607,7 +1616,7 @@ router.post('/ordem', auth, async (req, res) => {
     ) {
       return res.status(403).json({
         erro:
-          'Você atingiu o limite semanal de ordens.',
+          'VocÃª atingiu o limite semanal de ordens.',
 
         codigo:
           'LIMITE_ORDENS_ATINGIDO',
@@ -1637,7 +1646,7 @@ router.post('/ordem', auth, async (req, res) => {
     if (err?.code === 11000) {
       return res.status(409).json({
         erro:
-          'Não foi possível atualizar o contador de ordens. Tente novamente.',
+          'NÃ£o foi possÃ­vel atualizar o contador de ordens. Tente novamente.',
 
         codigo:
           'CONFLITO_CONTADOR_ORDENS',
@@ -1677,7 +1686,7 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 
     if (!ordem) {
 
-      return res.status(404).json({ erro: 'Ordem não encontrada ou não cancelável.' });
+      return res.status(404).json({ erro: 'Ordem nÃ£o encontrada ou nÃ£o cancelÃ¡vel.' });
 
     }
 
@@ -1712,8 +1721,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
 
 
 
