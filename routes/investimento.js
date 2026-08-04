@@ -5,11 +5,12 @@ const express = require('express');
 const router = express.Router();
 
 const InvestimentoController = require('../controllers/InvestimentoController');
+const auth = require('../middleware/auth');
 const { liquidarBrasileirao } = require('../middleware/checkLiquidacao');
 
 // --------- ROTAS EXISTENTES (IPO) ---------
 // Mantém compatibilidade com o frontend: POST /investimentos/comprar
-router.post('/comprar', async (req, res, next) => {
+router.post('/comprar', auth, async (req, res, next) => {
   try {
     req.body.clubeId = Number(req.body.clubeId);
     return InvestimentoController.criarInvestimento(req, res, next);
