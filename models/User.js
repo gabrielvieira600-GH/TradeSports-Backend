@@ -143,6 +143,21 @@ premiumFim: {
 
     carteira: { type: [CarteiraAtivoSchema], default: [] },
 
+    carteiraPublica: {
+      visibilidade: {
+        type: String,
+        enum: ['publica', 'seguidores', 'privada'],
+        default: 'publica',
+      },
+      nivelDetalhe: {
+        type: String,
+        enum: ['resumo', 'detalhada'],
+        default: 'detalhada',
+      },
+      mostrarValores: { type: Boolean, default: true },
+      atualizadoEm: { type: Date, default: null },
+    },
+
     historico: { type: [mongoose.Schema.Types.Mixed], default: [] },
     transacoes: { type: [mongoose.Schema.Types.Mixed], default: [] },
 
@@ -303,6 +318,5 @@ UserSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
-
 
 

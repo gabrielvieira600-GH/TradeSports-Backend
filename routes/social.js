@@ -8,6 +8,7 @@ const User = require('../models/User');
 const UserFollow = require('../models/UserFollow');
 const Club = require('../models/Club');
 const SocialFeedEvent = require('../models/SocialFeedEvent');
+const PerformanceSnapshot = require('../models/PerformanceSnapshot');
 
 
 const {
@@ -357,6 +358,57 @@ function calcularMercadoUsuario(usuario, precosPorClube) {
   };
 }
 
+function obterConfiguracaoCarteiraPublica(usuario) {
+  const config = usuario?.carteiraPublica || {};
+  return {
+    visibilidade: ['publica', 'seguidores', 'privada'].includes(config.visibilidade)
+      ? config.visibilidade
+      : 'publica',
+    nivelDetalhe: ['resumo', 'detalhada'].includes(config.nivelDetalhe)
+      ? config.nivelDetalhe
+      : 'detalhada',
+    mostrarValores: config.mostrarValores !== false,
+  };
+}
+
+function calcularConcentracao(posicoes = [], valorPosicoes = 0) {
+  if (!valorPosicoes || !posicoes.length) return 0;
+  return round2((Math.max(...posicoes.map((item) => Number(item.valorAtual || 0))) / valorPosicoes) * 100);
+}
+
+function filtrarMercadoPublico(mercado, { podeAcessar, podeVerDetalhes, mostrarValores }) {
+  const resumo = {
+    patrimonio: mostrarValores && podeAcessar ? mercado.patrimonio : null,
+    valorPosicoes: mostrarValores && podeAcessar ? mercado.valorPosicoes : null,
+    resultado: mostrarValores && podeAcessar ? mercado.resultado : null,
+    rentabilidade: podeAcessar ? mercado.rentabilidade : null,
+    quantidadePosicoes: podeAcessar ? mercado.quantidadePosicoes : null,
+    quantidadeCotas: podeAcessar ? mercado.quantidadeCotas : null,
+    concentracaoMaiorPosicao: podeAcessar
+      ? calcularConcentracao(mercado.posicoes, mercado.valorPosicoes)
+      : null,
+    posicoes: [],
+    topPosicoes: [],
+  };
+
+  if (!podeVerDetalhes) return resumo;
+
+  const posicoes = mercado.posicoes.map((item) => ({
+    ...item,
+    quantidade: mostrarValores ? item.quantidade : null,
+    precoMedio: mostrarValores ? item.precoMedio : null,
+    precoAtual: mostrarValores ? item.precoAtual : null,
+    totalInvestido: mostrarValores ? item.totalInvestido : null,
+    valorAtual: mostrarValores ? item.valorAtual : null,
+    resultado: mostrarValores ? item.resultado : null,
+    peso: mercado.valorPosicoes > 0
+      ? round2((Number(item.valorAtual || 0) / mercado.valorPosicoes) * 100)
+      : 0,
+  }));
+
+  return { ...resumo, posicoes, topPosicoes: posicoes.slice(0, 8) };
+}
+
 function ordenarRankingPublico(a, b) {
   if (b.mercado.rentabilidade !== a.mercado.rentabilidade) {
     return b.mercado.rentabilidade - a.mercado.rentabilidade;
@@ -459,6 +511,8 @@ function montarPerfilPublico({
   relacao,
   mercado,
   ranking,
+  carteiraPublica,
+  analiseCarteira,
 }) {
   const plano = obterPlanoEfetivo(usuario);
 
@@ -486,7 +540,6 @@ function montarPerfilPublico({
     },
 
     mercado: mercado || {
-      saldo: Number(usuario.saldo || 0),
       valorPosicoes: 0,
       patrimonio: Number(usuario.saldo || 0),
       capitalInicial: Number(usuario.capitalInicial || 1000),
@@ -498,6 +551,15 @@ function montarPerfilPublico({
       posicoes: [],
       topPosicoes: [],
     },
+    carteiraPublica: carteiraPublica || {
+      visibilidade: 'publica',
+      nivelDetalhe: 'detalhada',
+      mostrarValores: true,
+      podeAcessar: true,
+      podeVerDetalhes: false,
+      motivoBloqueio: 'premium',
+    },
+    analiseCarteira: analiseCarteira || null,
         ranking: ranking || {
       plano: obterPlanoEfetivo(usuario),
       geral: null,
@@ -795,6 +857,7 @@ router.get('/usuarios', async (req, res) => {
           'capitalInicial',
           'patrimonioInicialTemporada',
           'carteira',
+          'carteiraPublica',
         ].join(' ')
       )
       .sort({
@@ -884,6 +947,10 @@ router.get('/usuarios', async (req, res) => {
         usuario,
         precosPorClube
       );
+      const configCarteira = obterConfiguracaoCarteiraPublica(usuario);
+      const podeAcessarCarteira =
+        configCarteira.visibilidade === 'publica' ||
+        (configCarteira.visibilidade === 'seguidores' && seguindoSet.has(usuarioId));
 
       return {
         id: usuarioId,
@@ -903,10 +970,12 @@ router.get('/usuarios', async (req, res) => {
             seguindoPorUsuario.get(usuarioId) || 0,
         },
 
-        quantidadePosicoes: mercado.quantidadePosicoes,
-        quantidadeCotas: mercado.quantidadeCotas,
-        rentabilidade: mercado.rentabilidade,
-        patrimonio: mercado.patrimonio,
+        quantidadePosicoes: podeAcessarCarteira ? mercado.quantidadePosicoes : null,
+        quantidadeCotas: podeAcessarCarteira ? mercado.quantidadeCotas : null,
+        rentabilidade: podeAcessarCarteira ? mercado.rentabilidade : null,
+        patrimonio: podeAcessarCarteira && configCarteira.mostrarValores
+          ? mercado.patrimonio
+          : null,
 
         criadoEm: usuario.createdAt || null,
       };
@@ -954,6 +1023,7 @@ router.get('/usuarios/:id', async (req, res) => {
           'temporadaRanking',
           'inicioTemporadaRanking',
           'carteira',
+          'carteiraPublica',
         ].join(' ')
       )
       .lean();
@@ -964,7 +1034,7 @@ router.get('/usuarios/:id', async (req, res) => {
       });
     }
 
-    const [estatisticas, relacao, clubes] =
+    const [estatisticas, relacao, clubes, usuarioLogado] =
       await Promise.all([
         obterEstatisticasSociais(usuario._id),
 
@@ -976,14 +1046,72 @@ router.get('/usuarios/:id', async (req, res) => {
         Club.find({})
           .select('legacyId nome nomeApi escudo precoAtual preco')
           .lean(),
+
+        User.findById(req.usuario.id)
+          .select('_id plano premiumAtivo premiumInicio premiumFim saldo capitalInicial patrimonioInicialTemporada carteira')
+          .lean(),
       ]);
 
     const precosPorClube = criarMapaPrecosClubes(clubes);
 
-    const mercado = calcularMercadoUsuario(
+    const mercadoCompleto = calcularMercadoUsuario(
   usuario,
   precosPorClube
 );
+
+const perfilProprio = String(req.usuario.id) === String(usuario._id);
+const config = obterConfiguracaoCarteiraPublica(usuario);
+const usuarioLogadoPremium = obterPlanoEfetivo(usuarioLogado || {}) === 'premium';
+const podeAcessar = perfilProprio ||
+  config.visibilidade === 'publica' ||
+  (config.visibilidade === 'seguidores' && relacao.seguindo);
+const podeVerDetalhes = podeAcessar && config.nivelDetalhe === 'detalhada' &&
+  (perfilProprio || usuarioLogadoPremium);
+const exibirValores = perfilProprio || config.mostrarValores;
+const mercado = filtrarMercadoPublico(mercadoCompleto, {
+  podeAcessar,
+  podeVerDetalhes,
+  mostrarValores: exibirValores,
+});
+
+let motivoBloqueio = null;
+if (!podeAcessar) motivoBloqueio = config.visibilidade === 'seguidores' ? 'seguidores' : 'privada';
+else if (config.nivelDetalhe !== 'detalhada') motivoBloqueio = 'resumo';
+else if (!podeVerDetalhes) motivoBloqueio = 'premium';
+
+let analiseCarteira = null;
+if (podeAcessar && (perfilProprio || usuarioLogadoPremium)) {
+  const snapshots = await PerformanceSnapshot.find({ usuarioId: usuario._id })
+    .select('data patrimonio rentabilidadeAcumulada quantidadePosicoes')
+    .sort({ data: -1 })
+    .limit(30)
+    .lean();
+
+  const mercadoVisitante = usuarioLogado
+    ? calcularMercadoUsuario(usuarioLogado, precosPorClube)
+    : null;
+  const clubesAlvo = new Set(mercadoCompleto.posicoes.map((item) => String(item.clubeId)));
+  const clubesVisitante = new Set((mercadoVisitante?.posicoes || []).map((item) => String(item.clubeId)));
+  const clubesEmComum = [...clubesAlvo].filter((idClube) => clubesVisitante.has(idClube)).length;
+
+  analiseCarteira = {
+    historico: snapshots.reverse().map((snapshot) => ({
+      data: snapshot.data,
+      rentabilidade: round2(snapshot.rentabilidadeAcumulada),
+      quantidadePosicoes: Number(snapshot.quantidadePosicoes || 0),
+    })),
+    comparacao: perfilProprio || !mercadoVisitante ? null : {
+      rentabilidadeUsuario: mercadoCompleto.rentabilidade,
+      rentabilidadeVisitante: mercadoVisitante.rentabilidade,
+      diferencaRentabilidade: round2(mercadoCompleto.rentabilidade - mercadoVisitante.rentabilidade),
+      posicoesUsuario: mercadoCompleto.quantidadePosicoes,
+      posicoesVisitante: mercadoVisitante.quantidadePosicoes,
+      concentracaoUsuario: calcularConcentracao(mercadoCompleto.posicoes, mercadoCompleto.valorPosicoes),
+      concentracaoVisitante: calcularConcentracao(mercadoVisitante.posicoes, mercadoVisitante.valorPosicoes),
+      clubesEmComum,
+    },
+  };
+}
 
 const ranking = await calcularPosicoesRankingPerfil({
   usuarioAlvoId: usuario._id,
@@ -998,6 +1126,15 @@ return res.json({
     relacao,
     mercado,
     ranking,
+    carteiraPublica: {
+      ...config,
+      valoresVisiveis: exibirValores,
+      podeAcessar,
+      podeVerDetalhes,
+      motivoBloqueio,
+      podeConfigurar: perfilProprio,
+    },
+    analiseCarteira,
   }),
 });
   } catch (err) {
@@ -1010,6 +1147,45 @@ return res.json({
       erro:
         'Erro interno ao buscar perfil público.',
     });
+  }
+});
+
+/**
+ * PUT /social/carteira-publica
+ * Atualiza as regras de exposição da própria carteira.
+ */
+router.put('/carteira-publica', async (req, res) => {
+  try {
+    const visibilidade = String(req.body?.visibilidade || '').trim().toLowerCase();
+    const nivelDetalhe = String(req.body?.nivelDetalhe || '').trim().toLowerCase();
+    const mostrarValores = req.body?.mostrarValores !== false;
+
+    if (!['publica', 'seguidores', 'privada'].includes(visibilidade)) {
+      return res.status(400).json({ erro: 'Visibilidade de carteira inválida.' });
+    }
+    if (!['resumo', 'detalhada'].includes(nivelDetalhe)) {
+      return res.status(400).json({ erro: 'Nível de detalhe inválido.' });
+    }
+
+    const usuario = await User.findByIdAndUpdate(
+      req.usuario.id,
+      {
+        $set: {
+          'carteiraPublica.visibilidade': visibilidade,
+          'carteiraPublica.nivelDetalhe': nivelDetalhe,
+          'carteiraPublica.mostrarValores': Boolean(mostrarValores),
+          'carteiraPublica.atualizadoEm': new Date(),
+        },
+      },
+      { new: true, runValidators: true }
+    ).select('carteiraPublica');
+
+    if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+
+    return res.json({ ok: true, carteiraPublica: obterConfiguracaoCarteiraPublica(usuario) });
+  } catch (err) {
+    console.error('Erro ao atualizar privacidade da carteira:', err);
+    return res.status(500).json({ erro: 'Erro interno ao atualizar a privacidade da carteira.' });
   }
 });
 
