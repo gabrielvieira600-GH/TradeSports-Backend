@@ -192,7 +192,7 @@ function normalizeLine(line) {
 
   if (debit < 0 || credit < 0) {
 
-    throw Object.assign(new Error('Valores negativos não permitidos'), {
+    throw Object.assign(new Error('Valores negativos nÃ£o permitidos'), {
 
       code: 'LEDGER_BAD_LINE',
 
@@ -228,7 +228,7 @@ function ensureBalanced(lines) {
 
   if (deb !== cred) {
 
-    const e = new Error(`Lançamento desbalanceado: deb=${deb} cred=${cred}`);
+    const e = new Error(`LanÃ§amento desbalanceado: deb=${deb} cred=${cred}`);
 
     e.code = 'LEDGER_UNBALANCED';
 
@@ -346,7 +346,7 @@ async function postJournal({
 
   if (!action) {
 
-    throw Object.assign(new Error('action obrigatório'), { code: 'LEDGER_NO_ACTION' });
+    throw Object.assign(new Error('action obrigatÃ³rio'), { code: 'LEDGER_NO_ACTION' });
 
   }
 
@@ -559,6 +559,86 @@ function buildTradeEntry({
       makerFeePct,
 
       takerFeePct,
+
+    },
+
+  };
+
+}
+
+function buildIpoPurchaseEntry({ userId, clubeId, qty, price }) {
+
+  const total = round2(Number(qty) * Number(price));
+
+  const lines = [
+
+    { account: `user:${userId}`, credit: total },
+
+    { account: `platform:ipo:inventory:${clubeId}`, debit: total },
+
+  ];
+
+  ensureBalanced(lines);
+
+  return {
+
+    action: 'IPO_PURCHASE',
+
+    lines,
+
+    meta: {
+
+      userId: String(userId),
+
+      clubeId: Number(clubeId),
+
+      qty: Number(qty),
+
+      price: Number(price),
+
+      total,
+
+      fee: 0,
+
+    },
+
+  };
+
+}
+
+function buildIpoReturnEntry({ userId, clubeId, qty, price }) {
+
+  const total = round2(Number(qty) * Number(price));
+
+  const lines = [
+
+    { account: `user:${userId}`, debit: total },
+
+    { account: `platform:ipo:inventory:${clubeId}`, credit: total },
+
+  ];
+
+  ensureBalanced(lines);
+
+  return {
+
+    action: 'IPO_RETURN',
+
+    lines,
+
+    meta: {
+
+      userId: String(userId),
+
+      clubeId: Number(clubeId),
+
+      qty: Number(qty),
+
+      price: Number(price),
+
+      total,
+
+      fee: 0,
 
     },
 
@@ -966,7 +1046,7 @@ async function reconcileFinancialTx(finTx, session = null) {
 
   ) {
 
-    return { status: 'DIVERGENTE', reason: 'Transação final sem ledger' };
+    return { status: 'DIVERGENTE', reason: 'TransaÃ§Ã£o final sem ledger' };
 
   }
 
@@ -978,7 +1058,7 @@ async function reconcileFinancialTx(finTx, session = null) {
 
   ) {
 
-    return { status: 'DIVERGENTE', reason: 'Pendência com lançamentos excessivos' };
+    return { status: 'DIVERGENTE', reason: 'PendÃªncia com lanÃ§amentos excessivos' };
 
   }
 
@@ -997,6 +1077,10 @@ module.exports = {
   postJournal,
 
   buildTradeEntry,
+
+  buildIpoPurchaseEntry,
+
+  buildIpoReturnEntry,
 
   buildDepositPendingEntry,
 
