@@ -75,7 +75,7 @@ router.get('/clubes/:id', async (req, res) => {
 
     if (!clube) {
 
-      return res.status(404).json({ erro: 'Clube não encontrado.' });
+      return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
 
     }
 
@@ -101,7 +101,7 @@ router.get('/:id', async (req, res) => {
 
     if (!clube) {
 
-      return res.status(404).json({ erro: 'Clube não encontrado.' });
+      return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
 
     }
 
@@ -136,6 +136,30 @@ router.post('/:id/comprar', auth, (req, res, next) => {
   };
 
   return InvestimentoController.comprarCota(req, res, next);
+
+});
+
+/**
+
+ * Durante o IPO, a venda Ã© uma devoluÃ§Ã£o imediata Ã  oferta inicial.
+
+ * O backend define o preÃ§o oficial, nÃ£o cobra taxas e devolve as cotas
+
+ * ao estoque do clube sem criar ordem no mercado secundÃ¡rio.
+
+ */
+
+router.post('/:id/devolver', auth, (req, res, next) => {
+
+  req.body = {
+
+    ...req.body,
+
+    clubeId: Number(req.params.id),
+
+  };
+
+  return InvestimentoController.devolverCotaIPO(req, res, next);
 
 });
 
