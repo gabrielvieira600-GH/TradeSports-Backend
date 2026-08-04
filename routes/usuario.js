@@ -67,11 +67,11 @@ router.get("/atual", async (req, res) => {
     return res.json(usuario);
   } catch (err) {
     if (err.name === "JsonWebTokenError") {
-      console.warn("Token JWT inválido:", err.message);
+      console.warn("Token JWT invÃ¡lido:", err.message);
       return res.status(200).json(null);
     }
 
-    console.error("Erro ao buscar usuário atual:", err);
+    console.error("Erro ao buscar usuÃ¡rio atual:", err);
     return res.status(500).json({ erro: "Erro interno no servidor" });
   }
 });
@@ -80,12 +80,12 @@ router.get("/", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado." });
     }
     res.json(usuario);
   } catch (err) {
-    console.error("Erro ao obter usuário:", err);
-    res.status(500).json({ erro: "Erro interno ao obter usuário." });
+    console.error("Erro ao obter usuÃ¡rio:", err);
+    res.status(500).json({ erro: "Erro interno ao obter usuÃ¡rio." });
   }
 });
 
@@ -101,7 +101,7 @@ router.get("/plano", auth, async (req, res) => {
 
     if (!usuario) {
       return res.status(404).json({
-        erro: "Usuário não encontrado.",
+        erro: "UsuÃ¡rio nÃ£o encontrado.",
       });
     }
 
@@ -109,10 +109,10 @@ router.get("/plano", auth, async (req, res) => {
 
     return res.json(resumoPlano);
   } catch (err) {
-    console.error("Erro ao obter plano do usuário:", err);
+    console.error("Erro ao obter plano do usuÃ¡rio:", err);
 
     return res.status(500).json({
-      erro: "Erro interno ao obter plano do usuário.",
+      erro: "Erro interno ao obter plano do usuÃ¡rio.",
     });
   }
 });
@@ -135,7 +135,7 @@ router.get("/ranking", auth, async (req, res) => {
 
     if (!categoriasPermitidas.includes(categoriaSolicitada)) {
       return res.status(400).json({
-        erro: "Categoria de ranking inválida.",
+        erro: "Categoria de ranking invÃ¡lida.",
         categoriasPermitidas,
       });
     }
@@ -456,10 +456,10 @@ router.get("/ranking", auth, async (req, res) => {
       ranking: rankingSelecionado.slice(inicio, fim),
     });
   } catch (err) {
-    console.error("Erro ao gerar ranking de usuários:", err);
+    console.error("Erro ao gerar ranking de usuÃ¡rios:", err);
 
     return res.status(500).json({
-      erro: "Erro interno ao gerar ranking de usuários.",
+      erro: "Erro interno ao gerar ranking de usuÃ¡rios.",
     });
   }
 });
@@ -468,7 +468,7 @@ router.get("/dividendos", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado." });
     }
 
     const dividendos = await Dividendo.find({
@@ -490,7 +490,7 @@ router.get("/historico", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado." });
     }
 
     const inv = await Investment.find({
@@ -530,8 +530,8 @@ router.get("/historico", auth, async (req, res) => {
 
     res.json(formatado);
   } catch (err) {
-    console.error("Erro ao buscar histórico:", err);
-    res.status(500).json({ erro: "Erro ao buscar histórico" });
+    console.error("Erro ao buscar histÃ³rico:", err);
+    res.status(500).json({ erro: "Erro ao buscar histÃ³rico" });
   }
 });
 
@@ -540,7 +540,7 @@ router.get("/carteira", auth, async (req, res) => {
     const usuario = await User.findById(req.usuario.id).lean();
 
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado" });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado" });
     }
 
     const clubesData = await Club.find({}).lean();
@@ -551,7 +551,7 @@ router.get("/carteira", auth, async (req, res) => {
 
     const carteiraMap = new Map();
 
-    // 1. Primeiro usa a carteira salva no usuário
+    // 1. Primeiro usa a carteira salva no usuÃ¡rio
     const carteiraUsuario = Array.isArray(usuario.carteira)
       ? usuario.carteira
       : [];
@@ -584,7 +584,7 @@ router.get("/carteira", auth, async (req, res) => {
       });
     }
 
-    // 2. Depois reconstrói/valida com base no histórico de investimentos
+    // 2. Depois reconstrÃ³i/valida com base no histÃ³rico de investimentos
     const movimentos = await Investment.find({
       $or: [
         { usuarioId: req.usuario.id },
@@ -636,7 +636,12 @@ router.get("/carteira", auth, async (req, res) => {
         });
       }
 
-      if (tipo === "VENDA" || tipo === "LIQUIDACAO" || tipo === "LIQUIDAÇÃO") {
+      if (
+        tipo === "VENDA" ||
+        tipo === "IPO_RETURN" ||
+        tipo === "LIQUIDACAO" ||
+        tipo === "LIQUIDAÃÃO"
+      ) {
         const qtdAtual = Number(atual.quantidade || 0);
         const novaQtd = Math.max(0, qtdAtual - quantidade);
 
@@ -677,7 +682,7 @@ router.get("/carteira", auth, async (req, res) => {
         };
       });
 
-    // 3. Sincroniza user.carteira com a carteira reconstruída
+    // 3. Sincroniza user.carteira com a carteira reconstruÃ­da
     await User.findByIdAndUpdate(req.usuario.id, {
       $set: {
         carteira: carteiraDetalhada.map((a) => ({
@@ -701,13 +706,13 @@ router.get("/saldo", auth, async (req, res) => {
   try {
     const usuario = await User.findById(req.usuario.id).lean();
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado" });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado" });
     }
 
     const saldo = Number(usuario.saldo || 0);
     return res.json({ saldo });
   } catch (err) {
-    console.error("Erro ao buscar saldo do usuário:", err);
+    console.error("Erro ao buscar saldo do usuÃ¡rio:", err);
     return res.status(500).json({ erro: "Erro interno ao buscar saldo" });
   }
 });
@@ -717,12 +722,12 @@ router.post("/deposito", auth, async (req, res) => {
     const valor = Number(req.body.valor);
 
     if (!Number.isFinite(valor) || valor <= 0) {
-      return res.status(400).json({ erro: "Valor de depósito inválido." });
+      return res.status(400).json({ erro: "Valor de depÃ³sito invÃ¡lido." });
     }
 
     const usuario = await User.findById(req.usuario.id);
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado." });
     }
 
     const saldoAtual = Number(usuario.saldo || 0);
@@ -754,10 +759,10 @@ router.post("/deposito", auth, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Erro ao processar depósito:", err);
+    console.error("Erro ao processar depÃ³sito:", err);
     return res
       .status(500)
-      .json({ erro: "Erro interno ao processar depósito." });
+      .json({ erro: "Erro interno ao processar depÃ³sito." });
   }
 });
 
@@ -766,12 +771,12 @@ router.post("/saque", auth, async (req, res) => {
     const valor = Number(req.body.valor);
 
     if (!Number.isFinite(valor) || valor <= 0) {
-      return res.status(400).json({ erro: "Valor de saque inválido." });
+      return res.status(400).json({ erro: "Valor de saque invÃ¡lido." });
     }
 
     const usuario = await User.findById(req.usuario.id);
     if (!usuario) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado." });
     }
 
     const saldoAtual = Number(usuario.saldo || 0);
@@ -820,7 +825,7 @@ router.get("/extrato", auth, async (req, res) => {
 
     if (!usuario) {
       return res.status(404).json({
-        erro: "Usuário não encontrado.",
+        erro: "UsuÃ¡rio nÃ£o encontrado.",
       });
     }
 
@@ -845,7 +850,7 @@ router.get("/extrato", auth, async (req, res) => {
     /*
      * Nunca consultar usuarioLegacyId null.
      * Isso poderia incluir registros pertencentes
-     * a outros usuários sem legacyId.
+     * a outros usuÃ¡rios sem legacyId.
      */
     const criteriosUsuario = [
       {
@@ -881,7 +886,7 @@ router.get("/extrato", auth, async (req, res) => {
         return "DIVIDENDO";
       }
 
-      if (tipo === "LIQUIDAÇÃO") {
+      if (tipo === "LIQUIDAÃÃO") {
         return "LIQUIDACAO";
       }
 
@@ -892,7 +897,11 @@ router.get("/extrato", auth, async (req, res) => {
       const tipo = movimento.tipo;
       const valor = Number(movimento.valor || 0);
 
-      if (["DEPOSITO", "VENDA", "LIQUIDACAO", "DIVIDENDO"].includes(tipo)) {
+      if (
+        ["DEPOSITO", "VENDA", "IPO_RETURN", "LIQUIDACAO", "DIVIDENDO"].includes(
+          tipo,
+        )
+      ) {
         return Math.abs(valor);
       }
 
@@ -920,7 +929,7 @@ router.get("/extrato", auth, async (req, res) => {
     }
 
     function descricaoMovimento(movimento) {
-      const nomeClube = movimento.clubeNome ? ` — ${movimento.clubeNome}` : "";
+      const nomeClube = movimento.clubeNome ? ` â ${movimento.clubeNome}` : "";
 
       const quantidade =
         movimento.quantidade > 0
@@ -930,11 +939,11 @@ router.get("/extrato", auth, async (req, res) => {
           : "";
 
       if (movimento.tipo === "DEPOSITO") {
-        return "Depósito de saldo fictício";
+        return "DepÃ³sito de saldo fictÃ­cio";
       }
 
       if (movimento.tipo === "SAQUE") {
-        return "Retirada de saldo fictício";
+        return "Retirada de saldo fictÃ­cio";
       }
 
       if (movimento.tipo === "COMPRA") {
@@ -945,12 +954,16 @@ router.get("/extrato", auth, async (req, res) => {
         return `Compra no IPO de ${quantidade}${nomeClube}`;
       }
 
+      if (movimento.tipo === "IPO_RETURN") {
+        return `DevoluÃ§Ã£o ao IPO de ${quantidade}${nomeClube}`;
+      }
+
       if (movimento.tipo === "VENDA") {
         return `Venda de ${quantidade}${nomeClube}`;
       }
 
       if (movimento.tipo === "LIQUIDACAO") {
-        return `Liquidação${nomeClube}`;
+        return `LiquidaÃ§Ã£o${nomeClube}`;
       }
 
       if (movimento.tipo === "DIVIDENDO") {
@@ -1021,8 +1034,8 @@ router.get("/extrato", auth, async (req, res) => {
     });
 
     /*
-     * O saldo é reconstruído desde o capital
-     * inicial, e não mais a partir de zero.
+     * O saldo Ã© reconstruÃ­do desde o capital
+     * inicial, e nÃ£o mais a partir de zero.
      */
     let saldoCalculado = saldoInicial;
 
@@ -1034,7 +1047,7 @@ router.get("/extrato", auth, async (req, res) => {
         tipo: "SALDO_INICIAL",
         tipoOriginal: "SALDO_INICIAL",
 
-        descricao: "Saldo fictício inicial",
+        descricao: "Saldo fictÃ­cio inicial",
 
         clubeId: null,
         clubeNome: "",
@@ -1091,8 +1104,8 @@ router.get("/extrato", auth, async (req, res) => {
     }
 
     /*
-     * Diferenças de dados legados permanecem
-     * auditáveis como ajuste de reconciliação.
+     * DiferenÃ§as de dados legados permanecem
+     * auditÃ¡veis como ajuste de reconciliaÃ§Ã£o.
      */
     const diferenca = Number((saldoAtual - saldoCalculado).toFixed(2));
 
@@ -1107,7 +1120,7 @@ router.get("/extrato", auth, async (req, res) => {
         tipo: "AJUSTE",
         tipoOriginal: "AJUSTE_RECONCILIACAO",
 
-        descricao: "Ajuste de reconciliação de dados anteriores",
+        descricao: "Ajuste de reconciliaÃ§Ã£o de dados anteriores",
 
         clubeId: null,
         clubeNome: "",
@@ -1128,9 +1141,9 @@ router.get("/extrato", auth, async (req, res) => {
     }
 
     /*
-     * Filtros são aplicados somente depois do
-     * cálculo. Assim, saldoApos continua correto
-     * mesmo ao consultar apenas um período.
+     * Filtros sÃ£o aplicados somente depois do
+     * cÃ¡lculo. Assim, saldoApos continua correto
+     * mesmo ao consultar apenas um perÃ­odo.
      */
     const itensFiltrados = linhas.filter((linha) => {
       const dataLinha = new Date(linha.data);
@@ -1209,7 +1222,7 @@ router.get("/aceites/status", auth, async (req, res) => {
       .select("aceites")
       .lean();
     if (!usuario)
-      return res.status(404).json({ erro: "Usuário não encontrado" });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado" });
 
     const pendencias = pendenciasAceite(usuario.aceites);
     return res.json({
@@ -1236,13 +1249,13 @@ router.post("/aceites", auth, async (req, res) => {
 
     if (!documento || aceitou !== true) {
       return res.status(400).json({
-        erro: "Documento inválido ou confirmação de aceite ausente.",
+        erro: "Documento invÃ¡lido ou confirmaÃ§Ã£o de aceite ausente.",
       });
     }
 
     const usuario = await User.findById(req.usuario.id);
     if (!usuario)
-      return res.status(404).json({ erro: "Usuário não encontrado" });
+      return res.status(404).json({ erro: "UsuÃ¡rio nÃ£o encontrado" });
 
     const now = new Date();
     const ip =
