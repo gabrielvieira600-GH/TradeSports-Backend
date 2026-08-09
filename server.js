@@ -51,6 +51,7 @@ const mercadoRoutes = require("./routes/mercado");
 const usuarioRoutes = require("./routes/usuario");
 const ordemRoutes = require("./routes/ordens");
 const classificacaoRoutes = require("./routes/classificacao");
+const sportsStandingsRoutes = require("./routes/sportsStandings");
 const depositoRoutes = require("./routes/deposito");
 const saqueRoutes = require("./routes/saque");
 const temporadaRoutes = require("./routes/temporada");
@@ -222,6 +223,7 @@ app.use("/admin", adminRoutes); // compatibilidade com endpoints antigos
 
 app.use("/api/login", loginRoute);
 app.use("/api", classificacaoRoutes);
+app.use("/api", sportsStandingsRoutes);
 
 app.use("/clube", clubeRoutes);
 app.use("/investimentos", investimentoRoutes);

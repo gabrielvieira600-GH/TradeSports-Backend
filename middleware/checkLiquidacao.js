@@ -5,18 +5,13 @@ const Investment = require('../models/Investment');
 const Liquidacao = require('../models/Liquidacao');
 const { runTx, round2 } = require('../utils/tx');
 const ledger = require('../utils/ledger');
+const { calcularPrecoPorPosicao: calcularPrecoCompeticao } = require('../utils/liquidationPrice');
 
 const CAMPEONATO_PADRAO = process.env.LIQUIDACAO_CAMPEONATO || 'Brasileirao';
 const TEMPORADA_PADRAO = Number(process.env.LIQUIDACAO_TEMPORADA || process.env.API_FOOTBALL_SEASON || new Date().getFullYear());
 
-function calcularPrecoPorPosicao(posicao) {
-  const basePosicao = 20;
-  const basePreco20 = 5.0;
-  const fatorAumento = 1.05;
-  const pos = Number(posicao || basePosicao);
-  if (!pos || pos < 1 || pos > 20) return basePreco20;
-  const passos = basePosicao - pos;
-  return round2(basePreco20 * Math.pow(fatorAumento, passos));
+function calcularPrecoPorPosicao(posicao, totalParticipantes = 20) {
+  return calcularPrecoCompeticao(Number(posicao), Number(totalParticipantes));
 }
 
 function ajustarPrecoLiquidacaoPorSplit(precoBase, splitFactorCumulativo) {
@@ -29,7 +24,11 @@ async function liquidarBrasileirao(options = {}) {
   const campeonato = options.campeonato || CAMPEONATO_PADRAO;
   const temporada = Number(options.temporada || TEMPORADA_PADRAO);
 
-  const clubes = await Club.find({}).lean();
+  const ligaId = options.ligaId || (campeonato === 'Brasileirao' ? 'brasileirao-a' : null);
+  const filtroClubes = ligaId
+    ? { $or: [{ 'metadata.ligaId': ligaId }, ...(ligaId === 'brasileirao-a' ? [{ 'metadata.campeonato': 'Brasileirao' }, { 'metadata.ligaId': { $exists: false } }] : [])] }
+    : { 'metadata.campeonato': campeonato };
+  const clubes = await Club.find(filtroClubes).lean();
   const mapaClubePorLegacyId = new Map(clubes.map((c) => [Number(c.legacyId), c]));
 
   const usuarios = await User.find({ carteira: { $exists: true, $ne: [] } }).lean();
@@ -54,8 +53,9 @@ async function liquidarBrasileirao(options = {}) {
       if (!Number.isFinite(qtd) || qtd <= 0) continue;
 
       const splitFactorCumulativo = Number(clube.splitFactorCumulativo || 1);
-      const posicaoFinal = Number(clube.posicao || 20);
-      const precoLiquidacaoBase = calcularPrecoPorPosicao(posicaoFinal);
+      const totalParticipantes = Number(clube.metadata?.totalParticipantes || options.totalParticipantes || 20);
+      const posicaoFinal = Number(clube.posicao || totalParticipantes);
+      const precoLiquidacaoBase = calcularPrecoPorPosicao(posicaoFinal, totalParticipantes);
       const precoLiquidacao = ajustarPrecoLiquidacaoPorSplit(precoLiquidacaoBase, splitFactorCumulativo);
       const totalRecebido = round2(qtd * precoLiquidacao);
       const idemKey = `liq:${campeonato}:${temporada}:${String(usuario._id)}:${clubeLegacyId}`;
@@ -124,7 +124,7 @@ async function liquidarBrasileirao(options = {}) {
                 tipo: 'LIQUIDACAO',
                 origem: 'FECHAMENTO_CAMPEONATO',
                 data: new Date(),
-                metadata: { campeonato, temporada, posicaoFinal, precoLiquidacaoBase, splitFactorCumulativo, idemKey },
+              metadata: { campeonato, ligaId, temporada, totalParticipantes, posicaoFinal, precoLiquidacaoBase, splitFactorCumulativo, idemKey },
               },
             ],
             { session }
