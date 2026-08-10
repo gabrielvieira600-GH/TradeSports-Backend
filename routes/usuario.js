@@ -8,6 +8,8 @@ const LegalAcceptance = require("../models/LegalAcceptance");
 const Investment = require("../models/Investment");
 const Club = require("../models/Club");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const { configurarCloudinary } = require("../config/cloudinary");
 const Order = require("../models/Order");
 const antifraude = require("../utils/antifraude");
 const {
@@ -19,6 +21,102 @@ const {
   documentoLegal,
   pendenciasAceite,
 } = require("../config/legalDocuments");
+
+const uploadFotoPerfil = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const tiposPermitidos = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!tiposPermitidos.has(file.mimetype)) {
+      return callback(new Error("Envie uma imagem JPG, PNG ou WebP."));
+    }
+    return callback(null, true);
+  },
+});
+
+function enviarBufferCloudinary(buffer, opcoes) {
+  const cloudinary = configurarCloudinary();
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(opcoes, (erro, resultado) => {
+      if (erro) return reject(erro);
+      return resolve(resultado);
+    });
+    stream.end(buffer);
+  });
+}
+
+router.put("/foto-perfil", auth, (req, res, next) => {
+  uploadFotoPerfil.single("foto")(req, res, (erro) => {
+    if (!erro) return next();
+    if (erro instanceof multer.MulterError && erro.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ erro: "A foto deve ter no máximo 5 MB." });
+    }
+    return res.status(400).json({ erro: erro.message || "Arquivo de imagem inválido." });
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ erro: "Selecione uma foto de perfil." });
+
+    const usuario = await User.findById(req.usuario.id).select("+fotoPerfilPublicId");
+    if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado." });
+
+    const publicId = `usuario_${usuario._id}`;
+    const resultado = await enviarBufferCloudinary(req.file.buffer, {
+      folder: "tradesports/avatares",
+      public_id: publicId,
+      overwrite: true,
+      invalidate: true,
+      resource_type: "image",
+      transformation: [
+        { width: 512, height: 512, crop: "fill", gravity: "auto" },
+        { quality: "auto:good", fetch_format: "webp" },
+      ],
+    });
+
+    usuario.fotoPerfilUrl = resultado.secure_url;
+    usuario.fotoPerfilPublicId = resultado.public_id;
+    await usuario.save();
+
+    return res.json({
+      ok: true,
+      fotoPerfilUrl: usuario.fotoPerfilUrl,
+      usuario: {
+        id: String(usuario._id),
+        nome: usuario.nome,
+        nomeUsuario: usuario.nomeUsuario,
+        email: usuario.email,
+        saldo: Number(usuario.saldo || 0),
+        plano: usuario.plano,
+        fotoPerfilUrl: usuario.fotoPerfilUrl,
+      },
+    });
+  } catch (erro) {
+    console.error("Erro ao atualizar foto de perfil:", erro);
+    const status = erro.code === "CLOUDINARY_NOT_CONFIGURED" ? 503 : 500;
+    return res.status(status).json({ erro: erro.message || "Não foi possível atualizar a foto." });
+  }
+});
+
+router.delete("/foto-perfil", auth, async (req, res) => {
+  try {
+    const usuario = await User.findById(req.usuario.id).select("+fotoPerfilPublicId");
+    if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado." });
+
+    if (usuario.fotoPerfilPublicId) {
+      const cloudinary = configurarCloudinary();
+      await cloudinary.uploader.destroy(usuario.fotoPerfilPublicId, { invalidate: true });
+    }
+
+    usuario.fotoPerfilUrl = "";
+    usuario.fotoPerfilPublicId = "";
+    await usuario.save();
+    return res.json({ ok: true, fotoPerfilUrl: "" });
+  } catch (erro) {
+    console.error("Erro ao remover foto de perfil:", erro);
+    const status = erro.code === "CLOUDINARY_NOT_CONFIGURED" ? 503 : 500;
+    return res.status(status).json({ erro: erro.message || "Não foi possível remover a foto." });
+  }
+});
 
 async function obterAntifraudeState() {
   if (typeof antifraude.getStateSnapshot === "function") {
@@ -149,6 +247,7 @@ router.get("/ranking", auth, async (req, res) => {
             "_id",
             "nome",
             "nomeUsuario",
+            "fotoPerfilUrl",
             "saldo",
             "capitalInicial",
             "carteira",
@@ -252,6 +351,8 @@ router.get("/ranking", auth, async (req, res) => {
         nome: usuario.nome || "",
 
         nomeUsuario: usuario.nomeUsuario || "",
+
+        fotoPerfilUrl: usuario.fotoPerfilUrl || "",
 
         plano: planoEfetivo,
 

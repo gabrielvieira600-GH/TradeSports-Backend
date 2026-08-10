@@ -85,6 +85,9 @@ const UserSchema = new mongoose.Schema(
     dataNascimento: { type: String, default: null },
     genero: { type: String, default: null },
 
+    fotoPerfilUrl: { type: String, default: '' },
+    fotoPerfilPublicId: { type: String, default: '', select: false },
+
     senha: { type: String, required: true },
 
     capitalInicial: { type: Number, default: 1000 },
@@ -318,5 +321,4 @@ UserSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
-
 

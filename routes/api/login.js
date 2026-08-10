@@ -222,6 +222,7 @@ router.post("/", loginLimiter, async (req, res) => {
         id: String(usuario._id),
         legacyId: usuario.legacyId ?? null,
         nomeUsuario: usuario.nomeUsuario,
+        fotoPerfilUrl: usuario.fotoPerfilUrl || "",
         saldo: Number(usuario.saldo || 0),
         role: usuario.role || (usuario.admin ? "admin" : "user"),
       },

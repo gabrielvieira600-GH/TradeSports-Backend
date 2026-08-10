@@ -521,6 +521,7 @@ function montarPerfilPublico({
     nome: usuario.nome || '',
     nomeUsuario: usuario.nomeUsuario || '',
     nomePublico: montarNomePublico(usuario),
+    fotoPerfilUrl: usuario.fotoPerfilUrl || '',
 
     plano,
     premiumAtivo: plano === 'premium',
@@ -678,12 +679,12 @@ router.get('/feed', async (req, res) => {
         .populate({
           path: 'usuarioId',
           select:
-            'nome nomeUsuario plano premiumAtivo premiumInicio premiumFim rankingAtivo createdAt',
+            'nome nomeUsuario fotoPerfilUrl plano premiumAtivo premiumInicio premiumFim rankingAtivo createdAt',
         })
         .populate({
           path: 'usuarioAlvoId',
           select:
-            'nome nomeUsuario plano premiumAtivo premiumInicio premiumFim rankingAtivo createdAt',
+            'nome nomeUsuario fotoPerfilUrl plano premiumAtivo premiumInicio premiumFim rankingAtivo createdAt',
         })
         .populate({
           path: 'rankingPrivadoId',
@@ -728,6 +729,7 @@ router.get('/feed', async (req, res) => {
             nome: usuario.nome || '',
             nomeUsuario: usuario.nomeUsuario || '',
             nomePublico: montarNomePublico(usuario),
+            fotoPerfilUrl: usuario.fotoPerfilUrl || '',
             plano: planoUsuario,
             premiumAtivo: planoUsuario === 'premium',
             criadoEm: usuario.createdAt || null,
@@ -744,6 +746,7 @@ router.get('/feed', async (req, res) => {
                 nome: usuarioAlvo.nome || '',
                 nomeUsuario: usuarioAlvo.nomeUsuario || '',
                 nomePublico: montarNomePublico(usuarioAlvo),
+                fotoPerfilUrl: usuarioAlvo.fotoPerfilUrl || '',
                 plano: planoUsuarioAlvo,
                 premiumAtivo: planoUsuarioAlvo === 'premium',
                 criadoEm: usuarioAlvo.createdAt || null,
@@ -846,6 +849,7 @@ router.get('/usuarios', async (req, res) => {
           '_id',
           'nome',
           'nomeUsuario',
+          'fotoPerfilUrl',
           'email',
           'createdAt',
           'rankingAtivo',
@@ -858,6 +862,7 @@ router.get('/usuarios', async (req, res) => {
           'patrimonioInicialTemporada',
           'carteira',
           'carteiraPublica',
+          'fotoPerfilUrl',
         ].join(' ')
       )
       .sort({
@@ -957,6 +962,7 @@ router.get('/usuarios', async (req, res) => {
         nome: usuario.nome || '',
         nomeUsuario: usuario.nomeUsuario || '',
         nomePublico: montarNomePublico(usuario),
+        fotoPerfilUrl: usuario.fotoPerfilUrl || '',
 
         plano,
         premiumAtivo: plano === 'premium',
@@ -1024,6 +1030,7 @@ router.get('/usuarios/:id', async (req, res) => {
           'inicioTemporadaRanking',
           'carteira',
           'carteiraPublica',
+          'fotoPerfilUrl',
         ].join(' ')
       )
       .lean();
@@ -1428,6 +1435,7 @@ router.get('/usuarios/:id/seguidores', async (req, res) => {
           '_id',
           'nome',
           'nomeUsuario',
+          'fotoPerfilUrl',
           'email',
           'plano',
           'premiumAtivo',
@@ -1475,6 +1483,7 @@ router.get('/usuarios/:id/seguidores', async (req, res) => {
             nome: usuario.nome || '',
             nomeUsuario: usuario.nomeUsuario || '',
             nomePublico: montarNomePublico(usuario),
+            fotoPerfilUrl: usuario.fotoPerfilUrl || '',
             plano,
             premiumAtivo: plano === 'premium',
             seguindo: seguindoSet.has(String(usuario._id)),
@@ -1555,6 +1564,7 @@ router.get('/usuarios/:id/seguindo', async (req, res) => {
           '_id',
           'nome',
           'nomeUsuario',
+          'fotoPerfilUrl',
           'email',
           'plano',
           'premiumAtivo',
@@ -1602,6 +1612,7 @@ router.get('/usuarios/:id/seguindo', async (req, res) => {
             nome: usuario.nome || '',
             nomeUsuario: usuario.nomeUsuario || '',
             nomePublico: montarNomePublico(usuario),
+            fotoPerfilUrl: usuario.fotoPerfilUrl || '',
             plano,
             premiumAtivo: plano === 'premium',
             seguindo: seguindoSet.has(String(usuario._id)),

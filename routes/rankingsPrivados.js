@@ -82,6 +82,7 @@ async function calcularRankingPrivado({ rankingId }) {
           '_id',
           'nome',
           'nomeUsuario',
+          'fotoPerfilUrl',
           'saldo',
           'capitalInicial',
           'carteira',
@@ -206,6 +207,7 @@ async function calcularRankingPrivado({ rankingId }) {
       usuarioId: String(usuario._id),
       nome: usuario.nome || '',
       nomeUsuario: usuario.nomeUsuario || '',
+      fotoPerfilUrl: usuario.fotoPerfilUrl || '',
       plano: obterPlanoEfetivo(usuario),
 
       temporadaRanking:
@@ -1024,7 +1026,7 @@ router.get(
         .populate({
           path: 'usuarioId',
           select:
-            'nome nomeUsuario email plano premiumAtivo premiumInicio premiumFim createdAt',
+            'nome nomeUsuario fotoPerfilUrl email plano premiumAtivo premiumInicio premiumFim createdAt',
         })
         .sort({
           status: 1,
@@ -1054,6 +1056,7 @@ router.get(
               usuarioId: String(usuario._id),
               nome: usuario.nome || '',
               nomeUsuario: usuario.nomeUsuario || '',
+              fotoPerfilUrl: usuario.fotoPerfilUrl || '',
               email: usuario.email || '',
               plano,
               status: membro.status,
@@ -1143,6 +1146,7 @@ router.post(
             '_id',
             'nome',
             'nomeUsuario',
+            'fotoPerfilUrl',
             'email',
             'plano',
             'premiumAtivo',
@@ -1251,6 +1255,7 @@ router.post(
           id: String(usuarioAdicionar._id),
           nome: usuarioAdicionar.nome || '',
           nomeUsuario: usuarioAdicionar.nomeUsuario || '',
+          fotoPerfilUrl: usuarioAdicionar.fotoPerfilUrl || '',
           email: usuarioAdicionar.email || '',
           plano: planoUsuarioAdicionar,
         },
