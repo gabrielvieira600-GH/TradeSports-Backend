@@ -192,7 +192,7 @@ function normalizeLine(line) {
 
   if (debit < 0 || credit < 0) {
 
-    throw Object.assign(new Error('Valores negativos não permitidos'), {
+    throw Object.assign(new Error('Valores negativos nÃ£o permitidos'), {
 
       code: 'LEDGER_BAD_LINE',
 
@@ -228,7 +228,7 @@ function ensureBalanced(lines) {
 
   if (deb !== cred) {
 
-    const e = new Error(`Lançamento desbalanceado: deb=${deb} cred=${cred}`);
+    const e = new Error(`LanÃ§amento desbalanceado: deb=${deb} cred=${cred}`);
 
     e.code = 'LEDGER_UNBALANCED';
 
@@ -346,7 +346,7 @@ async function postJournal({
 
   if (!action) {
 
-    throw Object.assign(new Error('action obrigatório'), { code: 'LEDGER_NO_ACTION' });
+    throw Object.assign(new Error('action obrigatÃ³rio'), { code: 'LEDGER_NO_ACTION' });
 
   }
 
@@ -502,27 +502,14 @@ function buildTradeEntry({
 
   ];
 
-  if (bf > 0) {
+  const totalFees = round2(bf + sf);
 
-    lines.push(
+  if (totalFees > 0) {
 
-      { account: 'platform:revenue:fees', debit: bf },
-
-      { account: 'platform:equity', credit: bf }
-
-    );
-
-  }
-
-  if (sf > 0) {
-
-    lines.push(
-
-      { account: 'platform:revenue:fees', debit: sf },
-
-      { account: 'platform:equity', credit: sf }
-
-    );
+    // A receita de taxas é a contrapartida da diferença entre o débito do
+    // comprador e o crédito líquido do vendedor. Uma linha extra de equity
+    // duplicaria a contrapartida e desbalancearia o lançamento.
+    lines.push({ account: 'platform:revenue:fees', debit: totalFees });
 
   }
 
@@ -1046,7 +1033,7 @@ async function reconcileFinancialTx(finTx, session = null) {
 
   ) {
 
-    return { status: 'DIVERGENTE', reason: 'Transação final sem ledger' };
+    return { status: 'DIVERGENTE', reason: 'TransaÃ§Ã£o final sem ledger' };
 
   }
 
@@ -1058,7 +1045,7 @@ async function reconcileFinancialTx(finTx, session = null) {
 
   ) {
 
-    return { status: 'DIVERGENTE', reason: 'Pendência com lançamentos excessivos' };
+    return { status: 'DIVERGENTE', reason: 'PendÃªncia com lanÃ§amentos excessivos' };
 
   }
 

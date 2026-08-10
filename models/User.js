@@ -85,9 +85,6 @@ const UserSchema = new mongoose.Schema(
     dataNascimento: { type: String, default: null },
     genero: { type: String, default: null },
 
-    fotoPerfilUrl: { type: String, default: '' },
-    fotoPerfilPublicId: { type: String, default: '', select: false },
-
     senha: { type: String, required: true },
 
     capitalInicial: { type: Number, default: 1000 },
@@ -220,6 +217,7 @@ premiumFim: {
     },
 
     ledgerMirror: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   {
     timestamps: true,

@@ -16,6 +16,16 @@ const Order = require('../models/Order');
 const Investment = require('../models/Investment');
 
 const RankingSeason = require('../models/RankingSeason');
+const InstitutionalLiquidity = require('../models/InstitutionalLiquidity');
+const { isUnifiedLiquidity, getMarketMode } = require('../config/marketMode');
+const {
+  ensureLiquidityState,
+  validateBuybackLimit,
+  recordBuyback,
+  publishOrdersForClub,
+  enforceSolvency,
+} = require('../services/institutionalLiquidity');
+const { buildTradeEntry, postJournal } = require('../utils/ledger');
 
 const {
   LIMITE_SEMANAL_LITE_PADRAO,
@@ -34,7 +44,7 @@ const {
 
 const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
 
-const MAKER_FEE = 0.002; // 0.20%
+const MAKER_FEE = isUnifiedLiquidity() ? 0 : 0.002; // beta unificado: maker 0%
 
 const TAKER_FEE = 0.005; // 0.50%
 
@@ -248,6 +258,18 @@ async function criarRegistroInvestment({
 
 }
 
+router.get('/configuracao', async (_req, res) => {
+  return res.json({
+    marketMode: getMarketMode(),
+    unifiedBook: isUnifiedLiquidity(),
+    ipoStandby: isUnifiedLiquidity(),
+    tickSize: TICK_SIZE,
+    makerFeePct: MAKER_FEE,
+    takerFeePct: TAKER_FEE,
+    maxSharesPerClub: 1000,
+  });
+});
+
 router.get('/livro', async (req, res) => {
   try {
     const clubeLegacyId = Number(req.query.clubeId);
@@ -279,7 +301,6 @@ router.get('/livro', async (req, res) => {
       )
       .map((o) => ({
         id: String(o._id),
-        usuarioId: String(o.usuarioId),
         clubeId: o.clubeLegacyId,
         tipo: o.tipo,
         preco: round2(o.preco),
@@ -298,7 +319,6 @@ router.get('/livro', async (req, res) => {
       )
       .map((o) => ({
         id: String(o._id),
-        usuarioId: String(o.usuarioId),
         clubeId: o.clubeLegacyId,
         tipo: o.tipo,
         preco: round2(o.preco),
@@ -313,7 +333,9 @@ router.get('/livro', async (req, res) => {
         id: clube.legacyId,
         nome: clube.nome,
         precoAtual: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
-        ipoEncerrado: Boolean(clube.ipoEncerrado),
+        ipoEncerrado: isUnifiedLiquidity() || Boolean(clube.ipoEncerrado),
+        cotasEmitidas: Number(clube.cotasEmitidas || 0),
+        maximoCotas: 1000,
       },
 
       compras,
@@ -369,7 +391,6 @@ router.get('/livro/:clubeId', async (req, res) => {
 
         id: String(o._id),
 
-        usuarioId: String(o.usuarioId),
 
         clubeId: o.clubeLegacyId,
 
@@ -397,7 +418,6 @@ router.get('/livro/:clubeId', async (req, res) => {
 
         id: String(o._id),
 
-        usuarioId: String(o.usuarioId),
 
         clubeId: o.clubeLegacyId,
 
@@ -425,7 +445,9 @@ router.get('/livro/:clubeId', async (req, res) => {
 
         precoAtual: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
 
-        ipoEncerrado: Boolean(clube.ipoEncerrado),
+        ipoEncerrado: isUnifiedLiquidity() || Boolean(clube.ipoEncerrado),
+        cotasEmitidas: Number(clube.cotasEmitidas || 0),
+        maximoCotas: 1000,
 
       },
 
@@ -780,7 +802,7 @@ router.post('/ordem', auth, async (req, res) => {
         );
       }
 
-      if (!Boolean(clube.ipoEncerrado)) {
+      if (!isUnifiedLiquidity() && !Boolean(clube.ipoEncerrado)) {
         throw new Error(
           'IPO_AINDA_ABERTO'
         );
@@ -1034,10 +1056,12 @@ router.post('/ordem', auth, async (req, res) => {
             tipo === 'compra'
               ? {
                   preco: 1,
+                  institutionalPriority: 1,
                   criadoEm: 1,
                 }
               : {
                   preco: -1,
+                  institutionalPriority: 1,
                   criadoEm: 1,
                 }
           )
@@ -1097,17 +1121,32 @@ router.post('/ordem', auth, async (req, res) => {
           continue;
         }
 
+        const buyerOrder = tipo === 'compra' ? ordem : contraparte;
+        const sellerOrder = tipo === 'venda' ? ordem : contraparte;
+        const buyerInstitutional = Boolean(buyerOrder.isInstitutional);
+        const sellerInstitutional = Boolean(sellerOrder.isInstitutional);
+        const liquidityState = (buyerInstitutional || sellerInstitutional)
+          ? await ensureLiquidityState(clube, session)
+          : null;
+
+        if (buyerInstitutional) {
+          await validateBuybackLimit({
+            state: liquidityState,
+            clubId: clube._id,
+            userId: seller._id,
+            quantity: qtdExec,
+            session,
+          });
+        }
+
         const bruto = round2(
           qtdExec * precoExec
         );
 
-        const taxaBuyer = round2(
-          bruto * TAKER_FEE
-        );
-
-        const taxaSeller = round2(
-          bruto * MAKER_FEE
-        );
+        const buyerFeePct = buyerInstitutional ? 0 : (tipo === 'compra' ? TAKER_FEE : MAKER_FEE);
+        const sellerFeePct = sellerInstitutional ? 0 : (tipo === 'venda' ? TAKER_FEE : MAKER_FEE);
+        const taxaBuyer = round2(bruto * buyerFeePct);
+        const taxaSeller = round2(bruto * sellerFeePct);
 
         const custoBuyer = round2(
           bruto + taxaBuyer
@@ -1118,7 +1157,7 @@ router.post('/ordem', auth, async (req, res) => {
         );
 
         if (
-          round2(buyer.saldo || 0) <
+          !buyerInstitutional && round2(buyer.saldo || 0) <
           custoBuyer
         ) {
           if (tipo === 'compra') {
@@ -1128,14 +1167,27 @@ router.post('/ordem', auth, async (req, res) => {
           continue;
         }
 
-        try {
-          debitaVenda(
-            seller,
-            clubeLegacyId,
-            qtdExec
-          );
-        } catch (_) {
-          continue;
+        let newlyIssued = 0;
+        let institutionResold = 0;
+        if (sellerInstitutional) {
+          institutionResold = Math.min(Number(liquidityState.institutionHeldIssuedShares || 0), qtdExec);
+          newlyIssued = qtdExec - institutionResold;
+          const remainingCapacity = Number(liquidityState.maxShares) - Number(liquidityState.issuedShares);
+          if (newlyIssued > remainingCapacity || liquidityState.issuanceSuspended) continue;
+          if (institutionResold > 0) {
+            try { debitaVenda(seller, clubeLegacyId, institutionResold); } catch (_) { continue; }
+          }
+          liquidityState.institutionHeldIssuedShares = Math.max(0,
+            Number(liquidityState.institutionHeldIssuedShares) - institutionResold);
+          liquidityState.issuedShares = Number(liquidityState.issuedShares) + newlyIssued;
+          liquidityState.distributionGross = round2(Number(liquidityState.distributionGross) + newlyIssued * precoExec);
+          liquidityState.resaleGross = round2(Number(liquidityState.resaleGross) + institutionResold * precoExec);
+          liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund) + bruto);
+          clube.cotasEmitidas = liquidityState.issuedShares;
+          clube.cotasDisponiveis = Math.max(0, Number(liquidityState.maxShares) - liquidityState.issuedShares);
+          clube.ipoEncerrado = clube.cotasDisponiveis === 0;
+        } else {
+          try { debitaVenda(seller, clubeLegacyId, qtdExec); } catch (_) { continue; }
         }
 
         creditaCompra(
@@ -1145,6 +1197,14 @@ router.post('/ordem', auth, async (req, res) => {
           qtdExec,
           precoExec
         );
+
+        if (buyerInstitutional) {
+          liquidityState.institutionHeldIssuedShares =
+            Number(liquidityState.institutionHeldIssuedShares) + qtdExec;
+          liquidityState.buybackGross = round2(Number(liquidityState.buybackGross) + bruto);
+          liquidityState.liquidationFund = round2(Math.max(0, Number(liquidityState.liquidationFund) - bruto));
+          await recordBuyback({ clubId: clube._id, userId: seller._id, quantity: qtdExec, session });
+        }
 
         autoFavoritarClubeAoComprar(
           buyer,
@@ -1263,16 +1323,6 @@ router.post('/ordem', auth, async (req, res) => {
           session,
         });
 
-        const buyerOrder =
-          tipo === 'compra'
-            ? ordem
-            : contraparte;
-
-        const sellerOrder =
-          tipo === 'venda'
-            ? ordem
-            : contraparte;
-
         await criarRegistroInvestment({
           session,
           usuario: buyer,
@@ -1287,10 +1337,9 @@ router.post('/ordem', auth, async (req, res) => {
 
             fee: taxaBuyer,
 
-            feeType:
-              tipo === 'compra'
-                ? 'taker'
-                : 'maker',
+            feeType: buyerInstitutional ? 'institutional' : (tipo === 'compra' ? 'taker' : 'maker'),
+            institutionalCounterparty: sellerInstitutional,
+            newlyIssued,
 
             orderId: String(
               buyerOrder._id
@@ -1316,10 +1365,8 @@ router.post('/ordem', auth, async (req, res) => {
 
             fee: taxaSeller,
 
-            feeType:
-              tipo === 'venda'
-                ? 'taker'
-                : 'maker',
+            feeType: sellerInstitutional ? 'institutional' : (tipo === 'venda' ? 'taker' : 'maker'),
+            institutionalCounterparty: buyerInstitutional,
 
             orderId: String(
               sellerOrder._id
@@ -1330,6 +1377,17 @@ router.post('/ordem', auth, async (req, res) => {
             ),
           },
         });
+
+        if (liquidityState) await liquidityState.save({ session });
+
+        const journal = buildTradeEntry({
+          buyerId: String(buyer._id), sellerId: String(seller._id), clubeId: clubeLegacyId,
+          qty: qtdExec, price: precoExec, buyerFee: taxaBuyer, sellerFee: taxaSeller,
+          buyerRole: buyerInstitutional ? 'institutional' : (tipo === 'compra' ? 'taker' : 'maker'),
+          sellerRole: sellerInstitutional ? 'institutional' : (tipo === 'venda' ? 'taker' : 'maker'),
+          makerFeePct: MAKER_FEE, takerFeePct: TAKER_FEE,
+        });
+        await postJournal({ ...journal, idemKey: `trade:${buyerOrder._id}:${sellerOrder._id}:${qtdExec}:${ordem.restante}`, session });
 
                 execucoes.push({
           quantidade: qtdExec,
@@ -1371,6 +1429,20 @@ router.post('/ordem', auth, async (req, res) => {
       await ordem.save({
         session,
       });
+
+      if (isUnifiedLiquidity() && !ordem.isInstitutional) {
+        const institutionalSell = await Order.findOne({
+            clubeId: clube._id, tipo: 'venda', isInstitutional: true,
+            status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
+          }).session(session);
+        const institutionalBuy = await Order.findOne({
+            clubeId: clube._id, tipo: 'compra', isInstitutional: true,
+            status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
+          }).session(session);
+        if (!institutionalBuy || !institutionalSell || Number(institutionalSell.restante) <= 5) {
+          await publishOrdersForClub(clube, { session });
+        }
+      }
 
             const limiteOrdens =
         planoEfetivo === 'lite'
@@ -1440,6 +1512,8 @@ router.post('/ordem', auth, async (req, res) => {
               : clube.preco
           ),
         },
+
+        marketMode: getMarketMode(),
 
                 temporada: {
           id: String(
@@ -1512,6 +1586,12 @@ router.post('/ordem', auth, async (req, res) => {
       );
     }
 
+    if (isUnifiedLiquidity()) {
+      await enforceSolvency().catch((error) =>
+        console.error('Falha ao recalcular solvência institucional:', error)
+      );
+    }
+
     return res.json(resposta);
   } catch (err) {
     console.error(
@@ -1573,6 +1653,20 @@ router.post('/ordem', auth, async (req, res) => {
       return res.status(400).json({
         erro:
           'Saldo insuficiente para enviar a ordem.',
+      });
+    }
+
+    if (err.message === 'LIMITE_RECOMPRA_USUARIO') {
+      return res.status(409).json({
+        erro: 'O limite diário de liquidez para este clube foi atingido nesta conta.',
+        codigo: 'LIMITE_RECOMPRA_USUARIO',
+      });
+    }
+
+    if (err.message === 'LIMITE_RECOMPRA_CLUBE') {
+      return res.status(409).json({
+        erro: 'A liquidez disponível para este clube foi utilizada hoje. As negociações entre usuários continuam abertas.',
+        codigo: 'LIMITE_RECOMPRA_CLUBE',
       });
     }
 
@@ -1721,11 +1815,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
-
 
 
 

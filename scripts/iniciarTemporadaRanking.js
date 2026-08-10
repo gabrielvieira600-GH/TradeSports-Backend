@@ -72,7 +72,7 @@ async function iniciarTemporada() {
     );
 
     const [usuarios, clubes] = await Promise.all([
-      User.find({}),
+      User.find({ 'metadata.accountType': { $ne: 'INSTITUTIONAL' } }),
       Club.find({})
         .select('legacyId precoAtual preco')
         .lean(),

@@ -43,6 +43,7 @@ const {
 } = require("./utils/emailService");
 
 const adminRoutes = require("./routes/api/admin");
+const institutionalLiquidityAdminRoutes = require('./routes/api/institutionalLiquidityAdmin');
 const loginRoute = require("./routes/api/login");
 
 const clubeRoutes = require("./routes/clube");
@@ -219,6 +220,7 @@ app.use(checkLiquidacao);
 
 // Rotas principais
 app.use("/api/admin", adminRoutes);
+app.use('/api/admin/liquidez-institucional', institutionalLiquidityAdminRoutes);
 app.use("/admin", adminRoutes); // compatibilidade com endpoints antigos
 
 app.use("/api/login", loginRoute);

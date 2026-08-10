@@ -27,6 +27,11 @@ const OrderSchema = new mongoose.Schema(
     canceladoEm: { type: Date, default: null },
     executadoEm: { type: Date, default: null },
 
+    // Campo interno. Nunca é exposto no livro público.
+    isInstitutional: { type: Boolean, default: false, index: true },
+    // 0 = usuário real; 1 = instituição. Garante usuário primeiro apenas no empate.
+    institutionalPriority: { type: Number, default: 0, index: true },
+
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   {
@@ -34,5 +39,7 @@ const OrderSchema = new mongoose.Schema(
     collection: 'orders',
   }
 );
+
+OrderSchema.index({ clubeId: 1, tipo: 1, status: 1, preco: 1, institutionalPriority: 1, criadoEm: 1 });
 
 module.exports = mongoose.models.Order || mongoose.model('Order', OrderSchema);

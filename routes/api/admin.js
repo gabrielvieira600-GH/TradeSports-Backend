@@ -21,6 +21,9 @@ const Dividendo = require('../../models/dividendos');
 const Liquidacao = require('../../models/Liquidacao');
 const RankingSeason = require('../../models/RankingSeason');
 const RankingRound = require('../../models/RankingRound');
+const InstitutionalLiquidity = require('../../models/InstitutionalLiquidity');
+const { isUnifiedLiquidity } = require('../../config/marketMode');
+const { cancelInstitutionalOrders, publishOrdersForClub } = require('../../services/institutionalLiquidity');
 const {
   mesAtual,
   validarMes,
@@ -1208,6 +1211,14 @@ router.post(
 
       await rodada.save();
 
+      if (isUnifiedLiquidity()) {
+        const clubs = await Club.find({}).select('_id');
+        for (const club of clubs) await cancelInstitutionalOrders(club._id);
+        await InstitutionalLiquidity.updateMany({}, {
+          $set: { institutionalSuspended: true, suspensionReason: `Rodada ${rodada.numero} em andamento` },
+        });
+      }
+
       temporada.rodadaAtual =
         rodada.numero;
 
@@ -1287,6 +1298,16 @@ router.post(
         req.usuario?.id || null;
 
       await rodada.save();
+
+      if (isUnifiedLiquidity()) {
+        await InstitutionalLiquidity.updateMany({}, {
+          $set: { institutionalSuspended: false, suspensionReason: null },
+        });
+        const clubs = await Club.find({}).sort({ legacyId: 1 });
+        for (const club of clubs) {
+          await publishOrdersForClub(club, { round: rodada.numero });
+        }
+      }
 
       await audit.logEvent({
         kind: 'ADMIN',
