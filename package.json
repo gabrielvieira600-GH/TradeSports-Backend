@@ -4,8 +4,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "mongo:migrate": "node scripts/migrate-json-to-mongo.js",
-    "test:liquidity": "node --test tests/institutionalLiquidity.unit.test.js"
+    "mongo:migrate": "node scripts/migrate-json-to-mongo.js"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +15,7 @@
     "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.2",
     "chart.js": "^4.4.9",
+    "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
@@ -25,6 +25,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.21.0",
     "mongoose": "^8.14.3",
+    "multer": "^2.0.2",
     "react-chartjs-2": "^5.3.0",
     "resend": "^6.18.0"
   }
