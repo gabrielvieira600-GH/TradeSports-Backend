@@ -152,8 +152,8 @@ function adicionarNotificacao(usuario, relatorio) {
   if (usuario.notificacoes.some((item) => String(item.id) === id)) return;
   usuario.notificacoes.unshift({
     id,
-    title: 'Seu relatÃ³rio semanal estÃ¡ pronto',
-    body: 'Veja a evoluÃ§Ã£o da carteira, suas operaÃ§Ãµes e os destaques da semana.',
+    title: 'Seu relatório semanal está pronto',
+    body: 'Veja a evolução da carteira, suas operações e os destaques da semana.',
     read: false,
     createdAt: new Date(),
     metadata: { tipo: 'relatorio_semanal', relatorioId: String(relatorio._id), url: `/relatorios-semanais?id=${relatorio._id}` },
@@ -227,10 +227,10 @@ async function garantirRelatorioSemanal(usuario) {
     ? Number(anterior.ranking.posicaoGeral) - Number(ranking.posicaoGeral)
     : null;
   const alertas = [];
-  if (concentracao >= 35) alertas.push({ tipo: 'concentracao', texto: `${concentracao.toFixed(1)}% das posiÃ§Ãµes estÃ£o concentradas no maior ativo.` });
+  if (concentracao >= 35) alertas.push({ tipo: 'concentracao', texto: `${concentracao.toFixed(1)}% das posições estão concentradas no maior ativo.` });
   const top4 = carteira.posicoes.filter((item) => item.posicao && item.posicao <= 4);
-  if (top4.length) alertas.push({ tipo: 'top4', texto: `${top4.map((item) => item.nome).slice(0, 3).join(', ')} ${top4.length === 1 ? 'estÃ¡' : 'estÃ£o'} no Top 4 antes da prÃ³xima rodada.` });
-  if (!alertas.length) alertas.push({ tipo: 'informativo', texto: 'Acompanhe a classificaÃ§Ã£o e suas ordens abertas antes da prÃ³xima rodada.' });
+  if (top4.length) alertas.push({ tipo: 'top4', texto: `${top4.map((item) => item.nome).slice(0, 3).join(', ')} ${top4.length === 1 ? 'está' : 'estão'} no Top 4 antes da próxima rodada.` });
+  if (!alertas.length) alertas.push({ tipo: 'informativo', texto: 'Acompanhe a classificação e suas ordens abertas antes da próxima rodada.' });
 
   let relatorio;
   try {
@@ -262,13 +262,13 @@ async function garantirRelatorioSemanal(usuario) {
         variacaoPatrimonialDisponivel: resultadoSemana !== null,
         mudancaRankingDisponivel: mudancaRanking !== null,
         observacao: resultadoSemana === null
-          ? 'A base histÃ³rica ainda nÃ£o contÃ©m snapshots suficientes para comparar o inÃ­cio e o fim desta semana.'
+          ? 'A base histórica ainda não contém snapshots suficientes para comparar o início e o fim desta semana.'
           : null,
       },
       metodologia: {
-        periodo: 'Semana concluÃ­da, de segunda-feira a domingo, no horÃ¡rio de BrasÃ­lia.',
-        impactoClubes: 'Resultado realizado em vendas e liquidaÃ§Ãµes, somado aos dividendos recebidos por clube. VariaÃ§Ãµes de preÃ§o sem snapshot histÃ³rico por ativo nÃ£o sÃ£o estimadas.',
-        natureza: 'RelatÃ³rio informativo baseado em dados objetivos. NÃ£o constitui recomendaÃ§Ã£o de compra ou venda.',
+        periodo: 'Semana concluída, de segunda-feira a domingo, no horário de Brasí­lia.',
+        impactoClubes: 'Resultado realizado em vendas e liquidações, somado aos dividendos recebidos por clube. Variações de preço sem snapshot histórico por ativo não são estimadas.',
+        natureza: 'Relatório informativo baseado em dados objetivos. Não constitui recomendação de compra ou venda.',
       },
     });
   } catch (err) {

@@ -192,7 +192,7 @@ function normalizeLine(line) {
 
   if (debit < 0 || credit < 0) {
 
-    throw Object.assign(new Error('Valores negativos nÃ£o permitidos'), {
+    throw Object.assign(new Error('Valores negativos não permitidos'), {
 
       code: 'LEDGER_BAD_LINE',
 
@@ -228,7 +228,7 @@ function ensureBalanced(lines) {
 
   if (deb !== cred) {
 
-    const e = new Error(`LanÃ§amento desbalanceado: deb=${deb} cred=${cred}`);
+    const e = new Error(`Lançamento desbalanceado: deb=${deb} cred=${cred}`);
 
     e.code = 'LEDGER_UNBALANCED';
 
@@ -346,7 +346,7 @@ async function postJournal({
 
   if (!action) {
 
-    throw Object.assign(new Error('action obrigatÃ³rio'), { code: 'LEDGER_NO_ACTION' });
+    throw Object.assign(new Error('action obrigatório'), { code: 'LEDGER_NO_ACTION' });
 
   }
 
@@ -1046,7 +1046,7 @@ async function reconcileFinancialTx(finTx, session = null) {
 
   ) {
 
-    return { status: 'DIVERGENTE', reason: 'TransaÃ§Ã£o final sem ledger' };
+    return { status: 'DIVERGENTE', reason: 'Transação final sem ledger' };
 
   }
 
@@ -1058,7 +1058,7 @@ async function reconcileFinancialTx(finTx, session = null) {
 
   ) {
 
-    return { status: 'DIVERGENTE', reason: 'PendÃªncia com lanÃ§amentos excessivos' };
+    return { status: 'DIVERGENTE', reason: 'Pendência com lançamentos excessivos' };
 
   }
 
