@@ -29,6 +29,7 @@ const {
   validateBuybackLimit,
   recordBuyback,
   publishOrdersForClub,
+  ensureOrdersForClub,
   enforceSolvency,
 } = require('../services/institutionalLiquidity');
 const { buildTradeEntry, postJournal } = require('../utils/ledger');
@@ -391,12 +392,21 @@ router.get('/livro/:clubeId', authOpcional, async (req, res) => {
 
     const clubeLegacyId = Number(req.params.clubeId);
 
-    const clube = await Club.findOne({ legacyId: clubeLegacyId }).lean();
+    const clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+
+    const clube = clubeDocumento?.toObject();
 
     if (!clube) {
 
       return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
 
+    }
+
+    // O book nunca depende da primeira ordem do usuário para receber liquidez.
+    // Se uma reinicialização ou transição administrativa deixou a oferta
+    // institucional ausente, ela é reconciliada antes da leitura do livro.
+    if (isUnifiedLiquidity()) {
+      await ensureOrdersForClub(clubeDocumento);
     }
 
     const ordens = await Order.find({
@@ -1940,7 +1950,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
 
 
 

@@ -53,10 +53,48 @@ async function ensureLiquidityState(club, session = null) {
 
 async function cancelInstitutionalOrders(clubId, session = null) {
   return Order.updateMany(
-    { clubId, isInstitutional: true, status: { $in: ['aberta', 'parcial'] } },
+    { clubeId: clubId, isInstitutional: true, status: { $in: ['aberta', 'parcial'] } },
     { $set: { status: 'cancelada', canceladoEm: new Date() } },
     { session }
   );
+}
+
+async function ensureOrdersForClub(club, { round = null, session = null } = {}) {
+  const state = await ensureLiquidityState(club, session);
+  if (state.institutionalSuspended) return { state, orders: [], published: false };
+
+  const unissued = Math.max(0, Number(state.maxShares) - Number(state.issuedShares));
+  const resale = Math.max(0, Number(state.institutionHeldIssuedShares));
+  const needsSell = unissued > 0 || resale > 0;
+  const needsBuy = Number(state.issuedShares) > 0;
+
+  const [sell, buy] = await Promise.all([
+    needsSell
+      ? Order.findOne({
+          clubeId: club._id,
+          tipo: 'venda',
+          isInstitutional: true,
+          status: { $in: ['aberta', 'parcial'] },
+          restante: { $gt: 0 },
+        }).select('_id').session(session).lean()
+      : null,
+    needsBuy
+      ? Order.findOne({
+          clubeId: club._id,
+          tipo: 'compra',
+          isInstitutional: true,
+          status: { $in: ['aberta', 'parcial'] },
+          restante: { $gt: 0 },
+        }).select('_id').session(session).lean()
+      : null,
+  ]);
+
+  if ((!needsSell || sell) && (!needsBuy || buy)) {
+    return { state, orders: [], published: false };
+  }
+
+  const result = await publishOrdersForClub(club, { round, session });
+  return { ...result, published: true };
 }
 
 async function publishOrdersForClub(club, { round = null, session = null } = {}) {
@@ -198,7 +236,7 @@ async function enforceSolvency() {
 
 module.exports = {
   TICK_SIZE, getInstitutionalUser, ensureLiquidityState, pricesFor,
-  cancelInstitutionalOrders, publishOrdersForClub, validateBuybackLimit,
+  cancelInstitutionalOrders, publishOrdersForClub, ensureOrdersForClub, validateBuybackLimit,
   recordBuyback, exposureSnapshot,
   enforceSolvency,
 };

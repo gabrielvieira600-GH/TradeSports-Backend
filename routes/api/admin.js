@@ -1236,11 +1236,18 @@ router.post(
       await rodada.save();
 
       if (isUnifiedLiquidity()) {
-        const clubs = await Club.find({}).select('_id');
-        for (const club of clubs) await cancelInstitutionalOrders(club._id);
+        /*
+         * Abrir a rodada administrativa não pode esvaziar o livro durante
+         * todo o período da rodada. A suspensão deve ser aplicada somente
+         * por uma janela específica de bloqueio de negociação/jogo ao vivo.
+         */
         await InstitutionalLiquidity.updateMany({}, {
-          $set: { institutionalSuspended: true, suspensionReason: `Rodada ${rodada.numero} em andamento` },
+          $set: { institutionalSuspended: false, suspensionReason: null },
         });
+        const clubs = await Club.find({}).sort({ legacyId: 1 });
+        for (const club of clubs) {
+          await publishOrdersForClub(club, { round: rodada.numero });
+        }
       }
 
       temporada.rodadaAtual =
