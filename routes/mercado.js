@@ -952,6 +952,49 @@ router.post('/ordem', auth, async (req, res) => {
         throw erroMercado;
       }
 
+      /*
+       * A contraparte institucional precisa existir antes da ordem do usuário
+       * nascer e antes da consulta de matching. Na versão anterior, a
+       * publicação acontecia somente ao final do processamento; por isso a
+       * primeira ordem ficava aberta mesmo cruzando o preço institucional e
+       * apenas uma segunda ordem disparava a execução.
+       *
+       * Este fallback também protege clubes incluídos depois do início da
+       * temporada e eventuais falhas pontuais da reconciliação administrativa.
+       */
+      if (isUnifiedLiquidity()) {
+        const filtroContraparteInstitucional = {
+          clubeId: clube._id,
+          tipo: tipo === 'compra' ? 'venda' : 'compra',
+          isInstitutional: true,
+          status: { $in: ['aberta', 'parcial'] },
+          restante: { $gt: 0 },
+        };
+
+        const contraparteInstitucional =
+          await Order.findOne(filtroContraparteInstitucional)
+            .select('_id')
+            .session(session)
+            .lean();
+
+        /*
+         * Na emissão inicial ainda não há recompra institucional; portanto,
+         * uma venda de usuário pode legitimamente não encontrar bid do bot.
+         * A publicação só é obrigatória para a primeira compra ou quando já
+         * existem cotas emitidas que permitem liquidez bilateral.
+         */
+        const devePublicar =
+          !contraparteInstitucional &&
+          (
+            tipo === 'compra' ||
+            Number(clube.cotasEmitidas || 0) > 0
+          );
+
+        if (devePublicar) {
+          await publishOrdersForClub(clube, { session });
+        }
+      }
+
       const planoEfetivo =
         obterPlanoEfetivo(usuario);
 
@@ -1897,7 +1940,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
 
 
 

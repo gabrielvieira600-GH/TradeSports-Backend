@@ -644,6 +644,29 @@ router.post(
 
       await temporada.save();
 
+      /*
+       * No mercado unificado, a temporada somente fica pronta para negociar
+       * depois que todos os livros ativos recebem a liquidez institucional.
+       * A reconciliação na inicialização do servidor continua como proteção,
+       * mas não atende temporadas iniciadas com o processo já em execução.
+       */
+      let liquidezInstitucional = null;
+      if (isUnifiedLiquidity()) {
+        const clubes = await Club.find({});
+        let ordensPublicadas = 0;
+
+        for (const clube of clubes) {
+          const resultado = await publishOrdersForClub(clube);
+          ordensPublicadas += Number(resultado?.orders?.length || 0);
+        }
+
+        liquidezInstitucional = {
+          clubesReconciliados: clubes.length,
+          ordensPublicadas,
+          reconciliadaEm: new Date(),
+        };
+      }
+
       await audit.logEvent({
         kind: 'ADMIN',
         action:
@@ -662,6 +685,7 @@ router.post(
       return res.json({
         ok: true,
         temporada,
+        liquidezInstitucional,
       });
     } catch (err) {
       console.error(
