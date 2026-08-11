@@ -1,4 +1,5 @@
 const UserTradingQuota = require('../models/UserTradingQuota');
+const Order = require('../models/Order');
 
 const TIMEZONE_TRADESPORTS = 'America/Sao_Paulo';
 
@@ -406,6 +407,35 @@ async function consumirOrdemQuotaSemanal({
 
 }
 
+async function reconciliarQuotaComOrdensExecutadas({ usuario, temporada, session = null, limiteLite }) {
+  const { quota, janela } = await obterOuCriarQuotaSemanal({
+    usuario,
+    temporada,
+    session,
+    limiteLite,
+  });
+
+  let consulta = Order.countDocuments({
+    usuarioId: usuario._id,
+    isInstitutional: { $ne: true },
+    criadoEm: { $gte: janela.periodoInicio, $lt: janela.periodoFim },
+    $or: [
+      { status: { $in: ['executada', 'parcial'] } },
+      { $expr: { $lt: ['$restante', '$quantidade'] } },
+      { 'metadata.quotaLiteContabilizada': true, 'metadata.quotaLitePeriodo': janela.periodoChave },
+    ],
+  });
+  if (session) consulta = consulta.session(session);
+  const executadas = await consulta;
+
+  quota.ordensUtilizadas = Math.max(0, Number(executadas || 0));
+  quota.limiteAtingidoEm = quota.ordensUtilizadas >= Number(quota.limiteOrdens || limiteLite || 15)
+    ? (quota.limiteAtingidoEm || new Date())
+    : null;
+  await quota.save({ session });
+  return { quota, janela, executadas: quota.ordensUtilizadas };
+}
+
 module.exports = {
 
   TIMEZONE_TRADESPORTS,
@@ -417,5 +447,7 @@ module.exports = {
   obterOuCriarQuotaSemanal,
 
   consumirOrdemQuotaSemanal,
+
+  reconciliarQuotaComOrdensExecutadas,
 
 };

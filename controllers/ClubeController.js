@@ -9,6 +9,7 @@ const TEMPORADA = Number(process.env.API_FOOTBALL_SEASON || process.env.TEMPORAD
 
 const BASE = 5;
 const MULTIPLICADOR = 1.05;
+const TICK_SIZE = 0.05;
 
 function round2(n) {
   return Number(Number(n || 0).toFixed(2));
@@ -16,7 +17,7 @@ function round2(n) {
 
 function calcularPrecoIPO(posicao) {
   const pos = Number(posicao || 20);
-  return round2(BASE * Math.pow(MULTIPLICADOR, 20 - pos));
+  return round2(Math.round((BASE * Math.pow(MULTIPLICADOR, 20 - pos)) / TICK_SIZE) * TICK_SIZE);
 }
 
 function normalizarNome(str) {

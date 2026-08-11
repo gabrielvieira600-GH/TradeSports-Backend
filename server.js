@@ -24,6 +24,8 @@ const auth = require("./middleware/auth");
 const User = require("./models/User");
 const LegalAcceptance = require("./models/LegalAcceptance");
 const Club = require("./models/Club");
+const { isUnifiedLiquidity } = require('./config/marketMode');
+const { publishOrdersForClub } = require('./services/institutionalLiquidity');
 const {
   LEGAL_DOCUMENTS,
   LEGAL_DOCUMENT_TYPES,
@@ -86,7 +88,18 @@ if (!JWT_SECRET) {
 app.set("trust proxy", 1);
 
 connectDB()
-  .then(() => console.log("Mongo inicializado."))
+  .then(async () => {
+    console.log("Mongo inicializado.");
+    if (isUnifiedLiquidity()) {
+      try {
+        const clubes = await Club.find({});
+        for (const clube of clubes) await publishOrdersForClub(clube);
+        console.log(`[LIQUIDEZ] Livro reconciliado para ${clubes.length} clube(s).`);
+      } catch (erro) {
+        console.error('[LIQUIDEZ] Falha na reconciliação inicial:', erro);
+      }
+    }
+  })
   .catch((err) => {
     console.error("Erro ao conectar no Mongo:", err);
     process.exit(1);

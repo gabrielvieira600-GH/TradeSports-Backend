@@ -6,7 +6,7 @@ const InstitutionalDailyLimit = require('../models/InstitutionalDailyLimit');
 const MarketLiquiditySettings = require('../models/MarketLiquiditySettings');
 const bcrypt = require('bcryptjs');
 
-const { TICK_SIZE, round2, tickUp, tickDown, pricesFor } = require('../utils/institutionalPricing');
+const { TICK_SIZE, round2, tickUp, tickDown, tickNearest, pricesFor } = require('../utils/institutionalPricing');
 const ACCOUNT_EMAIL = 'liquidez@system.tradesports';
 
 async function getInstitutionalUser(session = null) {
@@ -66,8 +66,8 @@ async function publishOrdersForClub(club, { round = null, session = null } = {})
 
   if (state.institutionalSuspended) return { state, orders: [] };
 
-  const base = Number(club.precoAtual ?? club.preco ?? 0);
-  const { ask, bid } = pricesFor(state, base);
+  const base = tickNearest(club.precoAtual ?? club.preco ?? 0);
+  const { primaryAsk, resaleAsk, bid } = pricesFor(state, base);
   const orders = [];
   const unissued = Math.max(0, Number(state.maxShares) - Number(state.issuedShares));
   const resale = Math.max(0, Number(state.institutionHeldIssuedShares));
@@ -80,21 +80,38 @@ async function publishOrdersForClub(club, { round = null, session = null } = {})
     averageIssued * (1 + Number(state.concentrationAboveAveragePct || 0))
   );
   const concentrationBlocked = Number(state.issuedShares) >= concentrationLimit && unissued > 0;
-  const sellQty = Math.min(
-    Number(state.visibleSellLot),
-    resale + ((state.issuanceSuspended || concentrationBlocked) ? 0 : unissued)
+  const resaleQty = Math.min(Number(state.visibleSellLot), resale);
+  const primaryQty = Math.min(
+    Math.max(0, Number(state.visibleSellLot) - resaleQty),
+    (state.issuanceSuspended || concentrationBlocked) ? 0 : unissued
   );
 
-  if (sellQty > 0 && ask > 0) {
+  // Cotas recompradas remuneram a liquidez bilateral e podem usar margem.
+  if (resaleQty > 0 && resaleAsk > 0) {
     const [sell] = await Order.create([{
       legacyId: `inst_sell_${club.legacyId}_${Date.now()}`,
       usuarioId: institutional._id,
       usuarioLegacyId: institutional.legacyId ?? null,
       clubeId: club._id,
       clubeLegacyId: club.legacyId,
-      tipo: 'venda', preco: ask, quantidade: sellQty, restante: sellQty,
+      tipo: 'venda', preco: resaleAsk, quantidade: resaleQty, restante: resaleQty,
       status: 'aberta', isInstitutional: true, institutionalPriority: 1,
-      metadata: { isInstitutional: true, purpose: resale > 0 ? 'RESALE_OR_ISSUANCE' : 'ISSUANCE', round },
+      metadata: { isInstitutional: true, purpose: 'RESALE', round },
+    }], { session });
+    orders.push(sell);
+  }
+
+  // Cotas inéditas entram no mercado exatamente pelo valor oficial da posição.
+  if (primaryQty > 0 && primaryAsk > 0) {
+    const [sell] = await Order.create([{
+      legacyId: `inst_issue_${club.legacyId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      usuarioId: institutional._id,
+      usuarioLegacyId: institutional.legacyId ?? null,
+      clubeId: club._id,
+      clubeLegacyId: club.legacyId,
+      tipo: 'venda', preco: primaryAsk, quantidade: primaryQty, restante: primaryQty,
+      status: 'aberta', isInstitutional: true, institutionalPriority: 1,
+      metadata: { isInstitutional: true, purpose: 'ISSUANCE', round },
     }], { session });
     orders.push(sell);
   }
@@ -114,7 +131,7 @@ async function publishOrdersForClub(club, { round = null, session = null } = {})
   }
 
   state.basePositionValue = base;
-  state.institutionalAsk = ask;
+  state.institutionalAsk = primaryQty > 0 ? primaryAsk : (resaleQty > 0 ? resaleAsk : 0);
   state.institutionalBid = bid;
   state.lastRepricedAt = new Date();
   state.lastRepricedRound = round;

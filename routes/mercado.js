@@ -7,6 +7,12 @@ const router = express.Router();
 
 const auth = require('../middleware/auth');
 
+function authOpcional(req, res, next) {
+  const cabecalho = req.header('Authorization');
+  if (!cabecalho) return next();
+  return auth(req, res, next);
+}
+
 const User = require('../models/User');
 
 const Club = require('../models/Club');
@@ -32,6 +38,7 @@ const {
   obterJanelaSemanal,
   obterOuCriarQuotaSemanal,
   consumirOrdemQuotaSemanal,
+  reconciliarQuotaComOrdensExecutadas,
 } = require('../utils/tradingQuota');
 
 const {
@@ -62,6 +69,29 @@ function validaTick(preco) {
 
   return Math.abs(Number(preco) - ticks * TICK_SIZE) < 0.000001;
 
+}
+
+async function registrarPrimeiraExecucaoLite({ ordem, usuario, temporada, session }) {
+  if (!ordem || ordem.isInstitutional || obterPlanoEfetivo(usuario) !== 'lite') return null;
+  ordem.metadata = ordem.metadata || {};
+  if (ordem.metadata.quotaLiteContabilizada) return null;
+
+  const resultado = await consumirOrdemQuotaSemanal({
+    usuario,
+    temporada,
+    session,
+    limiteLite: Number(
+      temporada.limiteOrdensLiteSemanal ??
+        temporada.limiteOrdensLitePorRodada ??
+        LIMITE_SEMANAL_LITE_PADRAO
+    ),
+  });
+
+  ordem.metadata.quotaLiteContabilizada = true;
+  ordem.metadata.quotaLitePeriodo = resultado.janela.periodoChave;
+  ordem.metadata.quotaLiteContabilizadaEm = new Date();
+  ordem.markModified('metadata');
+  return resultado;
 }
 
 function getCarteiraAtivo(usuario, clubeLegacyId) {
@@ -355,7 +385,7 @@ router.get('/livro', async (req, res) => {
   }
 });
 
-router.get('/livro/:clubeId', async (req, res) => {
+router.get('/livro/:clubeId', authOpcional, async (req, res) => {
 
   try {
 
@@ -406,6 +436,9 @@ router.get('/livro/:clubeId', async (req, res) => {
 
         criadoEm: o.criadoEm,
 
+        // Informa somente se pertence à sessão atual; nunca expõe o dono.
+        minhaOrdem: Boolean(req.usuario?.id) && !o.isInstitutional && String(o.usuarioId) === String(req.usuario.id),
+
       }));
 
     const vendas = ordens
@@ -432,6 +465,8 @@ router.get('/livro/:clubeId', async (req, res) => {
         status: o.status,
 
         criadoEm: o.criadoEm,
+
+        minhaOrdem: Boolean(req.usuario?.id) && !o.isInstitutional && String(o.usuarioId) === String(req.usuario.id),
 
       }));
 
@@ -656,7 +691,7 @@ router.get('/limite-ordens', auth, async (req, res) => {
     const {
       quota,
       janela: janelaQuota,
-    } = await obterOuCriarQuotaSemanal({
+    } = await reconciliarQuotaComOrdensExecutadas({
       usuario,
       temporada,
       limiteLite:
@@ -925,18 +960,12 @@ router.post('/ordem', auth, async (req, res) => {
         obterJanelaSemanal();
 
       /*
-       * Premium possui ordens ilimitadas.
-       *
-       * Lite consome uma ordem da quota semanal.
-       * O consumo ocorre dentro da mesma transaÃ§Ã£o
-       * da criaÃ§Ã£o da ordem.
-       *
-       * Se qualquer etapa falhar, a quota tambÃ©m
-       * serÃ¡ revertida.
+       * A criação de uma ordem aberta não consome a franquia Lite.
+       * A quota será contabilizada somente na primeira execução da ordem.
        */
       if (planoEfetivo === 'lite') {
         const resultadoQuota =
-          await consumirOrdemQuotaSemanal({
+          await reconciliarQuotaComOrdensExecutadas({
             usuario,
             temporada,
             session,
@@ -948,19 +977,15 @@ router.post('/ordem', auth, async (req, res) => {
               ),
           });
 
-        quotaSemanal =
-          resultadoQuota.quota;
+        quotaSemanal = resultadoQuota.quota;
 
         janelaSemanal =
           resultadoQuota.janela;
       }
 
             /*
-       * A quota semanal foi validada dentro
-       * da mesma transaÃ§Ã£o.
-       *
-       * Se a criaÃ§Ã£o ou execuÃ§Ã£o da ordem falhar,
-       * o consumo tambÃ©m serÃ¡ revertido.
+       * A ordem nasce sem consumir franquia. O marcador persistido em
+       * metadata garante que uma execução parcial conte apenas uma vez.
        */
       const [ordem] = await Order.create(
         [
@@ -1167,13 +1192,49 @@ router.post('/ordem', auth, async (req, res) => {
           continue;
         }
 
+        // A ordem que já estava no livro é validada primeiro. Se o titular
+        // Lite esgotou a franquia, ela é cancelada e o motor procura a próxima.
+        try {
+          await registrarPrimeiraExecucaoLite({
+            ordem: contraparte,
+            usuario: tipo === 'compra' ? seller : buyer,
+            temporada,
+            session,
+          });
+        } catch (quotaError) {
+          if (quotaError?.message === 'LIMITE_SEMANAL_ORDENS_ATINGIDO') {
+            contraparte.status = 'cancelada';
+            contraparte.canceladoEm = new Date();
+            await contraparte.save({ session });
+            continue;
+          }
+          throw quotaError;
+        }
+
+        const quotaDaOrdem = await registrarPrimeiraExecucaoLite({
+          ordem,
+          usuario,
+          temporada,
+          session,
+        });
+        if (quotaDaOrdem) quotaSemanal = quotaDaOrdem.quota;
+
         let newlyIssued = 0;
         let institutionResold = 0;
         if (sellerInstitutional) {
-          institutionResold = Math.min(Number(liquidityState.institutionHeldIssuedShares || 0), qtdExec);
-          newlyIssued = qtdExec - institutionResold;
+          const purpose = String(sellerOrder.metadata?.purpose || '');
+          if (purpose === 'ISSUANCE') {
+            newlyIssued = qtdExec;
+          } else if (purpose === 'RESALE') {
+            institutionResold = qtdExec;
+          } else {
+            // Compatibilidade com ordens institucionais criadas pela v1.0.0.
+            institutionResold = Math.min(Number(liquidityState.institutionHeldIssuedShares || 0), qtdExec);
+            newlyIssued = qtdExec - institutionResold;
+          }
           const remainingCapacity = Number(liquidityState.maxShares) - Number(liquidityState.issuedShares);
           if (newlyIssued > remainingCapacity || liquidityState.issuanceSuspended) continue;
+          if (institutionResold > Number(liquidityState.institutionHeldIssuedShares || 0)) continue;
           if (institutionResold > 0) {
             try { debitaVenda(seller, clubeLegacyId, institutionResold); } catch (_) { continue; }
           }
@@ -1431,15 +1492,16 @@ router.post('/ordem', auth, async (req, res) => {
       });
 
       if (isUnifiedLiquidity() && !ordem.isInstitutional) {
-        const institutionalSell = await Order.findOne({
+        const institutionalPrimarySell = await Order.findOne({
             clubeId: clube._id, tipo: 'venda', isInstitutional: true,
             status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
+            'metadata.purpose': 'ISSUANCE',
           }).session(session);
         const institutionalBuy = await Order.findOne({
             clubeId: clube._id, tipo: 'compra', isInstitutional: true,
             status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
           }).session(session);
-        if (!institutionalBuy || !institutionalSell || Number(institutionalSell.restante) <= 5) {
+        if (!institutionalBuy || !institutionalPrimarySell || Number(institutionalPrimarySell.restante) <= 5) {
           await publishOrdersForClub(clube, { session });
         }
       }
@@ -1790,6 +1852,24 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 
     await ordem.save();
 
+    const usuario = await User.findById(req.usuario.id);
+    const temporada = await RankingSeason.findOne({ status: 'ativa' }).sort({ iniciadaEm: -1, createdAt: -1 });
+    let franquiaOrdens = null;
+    if (usuario && temporada && obterPlanoEfetivo(usuario) === 'lite') {
+      const reconciliada = await reconciliarQuotaComOrdensExecutadas({
+        usuario,
+        temporada,
+        limiteLite: Number(
+          temporada.limiteOrdensLiteSemanal ??
+            temporada.limiteOrdensLitePorRodada ??
+            LIMITE_SEMANAL_LITE_PADRAO
+        ),
+      });
+      const limite = Number(reconciliada.quota.limiteOrdens || LIMITE_SEMANAL_LITE_PADRAO);
+      const utilizadas = Number(reconciliada.quota.ordensUtilizadas || 0);
+      franquiaOrdens = { limite, utilizadas, restantes: Math.max(0, limite - utilizadas) };
+    }
+
     return res.json({
 
       mensagem: 'Ordem cancelada com sucesso.',
@@ -1801,6 +1881,8 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
         status: ordem.status,
 
       },
+
+      franquiaOrdens,
 
     });
 
@@ -1815,10 +1897,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
 
 
 

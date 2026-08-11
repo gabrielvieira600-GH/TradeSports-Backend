@@ -4,7 +4,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "mongo:migrate": "node scripts/migrate-json-to-mongo.js"
+    "mongo:migrate": "node scripts/migrate-json-to-mongo.js",
+    "test:liquidity": "node --test tests/institutionalLiquidity.unit.test.js"
   },
   "keywords": [],
   "author": "",
