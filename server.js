@@ -67,6 +67,8 @@ const rankingsPrivadosRoutes = require("./routes/rankingsPrivados");
 const privateRankingsCompleteRoutes = require("./routes/privateRankingsComplete");
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
+const trophiesRoutes = require("./routes/trophies");
+const { iniciarAgendadorTrofeus } = require('./services/trophyService');
 
 let watchlistRoutes = null;
 try {
@@ -90,6 +92,7 @@ app.set("trust proxy", 1);
 connectDB()
   .then(async () => {
     console.log("Mongo inicializado.");
+    iniciarAgendadorTrofeus();
     if (isUnifiedLiquidity()) {
       try {
         const clubes = await Club.find({});
@@ -257,6 +260,7 @@ app.use("/rankings-privados", rankingsPrivadosRoutes);
 app.use("/private-rankings", privateRankingsCompleteRoutes);
 app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
+app.use("/trofeus", trophiesRoutes);
 
 if (watchlistRoutes) {
   app.use("/watchlist", watchlistRoutes);

@@ -30,6 +30,12 @@ const {
   deslocarMes,
   obterOuAtualizarSnapshot,
 } = require('../../utils/adminMetrics');
+const {
+  chavePeriodoAtual,
+  chavePeriodoAnterior,
+  concederTrofeusPeriodo,
+  processarFechamentosPeriodicos,
+} = require('../../services/trophyService');
 
 function round2(n) {
   return Math.round(
@@ -79,6 +85,75 @@ router.post('/dashboard/metricas/recalcular', async (req, res) => {
     return res.status(err.status || 500).json({
       erro: err.status ? err.message : 'Erro interno ao recalcular métricas.',
     });
+  }
+});
+
+router.post('/trofeus/processar-fechamentos', async (req, res) => {
+  try {
+    const resultado = await processarFechamentosPeriodicos(new Date());
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'TROPHY_PERIODIC_CLOSURES_PROCESSED',
+      userId: req.usuario?.id || null,
+      meta: resultado,
+    });
+    return res.json(resultado);
+  } catch (err) {
+    console.error('[ADMIN TROFEUS] Erro ao processar fechamentos:', err);
+    return res.status(500).json({
+      erro: 'Erro interno ao processar os fechamentos de troféus.',
+    });
+  }
+});
+
+router.post('/trofeus/fechar-periodo', async (req, res) => {
+  try {
+    const periodoTipo = String(req.body?.periodoTipo || '').trim().toLowerCase();
+    const periodoChave = String(req.body?.periodoChave || '').trim();
+
+    if (!['semana', 'mes'].includes(periodoTipo) || !periodoChave) {
+      return res.status(400).json({
+        erro: 'Informe periodoTipo (semana ou mes) e periodoChave.',
+      });
+    }
+
+    if (periodoChave === chavePeriodoAtual(periodoTipo)) {
+      return res.status(409).json({
+        erro: 'O período atual ainda está aberto e não pode ser premiado.',
+      });
+    }
+
+    const ultimoPeriodoCompleto = chavePeriodoAnterior(periodoTipo);
+    if (periodoChave !== ultimoPeriodoCompleto) {
+      return res.status(409).json({
+        erro: `Somente o último período completo (${ultimoPeriodoCompleto}) pode ser premiado.`,
+      });
+    }
+
+    const temporada = await RankingSeason.findOne({ status: 'ativa' }).sort({
+      iniciadaEm: -1,
+      createdAt: -1,
+    });
+    if (!temporada) {
+      return res.status(409).json({ erro: 'Não existe temporada ativa.' });
+    }
+
+    const resultado = await concederTrofeusPeriodo({
+      temporada,
+      periodoTipo,
+      periodoChave,
+      concedidoEm: new Date(),
+    });
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'TROPHY_PERIOD_MANUALLY_CLOSED',
+      userId: req.usuario?.id || null,
+      meta: { temporadaId: String(temporada._id), ...resultado },
+    });
+    return res.json(resultado);
+  } catch (err) {
+    console.error('[ADMIN TROFEUS] Erro ao fechar período:', err);
+    return res.status(500).json({ erro: 'Erro interno ao fechar período.' });
   }
 });
 
@@ -745,6 +820,13 @@ router.post(
         });
       }
 
+      const trofeusTemporada = await concederTrofeusPeriodo({
+        temporada,
+        periodoTipo: 'temporada',
+        periodoChave: temporada.codigo || String(temporada._id),
+        concedidoEm: new Date(),
+      });
+
       temporada.status =
         'encerrada';
 
@@ -774,6 +856,7 @@ router.post(
       return res.json({
         ok: true,
         temporada,
+        trofeusTemporada,
       });
     } catch (err) {
       console.error(

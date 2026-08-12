@@ -10,6 +10,7 @@ const PrivateRanking = require('../models/PrivateRanking');
 const PrivateRankingMember = require('../models/PrivateRankingMember');
 const PrivateRankingPost = require('../models/PrivateRankingPost');
 const { obterPlanoEfetivo, obterLimitesDoPlano } = require('../utils/planFeatures');
+const { concederTrofeusPeriodo } = require('../services/trophyService');
 
 const router = express.Router();
 router.use(auth);
@@ -232,8 +233,19 @@ router.post('/:id/encerrar', async (req, res) => {
     if (ctx.ranking.status !== 'ativo') return res.status(409).json({ erro: 'A competição não está ativa.' });
     const classificacao = await calcularClassificacao(ctx.ranking); const campeao = classificacao[0] || null;
     if (campeao) await PrivateRankingMember.updateOne({ rankingId: ctx.ranking._id, usuarioId: campeao.usuarioId }, { $push: { trofeus: { tipo: 'campeao', titulo: `Campeão — ${ctx.ranking.nome}`, temporadaId: ctx.ranking.temporadaId, concedidoEm: new Date() } } });
+    const temporada = await RankingSeason.findById(ctx.ranking.temporadaId);
+    const trofeusPodio = temporada
+      ? await concederTrofeusPeriodo({
+          temporada,
+          periodoTipo: 'temporada',
+          periodoChave: temporada.codigo || String(temporada._id),
+          apenasRankingPrivadoId: ctx.ranking._id,
+          incluirGlobais: false,
+          concedidoEm: new Date(),
+        })
+      : null;
     const ranking = await PrivateRanking.findByIdAndUpdate(ctx.ranking._id, { $set: { status: 'encerrado', encerradoEm: new Date(), dataFim: ctx.ranking.dataFim || new Date(), campeaoUsuarioId: campeao?.usuarioId || null, resultadoFinal: { classificacao, trofeu: 'Campeão' } } }, { new: true });
-    return res.json({ ok: true, ranking, campeao });
+    return res.json({ ok: true, ranking, campeao, trofeusPodio });
   } catch (err) { return res.status(500).json({ erro: 'Erro ao encerrar competição.' }); }
 });
 
