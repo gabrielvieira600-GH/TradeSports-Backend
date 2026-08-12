@@ -22,6 +22,10 @@ const {
   pendenciasAceite,
 } = require("../config/legalDocuments");
 const { performanceForPatrimony } = require('../utils/rankingPerformance');
+const {
+  portfoliosEqual,
+  projectPortfolioFromMovements,
+} = require('../services/portfolioProjection');
 
 const uploadFotoPerfil = multer({
   storage: multer.memoryStorage(),
@@ -644,118 +648,26 @@ router.get("/carteira", auth, async (req, res) => {
     const clubesPorLegacyId = new Map(
       clubesData.map((c) => [String(c.legacyId), c]),
     );
+    const clubesPorMongoId = new Map(
+      clubesData.map((c) => [String(c._id), Number(c.legacyId)]),
+    );
 
-    const carteiraMap = new Map();
-
-    // 1. Primeiro usa a carteira salva no usuÃ¡rio
-    const carteiraUsuario = Array.isArray(usuario.carteira)
-      ? usuario.carteira
-      : [];
-
-    for (const ativo of carteiraUsuario) {
-      const clubeId = Number(
-        ativo.clubeId ??
-          ativo.clubeLegacyId ??
-          ativo.idClube ??
-          ativo.clube?.id ??
-          ativo.clube?.legacyId,
-      );
-
-      if (!Number.isFinite(clubeId) || clubeId <= 0) continue;
-
-      const quantidade = Number(ativo.quantidade ?? ativo.cotas ?? 0);
-      if (!Number.isFinite(quantidade) || quantidade <= 0) continue;
-
-      const precoMedio = Number(ativo.precoMedio ?? ativo.valorUnitario ?? 0);
-      const totalInvestido = Number(
-        ativo.totalInvestido ?? quantidade * precoMedio,
-      );
-
-      carteiraMap.set(String(clubeId), {
-        clubeId,
-        nomeClube: ativo.nomeClube || ativo.clubeNome || ativo.nome || "",
-        quantidade,
-        precoMedio,
-        totalInvestido,
-      });
+    // A coleção de execuções é a fonte contábil da carteira. A projeção sempre
+    // começa vazia: nunca soma novamente uma execução à posição persistida.
+    const filtrosDoUsuario = [{ usuarioId: usuario._id }];
+    if (usuario.legacyId != null) {
+      filtrosDoUsuario.push({ usuarioLegacyId: usuario.legacyId });
     }
 
-    // 2. Depois reconstrÃ³i/valida com base no histÃ³rico de investimentos
-    const movimentos = await Investment.find({
-      $or: [
-        { usuarioId: req.usuario.id },
-        { usuarioLegacyId: usuario.legacyId ?? null },
-      ],
-    })
+    const movimentos = await Investment.find({ $or: filtrosDoUsuario })
       .sort({ data: 1, createdAt: 1 })
       .lean();
 
-    for (const mov of movimentos) {
-      const tipo = String(mov.tipo || "").toUpperCase();
+    const carteiraCanonica = projectPortfolioFromMovements(movimentos, {
+      clubLegacyIdByMongoId: clubesPorMongoId,
+    });
 
-      const clubeId = Number(
-        mov.clubeLegacyId ??
-          mov.clubeId?.legacyId ??
-          mov.clubeId ??
-          mov.clube?.id,
-      );
-
-      if (!Number.isFinite(clubeId) || clubeId <= 0) continue;
-
-      const quantidade = Number(mov.quantidade || 0);
-      if (!Number.isFinite(quantidade) || quantidade <= 0) continue;
-
-      const precoUnitario = Number(mov.precoUnitario ?? mov.valorUnitario ?? 0);
-
-      const total = Number(mov.totalPago ?? quantidade * precoUnitario);
-
-      const atual = carteiraMap.get(String(clubeId)) || {
-        clubeId,
-        nomeClube: mov.clubeNome || "",
-        quantidade: 0,
-        precoMedio: 0,
-        totalInvestido: 0,
-      };
-
-      if (tipo === "IPO" || tipo === "COMPRA" || tipo === "COMPRA_SECUNDARIO") {
-        const novaQtd = Number(atual.quantidade || 0) + quantidade;
-        const novoTotal =
-          Number(atual.totalInvestido || 0) + Number(total || 0);
-
-        carteiraMap.set(String(clubeId), {
-          ...atual,
-          nomeClube: atual.nomeClube || mov.clubeNome || "",
-          quantidade: novaQtd,
-          totalInvestido: Number(novoTotal.toFixed(2)),
-          precoMedio:
-            novaQtd > 0 ? Number((novoTotal / novaQtd).toFixed(2)) : 0,
-        });
-      }
-
-      if (
-        tipo === "VENDA" ||
-        tipo === "IPO_RETURN" ||
-        tipo === "LIQUIDACAO" ||
-        tipo === "LIQUIDAÃÃO"
-      ) {
-        const qtdAtual = Number(atual.quantidade || 0);
-        const novaQtd = Math.max(0, qtdAtual - quantidade);
-
-        if (novaQtd <= 0) {
-          carteiraMap.delete(String(clubeId));
-        } else {
-          const precoMedioAtual = Number(atual.precoMedio || 0);
-          carteiraMap.set(String(clubeId), {
-            ...atual,
-            quantidade: novaQtd,
-            totalInvestido: Number((novaQtd * precoMedioAtual).toFixed(2)),
-            precoMedio: precoMedioAtual,
-          });
-        }
-      }
-    }
-
-    const carteiraDetalhada = Array.from(carteiraMap.values())
+    const carteiraDetalhada = carteiraCanonica
       .filter((ativo) => Number(ativo.quantidade || 0) > 0)
       .map((ativo) => {
         const clube = clubesPorLegacyId.get(String(ativo.clubeId));
@@ -778,18 +690,17 @@ router.get("/carteira", auth, async (req, res) => {
         };
       });
 
-    // 3. Sincroniza user.carteira com a carteira reconstruÃ­da
-    await User.findByIdAndUpdate(req.usuario.id, {
-      $set: {
-        carteira: carteiraDetalhada.map((a) => ({
-          clubeId: Number(a.clubeId),
-          nomeClube: a.nomeClube || a.nome,
-          quantidade: Number(a.quantidade || 0),
-          precoMedio: Number(a.precoMedio || 0),
-          totalInvestido: Number(a.totalInvestido || 0),
-        })),
-      },
-    });
+    // Corrige uma única vez as posições infladas pela versão anterior. O filtro
+    // por updatedAt evita sobrescrever uma operação concorrente.
+    if (!portfoliosEqual(usuario.carteira, carteiraCanonica)) {
+      const filtroReparo = { _id: usuario._id };
+      if (usuario.updatedAt) filtroReparo.updatedAt = usuario.updatedAt;
+
+      await User.updateOne(
+        filtroReparo,
+        { $set: { carteira: carteiraCanonica } },
+      );
+    }
 
     return res.json(carteiraDetalhada);
   } catch (err) {
