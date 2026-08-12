@@ -1,11 +1,5 @@
 require('dotenv').config();
 
-if (!process.env.API_FOOTBALL_KEY) {
-
-  throw new Error('CHAVE API_FOOTBALL_KEY está indefinida! Verifique o .env e a execução do servidor.');
-
-}
-
 const express = require('express');
 
 const router = express.Router();
@@ -29,6 +23,8 @@ const { runTx, round2 } = require('../utils/tx');
 const audit = require('../utils/audit');
 
 const ledger = require('../utils/ledger');
+
+const { loadCachedTable } = require('../services/sportsTableCache');
 
 function normalizarNome(str) {
 
@@ -79,6 +75,24 @@ async function atualizarClubsComStandings(standingsApi) {
     clube.posicao = Number(item.rank);
 
     clube.escudo = item.team.logo || clube.escudo || '';
+
+    clube.metadata = {
+      ...(clube.metadata || {}),
+      ligaId: 'brasileirao-a',
+      ligaNome: 'Brasileirão Série A',
+      esporte: 'football',
+      providerTeamId: Number(item?.team?.id || 0) || null,
+      temporada: Number(process.env.API_FOOTBALL_SEASON || 2024),
+      ultimaAtualizacaoEsportiva: new Date().toISOString(),
+      classificacao: {
+        pontos: Number(item?.points || 0),
+        jogos: Number(item?.all?.played || 0),
+        vitorias: Number(item?.all?.win || 0),
+        empates: Number(item?.all?.draw || 0),
+        derrotas: Number(item?.all?.lose || 0),
+        saldoGols: Number(item?.goalsDiff || 0),
+      },
+    };
 
     await clube.save();
 
@@ -552,6 +566,12 @@ router.get('/tabela-brasileirao', async (req, res) => {
 
   try {
 
+    if (!process.env.API_FOOTBALL_KEY) {
+
+      throw new Error('API_FOOTBALL_KEY não configurada.');
+
+    }
+
     const response = await axios({
 
       method: 'get',
@@ -570,27 +590,17 @@ router.get('/tabela-brasileirao', async (req, res) => {
 
         league: 71,
 
-        season: 2024,
+        season: Number(process.env.API_FOOTBALL_SEASON || 2024),
 
       },
 
+      timeout: 15000,
+
     });
-      console.log(
-  '[API-FOOTBALL RESPOSTA COMPLETA]',
-  JSON.stringify(response.data, null, 2)
-);
     const standings = response?.data?.response?.[0]?.league?.standings?.[0];
 
     if (!Array.isArray(standings)) {
-
-      return res.status(502).json({
-
-        erro: 'Resposta inválida da API-Football.',
-
-        detalhes: response?.data || null,
-
-      });
-
+      throw new Error('Resposta inválida da API-Football.');
     }
 
     const rodadaApi = Math.max(
@@ -689,7 +699,39 @@ router.get('/tabela-brasileirao', async (req, res) => {
 
     });
 
-    return res.status(500).json({ erro: 'Erro ao carregar tabela.' });
+    try {
+
+      const data = await loadCachedTable(Club, 'brasileirao-a');
+
+      if (data.length) {
+
+        return res.json({
+
+          data,
+
+          rodada: null,
+
+          fonte: 'mongodb',
+
+          contingencia: true,
+
+          atualizadoEm: new Date().toISOString(),
+
+        });
+
+      }
+
+    } catch (cacheError) {
+
+      console.error('[CLASSIFICACAO:CACHE] erro:', cacheError);
+
+    }
+
+    return res.status(503).json({
+
+      erro: 'A fonte esportiva está indisponível e ainda não existe uma tabela salva.',
+
+    });
 
   }
 

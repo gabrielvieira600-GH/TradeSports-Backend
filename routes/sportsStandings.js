@@ -3,6 +3,7 @@ const axios = require('axios');
 const Club = require('../models/Club');
 const mercados = require('../config/sportsMarkets');
 const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
+const { loadCachedTable } = require('../services/sportsTableCache');
 
 const router = express.Router();
 
@@ -92,7 +93,12 @@ async function sincronizar(config, classificacao) {
       travadoAte: clube?.travadoAte || 0,
       metadata: { ...(clube?.metadata || {}), ligaId: config.id, ligaNome: config.nome, esporte: config.esporte,
         providerTeamId: item.apiId, temporada: config.season, totalParticipantes: config.participantes,
-        ultimaAtualizacaoEsportiva: new Date().toISOString() },
+        ultimaAtualizacaoEsportiva: new Date().toISOString(),
+        classificacao: {
+          pontos: item.pontos, jogos: item.jogos, vitorias: item.vitorias,
+          empates: item.empates, derrotas: item.derrotas, saldo: item.saldo,
+          grupo: item.grupo,
+        } },
     };
     clube = await Club.findOneAndUpdate({ legacyId }, { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
     resultado.push({
@@ -126,7 +132,27 @@ router.get('/tabelas/:mercadoId', async (req, res) => {
       participantes: config.participantes, atualizadoEm: new Date().toISOString() });
   } catch (erro) {
     console.error(`[TABELAS:${configBase.id}]`, erro?.response?.data || erro);
-    return res.status(502).json({ erro: `Não foi possível carregar a tabela de ${config.nome}.` });
+    try {
+      const data = await loadCachedTable(Club, configBase.id);
+      if (data.length) {
+        return res.json({
+          data,
+          mercado: configBase.id,
+          nome: configBase.nome,
+          temporada: configBase.season,
+          participantes: configBase.participantes,
+          atualizadoEm: new Date().toISOString(),
+          fonte: 'mongodb',
+          contingencia: true,
+        });
+      }
+    } catch (cacheError) {
+      console.error(`[TABELAS:${configBase.id}:CACHE]`, cacheError);
+    }
+
+    return res.status(503).json({
+      erro: `Não foi possível carregar a tabela de ${configBase.nome} e ainda não existe uma cópia salva.`,
+    });
   }
 });
 
