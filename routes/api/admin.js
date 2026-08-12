@@ -1,5 +1,6 @@
 // routes/api/admin.js (CAMADA 12 + SPLIT)
 const express = require('express');
+const mongoose = require('mongoose');
 
 const router = express.Router();
 
@@ -37,6 +38,12 @@ const {
   concederTrofeusPeriodo,
   processarFechamentosPeriodicos,
 } = require('../../services/trophyService');
+const {
+  collectPreview,
+  listBackups,
+  resetTestEnvironment,
+  restoreTestEnvironment,
+} = require('../../services/testEnvironmentReset');
 
 function round2(n) {
   return Math.round(
@@ -46,6 +53,104 @@ function round2(n) {
 
 router.use(auth);
 router.use(isAdmin);
+
+router.get('/test-environment/preview', async (req, res) => {
+  try {
+    const preview = await collectPreview(mongoose.connection.db);
+    return res.json({
+      ok: true,
+      preview,
+      resetBlocked: preview.pendingPayments > 0,
+    });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Erro ao montar prévia:', err);
+    return res.status(err.status || 500).json({
+      erro: err.message || 'Erro interno ao montar a prévia do reset.',
+      code: err.code || 'TEST_ENVIRONMENT_PREVIEW_FAILED',
+    });
+  }
+});
+
+router.get('/test-environment/backups', async (req, res) => {
+  try {
+    const backups = await listBackups(mongoose.connection.db, req.query.limit);
+    return res.json({ ok: true, backups });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Erro ao listar backups:', err);
+    return res.status(500).json({
+      erro: 'Erro interno ao listar os backups do ambiente de testes.',
+      code: 'TEST_ENVIRONMENT_BACKUPS_FAILED',
+    });
+  }
+});
+
+router.post('/test-environment/reset', async (req, res) => {
+  try {
+    const result = await resetTestEnvironment(mongoose.connection.db, {
+      confirmation: req.body?.confirmation,
+      actorUserId: req.usuario?.id || null,
+    });
+
+    const liquidity = {
+      required: isUnifiedLiquidity(),
+      reconciled: false,
+      clubs: 0,
+      orders: 0,
+      warning: null,
+    };
+
+    if (liquidity.required) {
+      try {
+        const clubs = await Club.find({});
+        for (const club of clubs) {
+          const published = await publishOrdersForClub(club);
+          liquidity.orders += Number(published?.orders?.length || 0);
+        }
+        liquidity.reconciled = true;
+        liquidity.clubs = clubs.length;
+      } catch (error) {
+        liquidity.warning =
+          'O reset foi concluído, mas a liquidez institucional precisa ser reconciliada reiniciando o backend.';
+        console.error('[ADMIN TEST ENV] Falha ao reconciliar liquidez:', error);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      mensagem: 'Ambiente de testes resetado e verificado.',
+      ...result,
+      liquidity,
+    });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Reset não concluído:', err);
+    return res.status(err.status || 500).json({
+      erro: err.message || 'Erro interno ao resetar o ambiente de testes.',
+      code: err.code || 'TEST_ENVIRONMENT_RESET_FAILED',
+    });
+  }
+});
+
+router.post('/test-environment/restore', async (req, res) => {
+  try {
+    const result = await restoreTestEnvironment(mongoose.connection.db, {
+      backupId: req.body?.backupId,
+      confirmation: req.body?.confirmation,
+      actorUserId: req.usuario?.id || null,
+    });
+
+    return res.json({
+      ok: true,
+      mensagem: 'Backup restaurado com sucesso.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Restauração não concluída:', err);
+    return res.status(err.status || 500).json({
+      erro: err.message || 'Erro interno ao restaurar o ambiente de testes.',
+      code: err.code || 'TEST_ENVIRONMENT_RESTORE_FAILED',
+    });
+  }
+});
 
 router.get('/dashboard/metricas', async (req, res) => {
   try {
