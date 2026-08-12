@@ -1,5 +1,6 @@
 const Trophy = require('../models/Trophy');
 const TrophyAwardState = require('../models/TrophyAwardState');
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 const RankingSeason = require('../models/RankingSeason');
 const PrivateRanking = require('../models/PrivateRanking');
 const PrivateRankingMember = require('../models/PrivateRankingMember');
@@ -167,11 +168,13 @@ function calcularPatrimonio(usuario, precosPorClube) {
   }
 
   const patrimonio = round2(saldo + valorPosicoes);
-  const base = Number(
-    usuario.patrimonioInicialTemporada || usuario.capitalInicial || 1000
+  const performance = performanceForPatrimony(
+    usuario,
+    patrimonio,
+    usuario.temporadaRanking || 'global'
   );
-  const resultado = round2(patrimonio - base);
-  const rentabilidade = base > 0 ? round2((resultado / base) * 100) : 0;
+  const resultado = performance.resultado;
+  const rentabilidade = performance.rentabilidade;
 
   return {
     usuarioId: String(usuario._id),
@@ -181,15 +184,13 @@ function calcularPatrimonio(usuario, precosPorClube) {
     patrimonio,
     resultado,
     rentabilidade,
+    aportesExternosTotal: performance.aportesExternosTotal,
   };
 }
 
-function ordenarPorCriterio(criterio = 'rentabilidade') {
+function ordenarPorCriterio() {
   return (a, b) =>
-    Number(b[criterio] || 0) - Number(a[criterio] || 0) ||
     b.rentabilidade - a.rentabilidade ||
-    b.resultado - a.resultado ||
-    b.patrimonio - a.patrimonio ||
     String(a.nomeUsuario).localeCompare(String(b.nomeUsuario), 'pt-BR');
 }
 
@@ -197,7 +198,7 @@ async function carregarBaseRanking() {
   const [usuarios, clubes] = await Promise.all([
     User.find({ rankingAtivo: { $ne: false } })
       .select(
-        '_id nome nomeUsuario saldo capitalInicial carteira patrimonioInicialTemporada plano premiumAtivo premiumInicio premiumFim'
+        '_id nome nomeUsuario saldo capitalInicial carteira patrimonioInicialTemporada temporadaRanking rankingPerformance plano premiumAtivo premiumInicio premiumFim'
       )
       .lean(),
     Club.find({}).select('legacyId precoAtual preco').lean(),
@@ -307,7 +308,7 @@ async function concederPodio({
             rentabilidade: Number.isFinite(Number(item.rentabilidade))
               ? round2(item.rentabilidade)
               : null,
-            criterio: rankingPrivado?.criterioClassificacao || 'rentabilidade',
+            criterio: 'rentabilidade',
           },
           concedidoEm,
         },
@@ -344,7 +345,7 @@ async function classificacaoPrivada(ranking, base) {
   const classificacao = membros
     .map((membro) => base.porUsuarioId.get(String(membro.usuarioId)))
     .filter(Boolean)
-    .sort(ordenarPorCriterio(ranking.criterioClassificacao || 'rentabilidade'));
+    .sort(ordenarPorCriterio());
 
   return classificacao;
 }

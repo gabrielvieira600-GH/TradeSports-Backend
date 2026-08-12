@@ -22,6 +22,7 @@ const Liquidacao = require('../../models/Liquidacao');
 const RankingSeason = require('../../models/RankingSeason');
 const RankingRound = require('../../models/RankingRound');
 const InstitutionalLiquidity = require('../../models/InstitutionalLiquidity');
+const RecoveryRecharge = require('../../models/RecoveryRecharge');
 const { isUnifiedLiquidity } = require('../../config/marketMode');
 const { cancelInstitutionalOrders, publishOrdersForClub } = require('../../services/institutionalLiquidity');
 const {
@@ -177,6 +178,9 @@ router.get('/status', async (req, res) => {
   const liquidacoes =
     await Liquidacao.countDocuments();
 
+  const recargasRecuperacao =
+    await RecoveryRecharge.countDocuments({ status: 'CONFIRMADA' });
+
   const lastAudit = await audit.readRecent(20);
 
   return res.json({
@@ -190,6 +194,7 @@ router.get('/status', async (req, res) => {
       historicoPosse,
       dividendos,
       liquidacoes,
+      recargasRecuperacao,
     },
 
     lastAudit,

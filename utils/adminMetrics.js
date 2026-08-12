@@ -4,6 +4,7 @@ const Dividendo = require('../models/dividendos');
 const RankingRound = require('../models/RankingRound');
 const FinancialTransaction = require('../models/FinancialTransaction');
 const AdminMetricSnapshot = require('../models/AdminMetricSnapshot');
+const RecoveryRecharge = require('../models/RecoveryRecharge');
 const { LedgerEntry } = require('./ledger');
 
 const SAO_PAULO_OFFSET = '-03:00';
@@ -87,6 +88,8 @@ async function calcularPeriodo(inicio, fim, { incluirDetalhes = true } = {}) {
     novosUsuarios,
     emailsVerificados,
     rodadas,
+    recargasConfirmadas,
+    recargasReembolsadas,
   ] = await Promise.all([
     Order.find(filtroCriacao)
       .select('usuarioId clubeId clubeLegacyId status criadoEm')
@@ -114,6 +117,14 @@ async function calcularPeriodo(inicio, fim, { incluirDetalhes = true } = {}) {
     })
       .select('_id numero nome abertaEm encerradaEm')
       .lean(),
+    RecoveryRecharge.find({
+      status: 'CONFIRMADA',
+      confirmadaEm: { $gte: inicio, $lt: fim },
+    }).select('usuarioId quantidadeTs valorReaisCentavos confirmadaEm').lean(),
+    RecoveryRecharge.find({
+      status: 'REEMBOLSADA',
+      reembolsadaEm: { $gte: inicio, $lt: fim },
+    }).select('valorReaisCentavos reembolsadaEm').lean(),
   ]);
 
   const usuariosComOrdens = new Set(ordens.map((o) => String(o.usuarioId)));
@@ -157,6 +168,19 @@ async function calcularPeriodo(inicio, fim, { incluirDetalhes = true } = {}) {
     0
   );
   const taxasNegociacao = taxasMaker + taxasTaker;
+  const receitaRecargas = recargasConfirmadas.reduce(
+    (acc, item) => acc + Number(item.valorReaisCentavos || 0) / 100,
+    0
+  );
+  const tsEmitidos = recargasConfirmadas.reduce(
+    (acc, item) => acc + Number(item.quantidadeTs || 0),
+    0
+  );
+  const usuariosRecarga = new Set(recargasConfirmadas.map((item) => String(item.usuarioId))).size;
+  const valorReembolsado = recargasReembolsadas.reduce(
+    (acc, item) => acc + Number(item.valorReaisCentavos || 0) / 100,
+    0
+  );
 
   const ordensPorRodada = rodadas.map((rodada) => {
     const rodadaInicio = new Date(Math.max(inicio, rodada.abertaEm || inicio));
@@ -199,6 +223,17 @@ async function calcularPeriodo(inicio, fim, { incluirDetalhes = true } = {}) {
       taxasTaker: round2(taxasTaker),
       taxasFinanceiras: round2(taxasFinanceiras),
       taxasTotais: round2(taxasNegociacao + taxasFinanceiras),
+      recargasRecuperacao: round2(receitaRecargas),
+      receitaTotalComRecargas: round2(taxasNegociacao + taxasFinanceiras + receitaRecargas),
+    },
+    recargasRecuperacao: {
+      confirmadas: recargasConfirmadas.length,
+      usuarios: usuariosRecarga,
+      tsEmitidos: round2(tsEmitidos),
+      receita: round2(receitaRecargas),
+      ticketMedio: round2(receitaRecargas / Math.max(recargasConfirmadas.length, 1)),
+      reembolsadas: recargasReembolsadas.length,
+      valorReembolsado: round2(valorReembolsado),
     },
     dividendos: {
       disparos: dividendos.length,

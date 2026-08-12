@@ -20,6 +20,7 @@ const {
 const {
   obterPlanoEfetivo,
 } = require('../utils/planFeatures');
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 
 function round2(valor) {
   return Number(Number(valor || 0).toFixed(2));
@@ -165,17 +166,13 @@ function calcularPatrimonioUsuario(
         )
   );
 
-  const resultado = round2(
-    patrimonio - patrimonioInicial
+  const performance = performanceForPatrimony(
+    usuario,
+    patrimonio,
+    usuario?.temporadaRanking || 'global'
   );
-
-  const rentabilidade =
-    patrimonioInicial > 0
-      ? round2(
-          (resultado / patrimonioInicial) *
-            100
-        )
-      : 0;
+  const resultado = performance.resultado;
+  const rentabilidade = performance.rentabilidade;
 
   return {
     saldo,
@@ -184,6 +181,7 @@ function calcularPatrimonioUsuario(
     patrimonioInicial,
     resultado,
     rentabilidade,
+    aportesExternosTotal: performance.aportesExternosTotal,
     totalInvestido,
     resultadoPosicoes: round2(
       valorPosicoes - totalInvestido
@@ -210,26 +208,6 @@ function ordenarRanking(a, b) {
     return (
       b.metricas.rentabilidade -
       a.metricas.rentabilidade
-    );
-  }
-
-  if (
-    b.metricas.resultado !==
-    a.metricas.resultado
-  ) {
-    return (
-      b.metricas.resultado -
-      a.metricas.resultado
-    );
-  }
-
-  if (
-    b.metricas.patrimonio !==
-    a.metricas.patrimonio
-  ) {
-    return (
-      b.metricas.patrimonio -
-      a.metricas.patrimonio
     );
   }
 
@@ -476,6 +454,7 @@ router.get('/', auth, async (req, res) => {
           'patrimonioInicialTemporada',
           'saldoInicialTemporada',
           'inicioTemporadaRanking',
+          'rankingPerformance',
           'rankingAtivo',
           'plano',
           'premiumAtivo',
@@ -558,6 +537,7 @@ router.get('/', auth, async (req, res) => {
             'carteira',
             'temporadaRanking',
             'patrimonioInicialTemporada',
+            'rankingPerformance',
             'plano',
             'premiumAtivo',
             'premiumInicio',

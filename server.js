@@ -55,8 +55,6 @@ const usuarioRoutes = require("./routes/usuario");
 const ordemRoutes = require("./routes/ordens");
 const classificacaoRoutes = require("./routes/classificacao");
 const sportsStandingsRoutes = require("./routes/sportsStandings");
-const depositoRoutes = require("./routes/deposito");
-const saqueRoutes = require("./routes/saque");
 const temporadaRoutes = require("./routes/temporada");
 const dashboardRoutes = require("./routes/dashboard");
 const performanceRoutes = require("./routes/performance");
@@ -68,6 +66,10 @@ const privateRankingsCompleteRoutes = require("./routes/privateRankingsComplete"
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
 const trophiesRoutes = require("./routes/trophies");
+const {
+  router: recoveryRechargeRoutes,
+  stripeWebhook: recoveryRechargeStripeWebhook,
+} = require('./routes/recoveryRecharge');
 const { iniciarAgendadorTrofeus } = require('./services/trophyService');
 
 let watchlistRoutes = null;
@@ -179,6 +181,13 @@ try {
   );
 }
 
+// A assinatura da Stripe exige o corpo bruto, antes do parser JSON global.
+app.post(
+  '/recarga-recuperacao/webhook/stripe',
+  express.raw({ type: 'application/json', limit: '250kb' }),
+  recoveryRechargeStripeWebhook
+);
+
 app.use(express.json({ limit: "250kb" }));
 
 app.use((req, res, next) => {
@@ -248,8 +257,14 @@ app.use("/investimentos", investimentoRoutes);
 app.use("/mercado", mercadoRoutes);
 app.use("/ordens", ordemRoutes);
 app.use("/usuario", usuarioRoutes);
-app.use("/deposito", depositoRoutes);
-app.use("/saque", saqueRoutes);
+app.use("/deposito", (_req, res) => res.status(410).json({
+  erro: "Depósitos comuns não estão disponíveis no ambiente simulado.",
+  codigo: "DEPOSITO_DESCONTINUADO",
+}));
+app.use("/saque", (_req, res) => res.status(410).json({
+  erro: "T$ não pode ser sacado, transferido ou convertido em reais.",
+  codigo: "T$_NAO_SACAVEL",
+}));
 app.use("/temporada", temporadaRoutes);
 app.use("/dashboard", dashboardRoutes);
 app.use("/performance", performanceRoutes);
@@ -261,6 +276,7 @@ app.use("/private-rankings", privateRankingsCompleteRoutes);
 app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
 app.use("/trofeus", trophiesRoutes);
+app.use('/recarga-recuperacao', recoveryRechargeRoutes);
 
 if (watchlistRoutes) {
   app.use("/watchlist", watchlistRoutes);

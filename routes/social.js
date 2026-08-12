@@ -14,6 +14,7 @@ const PerformanceSnapshot = require('../models/PerformanceSnapshot');
 const {
   obterPlanoEfetivo,
 } = require('../utils/planFeatures');
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 
 function criarIdNotificacao(prefix = 'notif') {
   return `${prefix}_${Date.now()}_${Math.random()
@@ -315,16 +316,13 @@ function calcularMercadoUsuario(usuario, precosPorClube) {
       ? capitalInicial
       : 1000;
 
-  const resultadoGeral = round2(
-    patrimonio - baseRentabilidade
+  const performance = performanceForPatrimony(
+    usuario,
+    patrimonio,
+    usuario.temporadaRanking || 'global'
   );
-
-  const rentabilidadeGeral =
-    baseRentabilidade > 0
-      ? round2(
-          (resultadoGeral / baseRentabilidade) * 100
-        )
-      : 0;
+  const resultadoGeral = performance.resultado;
+  const rentabilidadeGeral = performance.rentabilidade;
 
   posicoes.sort((a, b) => {
     if (b.valorAtual !== a.valorAtual) {
@@ -347,6 +345,7 @@ function calcularMercadoUsuario(usuario, precosPorClube) {
 
     resultado: resultadoGeral,
     rentabilidade: rentabilidadeGeral,
+    aportesExternosTotal: performance.aportesExternosTotal,
 
     quantidadePosicoes,
     quantidadeCotas: Number(
@@ -414,10 +413,6 @@ function ordenarRankingPublico(a, b) {
     return b.mercado.rentabilidade - a.mercado.rentabilidade;
   }
 
-  if (b.mercado.patrimonio !== a.mercado.patrimonio) {
-    return b.mercado.patrimonio - a.mercado.patrimonio;
-  }
-
   return String(a.nomePublico || '').localeCompare(
     String(b.nomePublico || ''),
     'pt-BR'
@@ -443,6 +438,8 @@ async function calcularPosicoesRankingPerfil({
         'saldo',
         'capitalInicial',
         'patrimonioInicialTemporada',
+        'temporadaRanking',
+        'rankingPerformance',
         'carteira',
         'createdAt',
       ].join(' ')
@@ -860,6 +857,8 @@ router.get('/usuarios', async (req, res) => {
           'saldo',
           'capitalInicial',
           'patrimonioInicialTemporada',
+          'temporadaRanking',
+          'rankingPerformance',
           'carteira',
           'carteiraPublica',
           'fotoPerfilUrl',
@@ -1028,6 +1027,7 @@ router.get('/usuarios/:id', async (req, res) => {
           'patrimonioInicialTemporada',
           'temporadaRanking',
           'inicioTemporadaRanking',
+          'rankingPerformance',
           'carteira',
           'carteiraPublica',
           'fotoPerfilUrl',
@@ -1055,7 +1055,7 @@ router.get('/usuarios/:id', async (req, res) => {
           .lean(),
 
         User.findById(req.usuario.id)
-          .select('_id plano premiumAtivo premiumInicio premiumFim saldo capitalInicial patrimonioInicialTemporada carteira')
+          .select('_id plano premiumAtivo premiumInicio premiumFim saldo capitalInicial patrimonioInicialTemporada temporadaRanking rankingPerformance carteira')
           .lean(),
       ]);
 

@@ -17,6 +17,7 @@ const {
   obterPlanoEfetivo,
   obterLimitesDoPlano,
 } = require('../utils/planFeatures');
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 
 function gerarCodigoConvite() {
   return crypto
@@ -91,6 +92,7 @@ async function calcularRankingPrivado({ rankingId }) {
           'patrimonioInicialTemporada',
           'saldoInicialTemporada',
           'inicioTemporadaRanking',
+          'rankingPerformance',
           'rankingAtivo',
           'plano',
           'premiumAtivo',
@@ -188,16 +190,13 @@ async function calcularRankingPrivado({ rankingId }) {
         ? patrimonioInicialTemporadaRaw
         : Number(usuario.capitalInicial ?? 1000);
 
-    const resultado = round2(
-      patrimonio - patrimonioInicialTemporada
+    const performance = performanceForPatrimony(
+      usuario,
+      patrimonio,
+      usuario.temporadaRanking || 'global'
     );
-
-    const rentabilidade =
-      patrimonioInicialTemporada > 0
-        ? round2(
-            (resultado / patrimonioInicialTemporada) * 100
-          )
-        : 0;
+    const resultado = performance.resultado;
+    const rentabilidade = performance.rentabilidade;
 
     const membro = membrosPorUsuarioId.get(
       String(usuario._id)
@@ -227,6 +226,7 @@ async function calcularRankingPrivado({ rankingId }) {
       patrimonio,
       resultado,
       rentabilidade,
+      aportesExternosTotal: performance.aportesExternosTotal,
       quantidadePosicoes,
       quantidadeUnidades: Number(
         quantidadeUnidades.toFixed(4)
@@ -240,14 +240,6 @@ async function calcularRankingPrivado({ rankingId }) {
   ranking.sort((a, b) => {
     if (b.rentabilidade !== a.rentabilidade) {
       return b.rentabilidade - a.rentabilidade;
-    }
-
-    if (b.resultado !== a.resultado) {
-      return b.resultado - a.resultado;
-    }
-
-    if (b.patrimonio !== a.patrimonio) {
-      return b.patrimonio - a.patrimonio;
     }
 
     return String(a.nomeUsuario).localeCompare(

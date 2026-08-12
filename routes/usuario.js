@@ -21,6 +21,7 @@ const {
   documentoLegal,
   pendenciasAceite,
 } = require("../config/legalDocuments");
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 
 const uploadFotoPerfil = multer({
   storage: multer.memoryStorage(),
@@ -256,6 +257,7 @@ router.get("/ranking", auth, async (req, res) => {
             "patrimonioInicialTemporada",
             "saldoInicialTemporada",
             "inicioTemporadaRanking",
+            "rankingPerformance",
             "rankingAtivo",
             "plano",
             "premiumAtivo",
@@ -334,14 +336,13 @@ router.get("/ranking", auth, async (req, res) => {
         ? patrimonioInicialTemporadaRaw
         : Number(usuario.capitalInicial ?? 1000);
 
-      const resultado = Number(
-        (patrimonio - patrimonioInicialTemporada).toFixed(2),
+      const performance = performanceForPatrimony(
+        usuario,
+        patrimonio,
+        usuario.temporadaRanking || 'global',
       );
-
-      const rentabilidade =
-        patrimonioInicialTemporada > 0
-          ? Number(((resultado / patrimonioInicialTemporada) * 100).toFixed(2))
-          : 0;
+      const resultado = performance.resultado;
+      const rentabilidade = performance.rentabilidade;
 
       const planoEfetivo = obterPlanoEfetivo(usuario);
 
@@ -389,6 +390,8 @@ router.get("/ranking", auth, async (req, res) => {
 
         rentabilidade,
 
+        aportesExternosTotal: performance.aportesExternosTotal,
+
         quantidadePosicoes,
 
         quantidadeUnidades: Number(quantidadeUnidades.toFixed(4)),
@@ -400,14 +403,6 @@ router.get("/ranking", auth, async (req, res) => {
     function ordenarRanking(a, b) {
       if (b.rentabilidade !== a.rentabilidade) {
         return b.rentabilidade - a.rentabilidade;
-      }
-
-      if (b.resultado !== a.resultado) {
-        return b.resultado - a.resultado;
-      }
-
-      if (b.patrimonio !== a.patrimonio) {
-        return b.patrimonio - a.patrimonio;
       }
 
       return String(a.nomeUsuario).localeCompare(
@@ -816,6 +811,13 @@ router.get("/saldo", auth, async (req, res) => {
     console.error("Erro ao buscar saldo do usuÃ¡rio:", err);
     return res.status(500).json({ erro: "Erro interno ao buscar saldo" });
   }
+});
+
+router.all(["/deposito", "/saque"], auth, (_req, res) => {
+  return res.status(410).json({
+    erro: "Depósitos e saques foram descontinuados no ambiente simulado. Use apenas a Recarga de Recuperação, que não possui saque ou conversão para reais.",
+    codigo: "SALDO_SIMULADO_NAO_CONVERSIVEL",
+  });
 });
 
 router.post("/deposito", auth, async (req, res) => {

@@ -135,6 +135,15 @@ async function iniciarTemporada() {
       usuario.inicioTemporadaRanking =
         agora;
 
+      usuario.rankingPerformance = {
+        versao: 1,
+        temporadaChave: TEMPORADA,
+        fatorFechado: 1,
+        patrimonioReferencia: patrimonioInicial,
+        aportesExternosTotal: 0,
+        ultimaMovimentacaoExternaEm: null,
+      };
+
       usuario.rankingAtivo = true;
 
       await usuario.save();

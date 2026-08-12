@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { performanceForPatrimony } = require('./rankingPerformance');
 const Club = require('../models/Club');
 const SocialFeedEvent = require('../models/SocialFeedEvent');
 
@@ -109,6 +110,8 @@ async function verificarMilestoneRentabilidadeUsuario(
           'temporadaRanking',
           'patrimonioInicialTemporada',
           'rankingAtivo',
+          'temporadaRanking',
+          'rankingPerformance',
         ].join(' ')
       )
       .lean();
@@ -150,11 +153,13 @@ async function verificarMilestoneRentabilidadeUsuario(
       return null;
     }
 
-    const resultado = patrimonio - patrimonioInicial;
-
-    const rentabilidade = round2(
-      (resultado / patrimonioInicial) * 100
+    const performance = performanceForPatrimony(
+      usuario,
+      patrimonio,
+      usuario.temporadaRanking || 'global'
     );
+    const resultado = performance.resultado;
+    const rentabilidade = performance.rentabilidade;
 
     if (rentabilidade <= 0) {
       return null;

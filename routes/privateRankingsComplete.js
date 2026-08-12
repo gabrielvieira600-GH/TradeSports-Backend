@@ -11,6 +11,7 @@ const PrivateRankingMember = require('../models/PrivateRankingMember');
 const PrivateRankingPost = require('../models/PrivateRankingPost');
 const { obterPlanoEfetivo, obterLimitesDoPlano } = require('../utils/planFeatures');
 const { concederTrofeusPeriodo } = require('../services/trophyService');
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 
 const router = express.Router();
 router.use(auth);
@@ -49,7 +50,7 @@ async function calcularClassificacao(ranking) {
   const ids = membros.map((m) => m.usuarioId);
   if (!ids.length) return [];
   const [usuarios, clubes] = await Promise.all([
-    User.find({ _id: { $in: ids }, rankingAtivo: { $ne: false } }).select('_id nome nomeUsuario saldo capitalInicial carteira patrimonioInicialTemporada plano premiumAtivo premiumInicio premiumFim').lean(),
+    User.find({ _id: { $in: ids }, rankingAtivo: { $ne: false } }).select('_id nome nomeUsuario saldo capitalInicial carteira patrimonioInicialTemporada temporadaRanking rankingPerformance plano premiumAtivo premiumInicio premiumFim').lean(),
     Club.find({}).select('legacyId precoAtual preco').lean(),
   ]);
   const precos = new Map(clubes.map((c) => [String(c.legacyId), Number(c.precoAtual ?? c.preco ?? 0)]));
@@ -63,16 +64,20 @@ async function calcularClassificacao(ranking) {
       return acc + (Number.isFinite(qtd) && qtd > 0 ? qtd * preco : 0);
     }, 0);
     const patrimonio = round2(saldo + posicoes);
-    const base = Number(u.patrimonioInicialTemporada || u.capitalInicial || 1000);
-    const resultado = round2(patrimonio - base);
+    const performance = performanceForPatrimony(
+      u,
+      patrimonio,
+      u.temporadaRanking || 'global'
+    );
+    const resultado = performance.resultado;
     return {
       usuarioId: String(u._id), nome: u.nome || '', nomeUsuario: u.nomeUsuario || '',
       plano: obterPlanoEfetivo(u), papel: papel.get(String(u._id)), patrimonio,
-      resultado, rentabilidade: base > 0 ? round2((resultado / base) * 100) : 0,
+      resultado, rentabilidade: performance.rentabilidade,
+      aportesExternosTotal: performance.aportesExternosTotal,
     };
   });
-  const criterio = ranking.criterioClassificacao || 'rentabilidade';
-  itens.sort((a, b) => b[criterio] - a[criterio] || b.patrimonio - a.patrimonio || a.nomeUsuario.localeCompare(b.nomeUsuario, 'pt-BR'));
+  itens.sort((a, b) => b.rentabilidade - a.rentabilidade || a.nomeUsuario.localeCompare(b.nomeUsuario, 'pt-BR'));
   return itens.map((item, index) => ({ posicao: index + 1, ...item }));
 }
 
@@ -122,7 +127,7 @@ router.post('/', requirePremium, async (req, res) => {
       nome: String(b.nome).trim(), descricao: String(b.descricao || '').trim(), imagemUrl: String(b.imagemUrl || '').trim(),
       criadorId: req.usuario.id, temporadaId: temporada._id, codigoConvite: await codigoUnico(), status: 'ativo',
       visibilidade: b.visibilidade === 'publico' ? 'publico' : 'convite', aprovacaoManual: Boolean(b.aprovacaoManual),
-      criterioClassificacao: ['rentabilidade', 'patrimonio', 'resultado'].includes(b.criterioClassificacao) ? b.criterioClassificacao : 'rentabilidade',
+      criterioClassificacao: 'rentabilidade',
       regras: String(b.regras || '').trim(), dataInicio: inicio, dataFim: fim,
       maxParticipantes: Math.min(500, Math.max(2, Number(b.maxParticipantes || 50))), totalParticipantes: 1,
     });
@@ -174,7 +179,7 @@ router.patch('/:id', async (req, res) => {
     const b = req.body || {}; const set = {};
     ['nome', 'descricao', 'imagemUrl', 'regras'].forEach((k) => { if (b[k] !== undefined) set[k] = String(b[k] || '').trim(); });
     if (b.visibilidade !== undefined) set.visibilidade = b.visibilidade === 'publico' ? 'publico' : 'convite';
-    if (b.criterioClassificacao !== undefined && ['rentabilidade', 'patrimonio', 'resultado'].includes(b.criterioClassificacao)) set.criterioClassificacao = b.criterioClassificacao;
+    if (b.criterioClassificacao !== undefined) set.criterioClassificacao = 'rentabilidade';
     if (b.aprovacaoManual !== undefined) set.aprovacaoManual = Boolean(b.aprovacaoManual);
     if (b.maxParticipantes !== undefined) set.maxParticipantes = Math.min(500, Math.max(ctx.ranking.totalParticipantes, Number(b.maxParticipantes)));
     const ranking = await PrivateRanking.findByIdAndUpdate(ctx.ranking._id, { $set: set }, { new: true, runValidators: true });

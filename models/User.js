@@ -111,6 +111,15 @@ inicioTemporadaRanking: {
   default: null,
 },
 
+rankingPerformance: {
+  versao: { type: Number, default: 1 },
+  temporadaChave: { type: String, default: null, index: true },
+  fatorFechado: { type: Number, default: 1 },
+  patrimonioReferencia: { type: Number, default: 1000 },
+  aportesExternosTotal: { type: Number, default: 0 },
+  ultimaMovimentacaoExternaEm: { type: Date, default: null },
+},
+
 rankingAtivo: {
   type: Boolean,
   default: true,
@@ -319,4 +328,3 @@ UserSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
-

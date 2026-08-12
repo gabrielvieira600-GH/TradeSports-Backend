@@ -8,6 +8,7 @@ const Order = require('../models/Order');
 const Dividendo = require('../models/dividendos');
 const PerformanceSnapshot = require('../models/PerformanceSnapshot');
 const { obterPlanoEfetivo } = require('../utils/planFeatures');
+const { performanceForPatrimony } = require('../utils/rankingPerformance');
 
 const router = express.Router();
 
@@ -104,6 +105,11 @@ function calcularCarteira(usuario, clubes) {
   const patrimonioInicial = round2(
     usuario.patrimonioInicialTemporada || usuario.capitalInicial || 1000
   );
+  const performance = performanceForPatrimony(
+    usuario,
+    patrimonio,
+    usuario.temporadaRanking || 'global'
+  );
 
   return {
     saldo,
@@ -111,11 +117,9 @@ function calcularCarteira(usuario, clubes) {
     totalInvestido,
     patrimonio,
     patrimonioInicial,
-    resultadoAcumulado: round2(patrimonio - patrimonioInicial),
-    rentabilidadeAcumulada:
-      patrimonioInicial > 0
-        ? round2(((patrimonio - patrimonioInicial) / patrimonioInicial) * 100)
-        : 0,
+    resultadoAcumulado: performance.resultado,
+    rentabilidadeAcumulada: performance.rentabilidade,
+    aportesExternosTotal: performance.aportesExternosTotal,
     posicoes,
   };
 }
@@ -227,7 +231,7 @@ async function registrarSnapshot(usuario, carteira) {
 async function calcularRanking(usuarioId, clubes) {
   const mapa = new Map(clubes.map((clube) => [Number(clube.legacyId), clube]));
   const usuarios = await User.find({ rankingAtivo: { $ne: false } })
-    .select('saldo carteira capitalInicial patrimonioInicialTemporada plano premiumAtivo premiumInicio premiumFim')
+    .select('saldo carteira capitalInicial patrimonioInicialTemporada temporadaRanking rankingPerformance plano premiumAtivo premiumInicio premiumFim')
     .lean();
   const lista = usuarios
     .map((usuario) => {
@@ -237,17 +241,19 @@ async function calcularRanking(usuarioId, clubes) {
         return soma + Number(ativo.quantidade || 0) * preco;
       }, 0);
       const patrimonio = round2(Number(usuario.saldo || 0) + valorPosicoes);
-      const base = Number(
-        usuario.patrimonioInicialTemporada || usuario.capitalInicial || 1000
+      const performance = performanceForPatrimony(
+        usuario,
+        patrimonio,
+        usuario.temporadaRanking || 'global'
       );
       return {
         id: String(usuario._id),
         plano: obterPlanoEfetivo(usuario),
         patrimonio,
-        rentabilidade: base > 0 ? round2(((patrimonio - base) / base) * 100) : 0,
+        rentabilidade: performance.rentabilidade,
       };
     })
-    .sort((a, b) => b.rentabilidade - a.rentabilidade || b.patrimonio - a.patrimonio);
+    .sort((a, b) => b.rentabilidade - a.rentabilidade || a.id.localeCompare(b.id));
 
   const geral = lista.findIndex((item) => item.id === String(usuarioId));
   const atual = lista[geral];
