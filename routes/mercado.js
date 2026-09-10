@@ -2,6 +2,7 @@
 const express = require('express');
 
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const router = express.Router();
 
@@ -22,6 +23,7 @@ const Order = require('../models/Order');
 const Investment = require('../models/Investment');
 
 const RankingSeason = require('../models/RankingSeason');
+const RewardedAdEvent = require('../models/RewardedAdEvent');
 const InstitutionalLiquidity = require('../models/InstitutionalLiquidity');
 const { isUnifiedLiquidity, getMarketMode } = require('../config/marketMode');
 const {
@@ -36,10 +38,15 @@ const { buildTradeEntry, postJournal } = require('../utils/ledger');
 
 const {
   LIMITE_SEMANAL_LITE_PADRAO,
+  REWARDED_AD_ORDENS_POR_RECOMPENSA,
+  REWARDED_AD_MAXIMO_SEMANAL,
+  REWARDED_AD_BONUS_MAXIMO_SEMANAL,
   obterJanelaSemanal,
   obterOuCriarQuotaSemanal,
   consumirOrdemQuotaSemanal,
   reconciliarQuotaComOrdensExecutadas,
+  obterResumoRewardedQuota,
+  aplicarRecompensaRewardedQuota,
 } = require('../utils/tradingQuota');
 
 const {
@@ -57,6 +64,69 @@ const MAKER_FEE = isUnifiedLiquidity() ? 0 : 0.002; // beta unificado: maker 0%
 const TAKER_FEE = 0.005; // 0.50%
 
 const TICK_SIZE = 0.05;
+
+const REWARDED_AD_FEATURE_KEY = 'lite_weekly_orders';
+const REWARDED_AD_PROVIDER = 'google-ad-manager-web';
+const REWARDED_AD_TENTATIVA_TTL_MS = 10 * 60 * 1000;
+const REWARDED_AD_MINIMO_CONCLUSAO_MS = 5 * 1000;
+
+function obterLimiteSemanalLite(temporada) {
+  return Number(
+    temporada?.limiteOrdensLiteSemanal ??
+      temporada?.limiteOrdensLitePorRodada ??
+      LIMITE_SEMANAL_LITE_PADRAO
+  );
+}
+
+function hashRewardedToken(token) {
+  return crypto
+    .createHash('sha256')
+    .update(String(token || ''))
+    .digest('hex');
+}
+
+function rewardedTokenConfere(token, hashSalvo) {
+  try {
+    const recebido = Buffer.from(hashRewardedToken(token), 'hex');
+    const salvo = Buffer.from(String(hashSalvo || ''), 'hex');
+
+    return (
+      recebido.length === salvo.length &&
+      recebido.length > 0 &&
+      crypto.timingSafeEqual(recebido, salvo)
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function criarAttemptIdRewarded() {
+  if (typeof crypto.randomUUID === 'function') {
+    return `rad_${crypto.randomUUID()}`;
+  }
+
+  return `rad_${crypto.randomBytes(24).toString('hex')}`;
+}
+
+function rewardedAdsParaResposta({ quota, limiteLite, mercadoAberto = true }) {
+  const resumo = obterResumoRewardedQuota(quota, limiteLite);
+
+  return {
+    limiteBase: resumo.limiteBase,
+    bonusOrdens: resumo.bonusOrdens,
+    limiteEfetivo: resumo.limiteEfetivo,
+    rewardedAds: {
+      featureKey: REWARDED_AD_FEATURE_KEY,
+      ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+      concluidos: resumo.concluidos,
+      maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+      restantes: resumo.restantesRewardedAds,
+      bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+      disponivel: Boolean(mercadoAberto) && resumo.disponivel,
+      ultimoRewardedAdEm: quota?.ultimoRewardedAdEm || null,
+    },
+  };
+}
 
 function round2(n) {
 
@@ -588,7 +658,7 @@ router.get('/limite-ordens', auth, async (req, res) => {
 
     if (!usuario) {
       return res.status(404).json({
-        erro: 'UsuÃ¡rio nÃ£o encontrado.',
+        erro: 'Usuário não encontrado.',
         codigo: 'USUARIO_NAO_ENCONTRADO',
       });
     }
@@ -609,14 +679,9 @@ router.get('/limite-ordens', auth, async (req, res) => {
       return res.json({
         temporadaAtiva: false,
         mercadoAberto: false,
-
         temporada: null,
-
         plano: planoEfetivo,
-
-        ordensIlimitadas:
-          planoEfetivo === 'premium',
-
+        ordensIlimitadas: planoEfetivo === 'premium',
         periodo: {
           tipo: janela.periodoTipo,
           chave: janela.periodoChave,
@@ -625,59 +690,43 @@ router.get('/limite-ordens', auth, async (req, res) => {
           renovaEm: janela.renovaEm,
           timezone: janela.timezone,
         },
-
-        limite:
-          planoEfetivo === 'lite'
-            ? LIMITE_SEMANAL_LITE_PADRAO
-            : null,
-
-        utilizadas:
-          planoEfetivo === 'lite'
-            ? 0
-            : null,
-
-        restantes:
-          planoEfetivo === 'lite'
-            ? LIMITE_SEMANAL_LITE_PADRAO
-            : null,
-
+        limiteBase: planoEfetivo === 'lite' ? LIMITE_SEMANAL_LITE_PADRAO : null,
+        bonusOrdens: planoEfetivo === 'lite' ? 0 : null,
+        limite: planoEfetivo === 'lite' ? LIMITE_SEMANAL_LITE_PADRAO : null,
+        utilizadas: planoEfetivo === 'lite' ? 0 : null,
+        restantes: planoEfetivo === 'lite' ? LIMITE_SEMANAL_LITE_PADRAO : null,
         limiteAtingido: false,
+        rewardedAds: {
+          featureKey: REWARDED_AD_FEATURE_KEY,
+          ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          concluidos: 0,
+          maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+          restantes: REWARDED_AD_MAXIMO_SEMANAL,
+          bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+          disponivel: false,
+          ultimoRewardedAdEm: null,
+        },
       });
     }
 
-    /*
-     * Enquanto o campo mercadoAberto ainda nÃ£o existir
-     * nos documentos antigos, o mercado serÃ¡ considerado
-     * aberto por compatibilidade.
-     *
-     * Apenas mercadoAberto === false fecha o mercado.
-     */
-    const mercadoAberto =
-      temporada.mercadoAberto !== false;
+    const mercadoAberto = temporada.mercadoAberto !== false;
+    const limiteLite = obterLimiteSemanalLite(temporada);
 
     const temporadaResposta = {
       id: String(temporada._id),
       codigo: temporada.codigo,
       nome: temporada.nome,
-      iniciadaEm:
-        temporada.iniciadaEm || null,
-      encerraEm:
-        temporada.encerraEm ||
-        temporada.fimPrevisto ||
-        null,
+      iniciadaEm: temporada.iniciadaEm || null,
+      encerraEm: temporada.encerraEm || temporada.fimPrevisto || null,
     };
 
     if (planoEfetivo === 'premium') {
       return res.json({
         temporadaAtiva: true,
         mercadoAberto,
-
         temporada: temporadaResposta,
-
         plano: 'premium',
-
         ordensIlimitadas: true,
-
         periodo: {
           tipo: janela.periodoTipo,
           chave: janela.periodoChave,
@@ -686,15 +735,25 @@ router.get('/limite-ordens', auth, async (req, res) => {
           renovaEm: janela.renovaEm,
           timezone: janela.timezone,
         },
-
+        limiteBase: null,
+        bonusOrdens: null,
         limite: null,
         utilizadas: null,
         restantes: null,
         limiteAtingido: false,
-
         primeiraOrdemEm: null,
         ultimaOrdemEm: null,
         limiteAtingidoEm: null,
+        rewardedAds: {
+          featureKey: REWARDED_AD_FEATURE_KEY,
+          ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          concluidos: null,
+          maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+          restantes: null,
+          bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+          disponivel: false,
+          ultimoRewardedAdEm: null,
+        },
       });
     }
 
@@ -704,42 +763,25 @@ router.get('/limite-ordens', auth, async (req, res) => {
     } = await reconciliarQuotaComOrdensExecutadas({
       usuario,
       temporada,
-      limiteLite:
-        Number(
-          temporada.limiteOrdensLiteSemanal ??
-            temporada.limiteOrdensLitePorRodada ??
-            LIMITE_SEMANAL_LITE_PADRAO
-        ),
+      limiteLite,
     });
 
-    const limite = Math.max(
-      1,
-      Number(
-        quota.limiteOrdens ||
-          LIMITE_SEMANAL_LITE_PADRAO
-      )
-    );
+    const rewarded = rewardedAdsParaResposta({
+      quota,
+      limiteLite,
+      mercadoAberto,
+    });
 
-    const utilizadas = Math.max(
-      0,
-      Number(quota.ordensUtilizadas || 0)
-    );
-
-    const restantes = Math.max(
-      0,
-      limite - utilizadas
-    );
+    const limite = rewarded.limiteEfetivo;
+    const utilizadas = Math.max(0, Number(quota.ordensUtilizadas || 0));
+    const restantes = Math.max(0, limite - utilizadas);
 
     return res.json({
       temporadaAtiva: true,
       mercadoAberto,
-
       temporada: temporadaResposta,
-
       plano: 'lite',
-
       ordensIlimitadas: false,
-
       periodo: {
         tipo: janelaQuota.periodoTipo,
         chave: janelaQuota.periodoChave,
@@ -748,36 +790,402 @@ router.get('/limite-ordens', auth, async (req, res) => {
         renovaEm: janelaQuota.renovaEm,
         timezone: janelaQuota.timezone,
       },
-
+      limiteBase: rewarded.limiteBase,
+      bonusOrdens: rewarded.bonusOrdens,
       limite,
       utilizadas,
       restantes,
-
-      limiteAtingido:
-        utilizadas >= limite,
-
-      primeiraOrdemEm:
-        quota.primeiraOrdemEm || null,
-
-      ultimaOrdemEm:
-        quota.ultimaOrdemEm || null,
-
-      limiteAtingidoEm:
-        quota.limiteAtingidoEm || null,
+      limiteAtingido: utilizadas >= limite,
+      primeiraOrdemEm: quota.primeiraOrdemEm || null,
+      ultimaOrdemEm: quota.ultimaOrdemEm || null,
+      limiteAtingidoEm: quota.limiteAtingidoEm || null,
+      rewardedAds: rewarded.rewardedAds,
     });
   } catch (err) {
-    console.error(
-      'Erro ao consultar limite semanal de ordens:',
-      err
-    );
+    console.error('Erro ao consultar limite semanal de ordens:', err);
 
     return res.status(500).json({
-      erro:
-        'Erro interno ao consultar limite de ordens.',
-
-      codigo:
-        'ERRO_CONSULTA_LIMITE_ORDENS',
+      erro: 'Erro interno ao consultar limite de ordens.',
+      codigo: 'ERRO_CONSULTA_LIMITE_ORDENS',
     });
+  }
+});
+
+router.post('/rewarded-ad/iniciar', auth, async (req, res) => {
+  try {
+    const featureKey = String(req.body?.featureKey || '').trim();
+
+    if (featureKey !== REWARDED_AD_FEATURE_KEY) {
+      return res.status(400).json({
+        erro: 'Recompensa de anúncio inválida.',
+        codigo: 'REWARDED_AD_RECURSO_INVALIDO',
+      });
+    }
+
+    const usuario = await User.findById(req.usuario.id);
+
+    if (!usuario) {
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
+        codigo: 'USUARIO_NAO_ENCONTRADO',
+      });
+    }
+
+    if (obterPlanoEfetivo(usuario) !== 'lite') {
+      return res.status(403).json({
+        erro: 'Anúncios premiados estão disponíveis apenas para usuários Lite.',
+        codigo: 'REWARDED_AD_APENAS_LITE',
+      });
+    }
+
+    const temporada = await RankingSeason.findOne({ status: 'ativa' })
+      .sort({ iniciadaEm: -1, createdAt: -1 });
+
+    if (!temporada) {
+      return res.status(409).json({
+        erro: 'Não existe uma temporada ativa no momento.',
+        codigo: 'TEMPORADA_NAO_ATIVA',
+      });
+    }
+
+    if (temporada.mercadoAberto === false) {
+      return res.status(409).json({
+        erro: 'O mercado está temporariamente fechado.',
+        codigo: 'MERCADO_FECHADO',
+      });
+    }
+
+    const limiteLite = obterLimiteSemanalLite(temporada);
+    const { quota, janela } = await reconciliarQuotaComOrdensExecutadas({
+      usuario,
+      temporada,
+      limiteLite,
+    });
+
+    const rewarded = rewardedAdsParaResposta({
+      quota,
+      limiteLite,
+      mercadoAberto: true,
+    });
+
+    if (!rewarded.rewardedAds.disponivel) {
+      return res.status(403).json({
+        erro: 'Você já utilizou os 5 anúncios premiados disponíveis nesta semana.',
+        codigo: 'REWARDED_AD_LIMITE_SEMANAL',
+        rewardedAds: rewarded.rewardedAds,
+        renovaEm: janela.renovaEm,
+      });
+    }
+
+    const agora = new Date();
+
+    await RewardedAdEvent.updateMany(
+      {
+        usuarioId: usuario._id,
+        periodoChave: janela.periodoChave,
+        status: 'pending',
+      },
+      {
+        $set: {
+          status: 'cancelled',
+          closedAt: agora,
+          'metadata.cancelReason': 'superseded',
+        },
+      }
+    );
+
+    const claimToken = crypto.randomBytes(32).toString('hex');
+    const attemptId = criarAttemptIdRewarded();
+    const expiraEm = new Date(agora.getTime() + REWARDED_AD_TENTATIVA_TTL_MS);
+
+    await RewardedAdEvent.create({
+      usuarioId: usuario._id,
+      temporadaId: temporada._id,
+      quotaId: quota._id,
+      periodoChave: janela.periodoChave,
+      provider: REWARDED_AD_PROVIDER,
+      featureKey: REWARDED_AD_FEATURE_KEY,
+      rewardType: 'orders',
+      rewardAmount: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+      attemptId,
+      tokenHash: hashRewardedToken(claimToken),
+      status: 'pending',
+      iniciadoEm: agora,
+      expiraEm,
+      metadata: {
+        userAgent: String(req.get('user-agent') || '').slice(0, 300),
+      },
+    });
+
+    return res.json({
+      sucesso: true,
+      attemptId,
+      claimToken,
+      expiraEm,
+      recompensa: {
+        tipo: 'orders',
+        quantidade: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+      },
+      rewardedAds: rewarded.rewardedAds,
+      periodo: {
+        inicio: janela.periodoInicio,
+        fim: janela.periodoFim,
+        renovaEm: janela.renovaEm,
+        timezone: janela.timezone,
+      },
+    });
+  } catch (err) {
+    console.error('Erro ao iniciar rewarded ad:', err);
+
+    return res.status(500).json({
+      erro: 'Não foi possível iniciar o anúncio premiado.',
+      codigo: 'ERRO_REWARDED_AD_INICIAR',
+    });
+  }
+});
+
+router.post('/rewarded-ad/concluir', auth, async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const attemptId = String(req.body?.attemptId || '').trim();
+    const claimToken = String(req.body?.claimToken || '').trim();
+    const providerReward = req.body?.providerReward || {};
+
+    if (!attemptId || attemptId.length > 120 || claimToken.length < 32 || claimToken.length > 200) {
+      return res.status(400).json({
+        erro: 'Tentativa de anúncio premiado inválida.',
+        codigo: 'REWARDED_AD_TENTATIVA_INVALIDA',
+      });
+    }
+
+    let resposta = null;
+
+    await session.withTransaction(async () => {
+      const usuario = await User.findById(req.usuario.id).session(session);
+
+      if (!usuario) throw new Error('USUARIO_NAO_ENCONTRADO');
+      if (obterPlanoEfetivo(usuario) !== 'lite') {
+        throw new Error('REWARDED_AD_APENAS_LITE');
+      }
+
+      const temporada = await RankingSeason.findOne({ status: 'ativa' })
+        .sort({ iniciadaEm: -1, createdAt: -1 })
+        .session(session);
+
+      if (!temporada) throw new Error('TEMPORADA_NAO_ATIVA');
+      if (temporada.mercadoAberto === false) throw new Error('MERCADO_FECHADO');
+
+      const evento = await RewardedAdEvent.findOne({
+        attemptId,
+        usuarioId: usuario._id,
+      })
+        .select('+tokenHash')
+        .session(session);
+
+      if (!evento || !rewardedTokenConfere(claimToken, evento.tokenHash)) {
+        throw new Error('REWARDED_AD_TENTATIVA_INVALIDA');
+      }
+
+      const limiteLite = obterLimiteSemanalLite(temporada);
+      const { quota, janela } = await reconciliarQuotaComOrdensExecutadas({
+        usuario,
+        temporada,
+        session,
+        limiteLite,
+      });
+
+      if (
+        evento.periodoChave !== janela.periodoChave ||
+        String(evento.temporadaId) !== String(temporada._id)
+      ) {
+        throw new Error('REWARDED_AD_TENTATIVA_EXPIRADA');
+      }
+
+      if (evento.status === 'rewarded') {
+        const rewardedAtual = rewardedAdsParaResposta({
+          quota,
+          limiteLite,
+          mercadoAberto: true,
+        });
+        const utilizadas = Number(quota.ordensUtilizadas || 0);
+
+        resposta = {
+          sucesso: true,
+          idempotente: true,
+          mensagem: 'A recompensa deste anúncio já havia sido creditada.',
+          recompensa: {
+            tipo: 'orders',
+            quantidade: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          },
+          quota: {
+            base: rewardedAtual.limiteBase,
+            bonus: rewardedAtual.bonusOrdens,
+            limiteEfetivo: rewardedAtual.limiteEfetivo,
+            utilizadas,
+            restantes: Math.max(0, rewardedAtual.limiteEfetivo - utilizadas),
+          },
+          rewardedAds: rewardedAtual.rewardedAds,
+          periodo: {
+            inicio: janela.periodoInicio,
+            fim: janela.periodoFim,
+            renovaEm: janela.renovaEm,
+            timezone: janela.timezone,
+          },
+        };
+        return;
+      }
+
+      if (evento.status !== 'pending') {
+        throw new Error('REWARDED_AD_TENTATIVA_EXPIRADA');
+      }
+
+      const agora = new Date();
+
+      if (agora > new Date(evento.expiraEm)) {
+        throw new Error('REWARDED_AD_TENTATIVA_EXPIRADA');
+      }
+
+      if (
+        agora.getTime() - new Date(evento.iniciadoEm).getTime() <
+        REWARDED_AD_MINIMO_CONCLUSAO_MS
+      ) {
+        throw new Error('REWARDED_AD_TENTATIVA_PREMATURA');
+      }
+
+      const recompensasConfirmadas = await RewardedAdEvent.countDocuments({
+        usuarioId: usuario._id,
+        temporadaId: temporada._id,
+        periodoChave: janela.periodoChave,
+        status: 'rewarded',
+      }).session(session);
+
+      if (recompensasConfirmadas >= REWARDED_AD_MAXIMO_SEMANAL) {
+        throw new Error('REWARDED_AD_LIMITE_SEMANAL');
+      }
+
+      const resumoRewarded = aplicarRecompensaRewardedQuota({
+        quota,
+        limiteLite,
+        rewardedAdsConcluidosConfirmados: recompensasConfirmadas,
+        agora,
+      });
+
+      await quota.save({ session });
+
+      evento.status = 'rewarded';
+      evento.rewardedAt = agora;
+      evento.providerRewardType = String(providerReward?.type || '').slice(0, 120);
+
+      const providerAmount = Number(providerReward?.amount);
+      evento.providerRewardAmount = Number.isFinite(providerAmount)
+        ? providerAmount
+        : null;
+
+      evento.metadata = {
+        ...(evento.metadata || {}),
+        grantedBy: 'gpt_rewardedSlotGranted',
+      };
+      evento.markModified('metadata');
+      await evento.save({ session });
+
+      const utilizadas = Number(quota.ordensUtilizadas || 0);
+      const restantes = Math.max(0, resumoRewarded.limiteEfetivo - utilizadas);
+
+      resposta = {
+        sucesso: true,
+        idempotente: false,
+        mensagem: '+2 ordens liberadas para esta semana.',
+        recompensa: {
+          tipo: 'orders',
+          quantidade: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+        },
+        quota: {
+          base: resumoRewarded.limiteBase,
+          bonus: resumoRewarded.bonusOrdens,
+          limiteEfetivo: resumoRewarded.limiteEfetivo,
+          utilizadas,
+          restantes,
+          limiteAtingido: restantes <= 0,
+        },
+        rewardedAds: {
+          featureKey: REWARDED_AD_FEATURE_KEY,
+          ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          concluidos: resumoRewarded.concluidos,
+          maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+          restantes: resumoRewarded.restantesRewardedAds,
+          bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+          disponivel: resumoRewarded.disponivel,
+          ultimoRewardedAdEm: quota.ultimoRewardedAdEm || null,
+        },
+        periodo: {
+          inicio: janela.periodoInicio,
+          fim: janela.periodoFim,
+          renovaEm: janela.renovaEm,
+          timezone: janela.timezone,
+        },
+      };
+    });
+
+    return res.json(resposta);
+  } catch (err) {
+    console.error('Erro ao concluir rewarded ad:', err);
+
+    if (err.message === 'USUARIO_NAO_ENCONTRADO') {
+      return res.status(404).json({ erro: 'Usuário não encontrado.', codigo: err.message });
+    }
+
+    if (err.message === 'REWARDED_AD_APENAS_LITE') {
+      return res.status(403).json({
+        erro: 'Anúncios premiados estão disponíveis apenas para usuários Lite.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'TEMPORADA_NAO_ATIVA' || err.message === 'MERCADO_FECHADO') {
+      return res.status(409).json({
+        erro: err.message === 'MERCADO_FECHADO'
+          ? 'O mercado está temporariamente fechado.'
+          : 'Não existe uma temporada ativa no momento.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_TENTATIVA_INVALIDA') {
+      return res.status(400).json({
+        erro: 'Tentativa de anúncio premiado inválida.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_TENTATIVA_EXPIRADA') {
+      return res.status(409).json({
+        erro: 'A tentativa do anúncio expirou. Inicie um novo anúncio.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_TENTATIVA_PREMATURA') {
+      return res.status(409).json({
+        erro: 'A recompensa ainda não pode ser confirmada.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_LIMITE_SEMANAL') {
+      return res.status(403).json({
+        erro: 'Você já utilizou os 5 anúncios premiados disponíveis nesta semana.',
+        codigo: err.message,
+      });
+    }
+
+    return res.status(500).json({
+      erro: 'Não foi possível concluir a recompensa do anúncio.',
+      codigo: 'ERRO_REWARDED_AD_CONCLUIR',
+      detalhe: process.env.NODE_ENV === 'production' ? undefined : String(err.message || err),
+    });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -1585,6 +1993,15 @@ router.post('/ordem', auth, async (req, res) => {
             )
           : null;
 
+      const resumoRewardedOrdem =
+        planoEfetivo === 'lite' && quotaSemanal
+          ? rewardedAdsParaResposta({
+              quota: quotaSemanal,
+              limiteLite: obterLimiteSemanalLite(temporada),
+              mercadoAberto: true,
+            })
+          : null;
+
       resposta = {
         mensagem:
           execucoes.length
@@ -1687,6 +2104,15 @@ router.post('/ordem', auth, async (req, res) => {
             planoEfetivo === 'lite'
               ? ordensRestantes <= 0
               : false,
+
+          limiteBase:
+            resumoRewardedOrdem?.limiteBase ?? null,
+
+          bonusOrdens:
+            resumoRewardedOrdem?.bonusOrdens ?? null,
+
+          rewardedAds:
+            resumoRewardedOrdem?.rewardedAds ?? null,
         },
       };
         });
@@ -1918,9 +2344,21 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
             LIMITE_SEMANAL_LITE_PADRAO
         ),
       });
-      const limite = Number(reconciliada.quota.limiteOrdens || LIMITE_SEMANAL_LITE_PADRAO);
+      const resumoRewarded = rewardedAdsParaResposta({
+        quota: reconciliada.quota,
+        limiteLite: obterLimiteSemanalLite(temporada),
+        mercadoAberto: temporada.mercadoAberto !== false,
+      });
+      const limite = resumoRewarded.limiteEfetivo;
       const utilizadas = Number(reconciliada.quota.ordensUtilizadas || 0);
-      franquiaOrdens = { limite, utilizadas, restantes: Math.max(0, limite - utilizadas) };
+      franquiaOrdens = {
+        limiteBase: resumoRewarded.limiteBase,
+        bonusOrdens: resumoRewarded.bonusOrdens,
+        limite,
+        utilizadas,
+        restantes: Math.max(0, limite - utilizadas),
+        rewardedAds: resumoRewarded.rewardedAds,
+      };
     }
 
     return res.json({
@@ -1950,7 +2388,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
 
 
 
