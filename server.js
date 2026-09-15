@@ -189,7 +189,7 @@ app.post(
   recoveryRechargeStripeWebhook
 );
 
-app.use(express.json({ limit: "250kb" }));
+app.use(express.json({ limit: "1250kb" }));
 
 app.use((req, res, next) => {
   const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
