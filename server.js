@@ -67,6 +67,7 @@ const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
 const socialCommunityRoutes = require('./routes/socialCommunity');
 const socialModerationRoutes = require("./routes/api/socialModeration");
+const socialCommentsV2Routes = require("./routes/socialCommentsV2");
 const trophiesRoutes = require("./routes/trophies");
 const {
   router: recoveryRechargeRoutes,
@@ -279,6 +280,7 @@ app.use("/social", socialRoutes);
 app.use("/ranking-convites", rankingConvitesRoutes);
 app.use("/trofeus", trophiesRoutes);
 app.use('/recarga-recuperacao', recoveryRechargeRoutes);
+app.use('/social-community', socialCommentsV2Routes);
 app.use('/social-community', socialCommunityRoutes);
 app.use("/api/admin/social-moderation", socialModerationRoutes);
 
