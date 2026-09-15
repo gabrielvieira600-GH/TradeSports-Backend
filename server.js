@@ -66,6 +66,7 @@ const privateRankingsCompleteRoutes = require("./routes/privateRankingsComplete"
 const socialRoutes = require("./routes/social");
 const rankingConvitesRoutes = require("./routes/rankingConvites");
 const socialCommunityRoutes = require('./routes/socialCommunity');
+const socialModerationRoutes = require("./routes/api/socialModeration");
 const trophiesRoutes = require("./routes/trophies");
 const {
   router: recoveryRechargeRoutes,
@@ -279,6 +280,7 @@ app.use("/ranking-convites", rankingConvitesRoutes);
 app.use("/trofeus", trophiesRoutes);
 app.use('/recarga-recuperacao', recoveryRechargeRoutes);
 app.use('/social-community', socialCommunityRoutes);
+app.use("/api/admin/social-moderation", socialModerationRoutes);
 
 if (watchlistRoutes) {
   app.use("/watchlist", watchlistRoutes);
