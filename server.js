@@ -69,6 +69,8 @@ const socialCommunityRoutes = require('./routes/socialCommunity');
 const socialModerationRoutes = require("./routes/api/socialModeration");
 const socialCommentsV2Routes = require("./routes/socialCommentsV2");
 const trophiesRoutes = require("./routes/trophies");
+const socialOwnershipRoutes = require("./routes/socialOwnership");
+const socialCommentsV2Routes = require("./routes/socialCommentsV2");
 const {
   router: recoveryRechargeRoutes,
   stripeWebhook: recoveryRechargeStripeWebhook,
