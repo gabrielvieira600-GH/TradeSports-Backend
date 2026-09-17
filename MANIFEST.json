@@ -1,0 +1,19 @@
+{
+  "name": "TradeSports Pré-lançamento QA Pack 1",
+  "date": "2026-09-17",
+  "backend": [
+    "routes/mercado.js",
+    "routes/clube.js"
+  ],
+  "frontend": [
+    "pages/minhas-ordens.js",
+    "pages/clube/[id].js",
+    "pages/carteira.js"
+  ],
+  "fixes": [
+    "preco executado em Minhas Ordens",
+    "circulacao/disponibilidade institucional",
+    "grafico clube mobile",
+    "Total alocado a valor atual"
+  ]
+}
