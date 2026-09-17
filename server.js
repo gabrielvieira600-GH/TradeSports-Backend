@@ -17,12 +17,7 @@ try {
 } catch (_) {
   operationalChecks = {};
 }
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "TradeSports-Backend",
-  });
-});
+
 const { checkLiquidacao } = require("./middleware/checkLiquidacao");
 const auth = require("./middleware/auth");
 
@@ -88,6 +83,13 @@ try {
 } catch (_) {}
 
 const app = express();
+
+app.get("/health", (req, res) => {
+  return res.status(200).json({
+    status: "ok",
+    service: "TradeSports-Backend",
+  });
+});
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 4001;
