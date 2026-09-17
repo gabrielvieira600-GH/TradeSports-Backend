@@ -96,31 +96,6 @@ if (!JWT_SECRET) {
 
 app.set("trust proxy", 1);
 
-// CORS deve preceder rate-limit, parsers e rotas para que inclusive
-// respostas antecipadas recebam os headers CORS corretos.
-const allowedOrigins = [
-  process.env.FRONTEND_ORIGIN,
-  "https://www.tradesports.com.br",
-  "https://tradesports.com.br",
-  "https://trade-sports-frontend-ok.vercel.app",
-  "https://trade-sports-frontend-ok-om3a.vercel.app",
-  "http://localhost:3000",
-].filter(Boolean);
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error(`CORS bloqueado para origin: ${origin}`));
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
-  credentials: false,
-  optionsSuccessStatus: 204,
-};
-
-app.use(cors(corsOptions));
-
 connectDB()
   .then(async () => {
     console.log("Mongo inicializado.");
@@ -248,6 +223,28 @@ app.use((req, res, next) => {
 
   next();
 });
+
+const allowedOrigins = [
+  process.env.FRONTEND_ORIGIN,
+  "https://www.tradesports.com.br",
+  "https://tradesports.com.br",
+  "https://trade-sports-frontend-ok.vercel.app",
+  "https://trade-sports-frontend-ok-om3a.vercel.app",
+  "http://localhost:3000",
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error(`CORS bloqueado para origin: ${origin}`));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
+    credentials: false,
+  }),
+);
 
 app.use(checkLiquidacao);
 

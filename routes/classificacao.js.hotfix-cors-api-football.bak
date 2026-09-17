@@ -590,7 +590,7 @@ router.get('/tabela-brasileirao', async (req, res) => {
 
         league: 71,
 
-        season: Number(process.env.API_FOOTBALL_SEASON || new Date().getFullYear()),
+        season: Number(process.env.API_FOOTBALL_SEASON || 2024),
 
       },
 
@@ -600,25 +600,7 @@ router.get('/tabela-brasileirao', async (req, res) => {
     const standings = response?.data?.response?.[0]?.league?.standings?.[0];
 
     if (!Array.isArray(standings)) {
-      const apiErrors = response?.data?.errors;
-      const apiMessage =
-        response?.data?.message ||
-        (apiErrors && typeof apiErrors === 'object'
-          ? JSON.stringify(apiErrors)
-          : String(apiErrors || ''));
-
-      console.error('[CLASSIFICACAO] API-Football sem standings:', {
-        season: Number(process.env.API_FOOTBALL_SEASON || new Date().getFullYear()),
-        results: response?.data?.results,
-        errors: apiErrors || null,
-        message: response?.data?.message || null,
-      });
-
-      throw new Error(
-        apiMessage
-          ? `API-Football não retornou classificação: ${apiMessage}`
-          : 'API-Football não retornou classificação para a temporada configurada.'
-      );
+      throw new Error('Resposta inválida da API-Football.');
     }
 
     const rodadaApi = Math.max(
