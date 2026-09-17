@@ -17,7 +17,12 @@ try {
 } catch (_) {
   operationalChecks = {};
 }
-
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "TradeSports-Backend",
+  });
+});
 const { checkLiquidacao } = require("./middleware/checkLiquidacao");
 const auth = require("./middleware/auth");
 
