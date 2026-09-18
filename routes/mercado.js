@@ -604,13 +604,23 @@ router.get('/minhas-ordens', auth, async (req, res) => {
 
       .lean();
 
-    const orderIds = ordens.map((o) => String(o._id));
+    /*
+     * O campo Order.preco representa o preço-limite informado pelo usuário,
+     * não necessariamente o preço em que a ordem foi executada. As execuções
+     * efetivas são registradas individualmente em Investment, vinculadas à
+     * ordem por metadata.orderId. Agregamos esses registros para devolver o
+     * preço médio ponderado realmente executado, inclusive em ordens parciais
+     * ou preenchidas em mais de um preço.
+     *
+     * A consulta também corrige a exibição das ordens antigas, pois utiliza os
+     * registros de execução que já existem no banco.
+     */
+    const idsOrdens = ordens.map((o) => String(o._id));
 
-    const execucoes = orderIds.length
+    const registrosExecucao = idsOrdens.length
       ? await Investment.find({
           usuarioId: req.usuario.id,
-          'metadata.orderId': { $in: orderIds },
-          tipo: { $in: ['COMPRA', 'VENDA'] },
+          'metadata.orderId': { $in: idsOrdens },
         })
           .select('quantidade precoUnitario valorUnitario metadata.orderId')
           .lean()
@@ -618,54 +628,71 @@ router.get('/minhas-ordens', auth, async (req, res) => {
 
     const execucoesPorOrdem = new Map();
 
-    for (const execucao of execucoes) {
-      const orderId = String(execucao?.metadata?.orderId || '');
-      if (!orderId) continue;
-
-      const quantidade = Number(execucao.quantidade || 0);
+    for (const registro of registrosExecucao) {
+      const ordemId = String(registro?.metadata?.orderId || '');
+      const quantidadeExecutada = Number(registro?.quantidade || 0);
       const precoExecutado = Number(
-        execucao.precoUnitario != null
-          ? execucao.precoUnitario
-          : execucao.valorUnitario
+        registro?.precoUnitario ?? registro?.valorUnitario ?? 0
       );
 
-      if (!(quantidade > 0) || !Number.isFinite(precoExecutado)) continue;
+      if (
+        !ordemId ||
+        !Number.isFinite(quantidadeExecutada) ||
+        quantidadeExecutada <= 0 ||
+        !Number.isFinite(precoExecutado) ||
+        precoExecutado <= 0
+      ) {
+        continue;
+      }
 
-      const acumulado = execucoesPorOrdem.get(orderId) || {
+      const acumulado = execucoesPorOrdem.get(ordemId) || {
         quantidade: 0,
         valorBruto: 0,
       };
 
-      acumulado.quantidade += quantidade;
-      acumulado.valorBruto += quantidade * precoExecutado;
-      execucoesPorOrdem.set(orderId, acumulado);
+      acumulado.quantidade += quantidadeExecutada;
+      acumulado.valorBruto += quantidadeExecutada * precoExecutado;
+      execucoesPorOrdem.set(ordemId, acumulado);
     }
 
     return res.json(
 
       ordens.map((o) => {
-        const id = String(o._id);
-        const execucao = execucoesPorOrdem.get(id);
-        const quantidadeExecutada = Number(execucao?.quantidade || 0);
-        const precoExecutadoMedio = quantidadeExecutada > 0
-          ? round2(Number(execucao.valorBruto || 0) / quantidadeExecutada)
-          : null;
+        const execucao = execucoesPorOrdem.get(String(o._id));
+        const precoMedioExecutado =
+          execucao?.quantidade > 0
+            ? round2(execucao.valorBruto / execucao.quantidade)
+            : null;
 
         return {
-          id,
+
+          id: String(o._id),
+
           clubeId: o.clubeLegacyId,
+
           tipo: o.tipo,
+
           preco: round2(o.preco),
-          precoLimite: round2(o.preco),
-          precoExecutadoMedio,
-          valorExecutado: execucao ? round2(execucao.valorBruto) : 0,
+
+          precoMedioExecutado,
+
+          valorBrutoExecutado:
+            execucao?.quantidade > 0
+              ? round2(execucao.valorBruto)
+              : null,
+
           quantidade: Number(o.quantidade || 0),
-          quantidadeExecutada,
+
           restante: Number(o.restante || 0),
+
           status: o.status,
+
           criadoEm: o.criadoEm,
+
           canceladoEm: o.canceladoEm,
+
           executadoEm: o.executadoEm,
+
         };
       })
 
@@ -2427,8 +2454,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
 
 
 
