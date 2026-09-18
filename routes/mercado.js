@@ -1,35 +1,2447 @@
-// QA PACK 1 — backend/routes/mercado.js
-// No GET /minhas-ordens, após carregar `ordens`:
-const orderIds = ordens.map((o) => String(o._id));
-const execucoes = orderIds.length
-  ? await Investment.find({
-      usuarioId: req.usuario.id,
-      'metadata.orderId': { $in: orderIds },
-      tipo: { $in: ['COMPRA', 'VENDA'] },
+// routes/mercado.js
+const express = require('express');
+
+const mongoose = require('mongoose');
+const crypto = require('crypto');
+
+const router = express.Router();
+
+const auth = require('../middleware/auth');
+
+function authOpcional(req, res, next) {
+  const cabecalho = req.header('Authorization');
+  if (!cabecalho) return next();
+  return auth(req, res, next);
+}
+
+const User = require('../models/User');
+
+const Club = require('../models/Club');
+
+const Order = require('../models/Order');
+
+const Investment = require('../models/Investment');
+
+const RankingSeason = require('../models/RankingSeason');
+const RewardedAdEvent = require('../models/RewardedAdEvent');
+const InstitutionalLiquidity = require('../models/InstitutionalLiquidity');
+const { isUnifiedLiquidity, getMarketMode } = require('../config/marketMode');
+const {
+  ensureLiquidityState,
+  validateBuybackLimit,
+  recordBuyback,
+  publishOrdersForClub,
+  ensureOrdersForClub,
+  enforceSolvency,
+} = require('../services/institutionalLiquidity');
+const { buildTradeEntry, postJournal } = require('../utils/ledger');
+
+const {
+  LIMITE_SEMANAL_LITE_PADRAO,
+  REWARDED_AD_ORDENS_POR_RECOMPENSA,
+  REWARDED_AD_MAXIMO_SEMANAL,
+  REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+  obterJanelaSemanal,
+  obterOuCriarQuotaSemanal,
+  consumirOrdemQuotaSemanal,
+  reconciliarQuotaComOrdensExecutadas,
+  obterResumoRewardedQuota,
+  aplicarRecompensaRewardedQuota,
+} = require('../utils/tradingQuota');
+
+const {
+  obterPlanoEfetivo,
+} = require('../utils/planFeatures');
+
+const {
+  verificarMilestoneRentabilidadeUsuario,
+} = require('../utils/socialFeedMilestones');
+
+const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
+
+const MAKER_FEE = isUnifiedLiquidity() ? 0 : 0.002; // beta unificado: maker 0%
+
+const TAKER_FEE = 0.005; // 0.50%
+
+const TICK_SIZE = 0.05;
+
+const REWARDED_AD_FEATURE_KEY = 'lite_weekly_orders';
+const REWARDED_AD_PROVIDER = 'google-ad-manager-web';
+const REWARDED_AD_TENTATIVA_TTL_MS = 10 * 60 * 1000;
+const REWARDED_AD_MINIMO_CONCLUSAO_MS = 5 * 1000;
+
+function obterLimiteSemanalLite(temporada) {
+  return Number(
+    temporada?.limiteOrdensLiteSemanal ??
+      temporada?.limiteOrdensLitePorRodada ??
+      LIMITE_SEMANAL_LITE_PADRAO
+  );
+}
+
+function hashRewardedToken(token) {
+  return crypto
+    .createHash('sha256')
+    .update(String(token || ''))
+    .digest('hex');
+}
+
+function rewardedTokenConfere(token, hashSalvo) {
+  try {
+    const recebido = Buffer.from(hashRewardedToken(token), 'hex');
+    const salvo = Buffer.from(String(hashSalvo || ''), 'hex');
+
+    return (
+      recebido.length === salvo.length &&
+      recebido.length > 0 &&
+      crypto.timingSafeEqual(recebido, salvo)
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function criarAttemptIdRewarded() {
+  if (typeof crypto.randomUUID === 'function') {
+    return `rad_${crypto.randomUUID()}`;
+  }
+
+  return `rad_${crypto.randomBytes(24).toString('hex')}`;
+}
+
+function rewardedAdsParaResposta({ quota, limiteLite, mercadoAberto = true }) {
+  const resumo = obterResumoRewardedQuota(quota, limiteLite);
+
+  return {
+    limiteBase: resumo.limiteBase,
+    bonusOrdens: resumo.bonusOrdens,
+    limiteEfetivo: resumo.limiteEfetivo,
+    rewardedAds: {
+      featureKey: REWARDED_AD_FEATURE_KEY,
+      ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+      concluidos: resumo.concluidos,
+      maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+      restantes: resumo.restantesRewardedAds,
+      bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+      disponivel: Boolean(mercadoAberto) && resumo.disponivel,
+      ultimoRewardedAdEm: quota?.ultimoRewardedAdEm || null,
+    },
+  };
+}
+
+function round2(n) {
+
+  return Number(Number(n || 0).toFixed(2));
+
+}
+
+function validaTick(preco) {
+
+  const ticks = Math.round(Number(preco) / TICK_SIZE);
+
+  return Math.abs(Number(preco) - ticks * TICK_SIZE) < 0.000001;
+
+}
+
+async function registrarPrimeiraExecucaoLite({ ordem, usuario, temporada, session }) {
+  if (!ordem || ordem.isInstitutional || obterPlanoEfetivo(usuario) !== 'lite') return null;
+  ordem.metadata = ordem.metadata || {};
+  if (ordem.metadata.quotaLiteContabilizada) return null;
+
+  const resultado = await consumirOrdemQuotaSemanal({
+    usuario,
+    temporada,
+    session,
+    limiteLite: Number(
+      temporada.limiteOrdensLiteSemanal ??
+        temporada.limiteOrdensLitePorRodada ??
+        LIMITE_SEMANAL_LITE_PADRAO
+    ),
+  });
+
+  ordem.metadata.quotaLiteContabilizada = true;
+  ordem.metadata.quotaLitePeriodo = resultado.janela.periodoChave;
+  ordem.metadata.quotaLiteContabilizadaEm = new Date();
+  ordem.markModified('metadata');
+  return resultado;
+}
+
+function getCarteiraAtivo(usuario, clubeLegacyId) {
+
+  usuario.carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
+
+  return usuario.carteira.find((a) => Number(a.clubeId) === Number(clubeLegacyId));
+
+}
+
+function getCarteiraIndex(usuario, clubeLegacyId) {
+
+  usuario.carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
+
+  return usuario.carteira.findIndex((a) => Number(a.clubeId) === Number(clubeLegacyId));
+
+}
+
+function creditaCompra(usuario, clubeLegacyId, nomeClube, quantidade, precoUnitario) {
+
+  usuario.carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
+
+  const idx = getCarteiraIndex(usuario, clubeLegacyId);
+
+  if (idx === -1) {
+
+    usuario.carteira.push({
+
+      clubeId: Number(clubeLegacyId),
+
+      nomeClube,
+
+      quantidade: Number(quantidade),
+
+      precoMedio: round2(precoUnitario),
+
+      totalInvestido: round2(Number(quantidade) * Number(precoUnitario)),
+
+    });
+
+    return;
+
+  }
+
+  const ativo = usuario.carteira[idx];
+
+  const qtdAtual = Number(ativo.quantidade || 0);
+
+  const totalAtual = round2(ativo.totalInvestido || 0);
+
+  const qtdNova = qtdAtual + Number(quantidade);
+
+  const totalNovo = round2(totalAtual + Number(quantidade) * Number(precoUnitario));
+
+  const precoMedioNovo = qtdNova > 0 ? round2(totalNovo / qtdNova) : 0;
+
+  usuario.carteira[idx] = {
+
+    ...ativo,
+
+    nomeClube,
+
+    quantidade: qtdNova,
+
+    totalInvestido: totalNovo,
+
+    precoMedio: precoMedioNovo,
+
+  };
+
+}
+
+function debitaVenda(usuario, clubeLegacyId, quantidade) {
+
+  usuario.carteira = Array.isArray(usuario.carteira) ? usuario.carteira : [];
+
+  const idx = getCarteiraIndex(usuario, clubeLegacyId);
+
+  if (idx === -1) throw new Error('ATIVO_NAO_ENCONTRADO');
+
+  const ativo = usuario.carteira[idx];
+
+  const qtdAtual = Number(ativo.quantidade || 0);
+
+  if (qtdAtual < quantidade) throw new Error('ATIVO_INSUFICIENTE');
+
+  const precoMedio = Number(ativo.precoMedio || 0);
+
+  const qtdNova = qtdAtual - quantidade;
+
+  if (qtdNova <= 0) {
+
+    usuario.carteira.splice(idx, 1);
+
+    return;
+
+  }
+
+  usuario.carteira[idx] = {
+
+    ...ativo,
+
+    quantidade: qtdNova,
+
+    totalInvestido: round2(qtdNova * precoMedio),
+
+  };
+
+}
+
+async function getReservedSellQty({ userId, clubId, session }) {
+
+  const abertas = await Order.find({
+
+    usuarioId: userId,
+
+    clubeId: clubId,
+
+    tipo: 'venda',
+
+    status: { $in: ['aberta', 'parcial'] },
+
+  }).session(session);
+
+  return abertas.reduce((acc, o) => acc + Number(o.restante || 0), 0);
+
+}
+
+async function criarRegistroInvestment({
+
+  session,
+
+  usuario,
+
+  clube,
+
+  quantidade,
+
+  precoUnitario,
+
+  totalPago,
+
+  tipo,
+
+  metadata = {},
+
+}) {
+
+  await Investment.create(
+
+    [
+
+      {
+
+        legacyId: `${tipo.toLowerCase()}${usuario.legacyId || usuario._id}${clube.legacyId}${Date.now()}${Math.random()
+
+          .toString(36)
+
+          .slice(2, 8)}`,
+
+        usuarioId: usuario._id,
+
+        usuarioLegacyId: usuario.legacyId ?? null,
+
+        clubeId: clube._id,
+
+        clubeLegacyId: clube.legacyId,
+
+        clubeNome: clube.nome,
+
+        quantidade,
+
+        precoUnitario,
+
+        valorUnitario: precoUnitario,
+
+        totalPago,
+
+        tipo,
+
+        origem: 'SECUNDARIO',
+
+        data: new Date(),
+
+        metadata,
+
+      },
+
+    ],
+
+    { session }
+
+  );
+
+}
+
+router.get('/configuracao', async (_req, res) => {
+  return res.json({
+    marketMode: getMarketMode(),
+    unifiedBook: isUnifiedLiquidity(),
+    ipoStandby: isUnifiedLiquidity(),
+    tickSize: TICK_SIZE,
+    makerFeePct: MAKER_FEE,
+    takerFeePct: TAKER_FEE,
+    maxSharesPerClub: 1000,
+  });
+});
+
+router.get('/livro', async (req, res) => {
+  try {
+    const clubeLegacyId = Number(req.query.clubeId);
+
+    if (!Number.isInteger(clubeLegacyId) || clubeLegacyId <= 0) {
+      return res.status(400).json({ erro: 'clubeId invÃ¡lido.' });
+    }
+
+    const clube = await Club.findOne({ legacyId: clubeLegacyId }).lean();
+
+    if (!clube) {
+      return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
+    }
+
+    const ordens = await Order.find({
+      clubeLegacyId,
+      status: { $in: ['aberta', 'parcial'] },
+      restante: { $gt: 0 },
     })
-      .select('quantidade precoUnitario valorUnitario metadata.orderId')
-      .lean()
-  : [];
+      .sort({ tipo: 1, preco: 1, criadoEm: 1 })
+      .lean();
 
-const execucaoPorOrdem = execucoes.reduce((mapa, execucao) => {
-  const orderId = String(execucao?.metadata?.orderId || '');
-  if (!orderId) return mapa;
-  const quantidade = Number(execucao.quantidade || 0);
-  const preco = Number(execucao.precoUnitario ?? execucao.valorUnitario ?? 0);
-  if (!Number.isFinite(quantidade) || quantidade <= 0 ||
-      !Number.isFinite(preco) || preco <= 0) return mapa;
-  const atual = mapa.get(orderId) || { quantidade: 0, valor: 0 };
-  atual.quantidade += quantidade;
-  atual.valor += quantidade * preco;
-  mapa.set(orderId, atual);
-  return mapa;
-}, new Map());
+    const compras = ordens
+      .filter((o) => o.tipo === 'compra')
+      .sort(
+        (a, b) =>
+          Number(b.preco) - Number(a.preco) ||
+          new Date(a.criadoEm) - new Date(b.criadoEm)
+      )
+      .map((o) => ({
+        id: String(o._id),
+        clubeId: o.clubeLegacyId,
+        tipo: o.tipo,
+        preco: round2(o.preco),
+        quantidade: Number(o.quantidade || 0),
+        restante: Number(o.restante || 0),
+        status: o.status,
+        criadoEm: o.criadoEm,
+      }));
 
-// Dentro de ordens.map, antes do objeto retornado:
-const execucao = execucaoPorOrdem.get(String(o._id));
-const precoExecutadoMedio = execucao?.quantidade > 0
-  ? round2(execucao.valor / execucao.quantidade)
-  : null;
+    const vendas = ordens
+      .filter((o) => o.tipo === 'venda')
+      .sort(
+        (a, b) =>
+          Number(a.preco) - Number(b.preco) ||
+          new Date(a.criadoEm) - new Date(b.criadoEm)
+      )
+      .map((o) => ({
+        id: String(o._id),
+        clubeId: o.clubeLegacyId,
+        tipo: o.tipo,
+        preco: round2(o.preco),
+        quantidade: Number(o.quantidade || 0),
+        restante: Number(o.restante || 0),
+        status: o.status,
+        criadoEm: o.criadoEm,
+      }));
 
-// Inclua no JSON da ordem:
-precoExecutadoMedio,
+    return res.json({
+      clube: {
+        id: clube.legacyId,
+        nome: clube.nome,
+        precoAtual: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
+        ipoEncerrado: isUnifiedLiquidity() || Boolean(clube.ipoEncerrado),
+        cotasEmitidas: Number(clube.cotasEmitidas || 0),
+        maximoCotas: 1000,
+      },
+
+      compras,
+      vendas,
+
+      // compatibilidade com componentes antigos
+      compra: compras,
+      venda: vendas,
+
+      melhorCompra: compras.length ? round2(compras[0].preco) : null,
+      melhorVenda: vendas.length ? round2(vendas[0].preco) : null,
+      ultimoPreco: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
+    });
+  } catch (err) {
+    console.error('Erro ao carregar livro de ordens:', err);
+    return res.status(500).json({ erro: 'Erro ao carregar livro de ordens.' });
+  }
+});
+
+router.get('/livro/:clubeId', authOpcional, async (req, res) => {
+
+  try {
+
+    const clubeLegacyId = Number(req.params.clubeId);
+
+    const clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+
+    const clube = clubeDocumento?.toObject();
+
+    if (!clube) {
+
+      return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
+
+    }
+
+    // O book nunca depende da primeira ordem do usuário para receber liquidez.
+    // Se uma reinicialização ou transição administrativa deixou a oferta
+    // institucional ausente, ela é reconciliada antes da leitura do livro.
+    if (isUnifiedLiquidity()) {
+      await ensureOrdersForClub(clubeDocumento);
+    }
+
+    const ordens = await Order.find({
+
+      clubeLegacyId,
+
+      status: { $in: ['aberta', 'parcial'] },
+
+    })
+
+      .sort({ tipo: 1, preco: 1, criadoEm: 1 })
+
+      .lean();
+
+    const compras = ordens
+
+      .filter((o) => o.tipo === 'compra')
+
+      .sort((a, b) => Number(b.preco) - Number(a.preco) || new Date(a.criadoEm) - new Date(b.criadoEm))
+
+      .map((o) => ({
+
+        id: String(o._id),
+
+
+        clubeId: o.clubeLegacyId,
+
+        tipo: o.tipo,
+
+        preco: round2(o.preco),
+
+        quantidade: Number(o.quantidade || 0),
+
+        restante: Number(o.restante || 0),
+
+        status: o.status,
+
+        criadoEm: o.criadoEm,
+
+        // Informa somente se pertence à sessão atual; nunca expõe o dono.
+        minhaOrdem: Boolean(req.usuario?.id) && !o.isInstitutional && String(o.usuarioId) === String(req.usuario.id),
+
+      }));
+
+    const vendas = ordens
+
+      .filter((o) => o.tipo === 'venda')
+
+      .sort((a, b) => Number(a.preco) - Number(b.preco) || new Date(a.criadoEm) - new Date(b.criadoEm))
+
+      .map((o) => ({
+
+        id: String(o._id),
+
+
+        clubeId: o.clubeLegacyId,
+
+        tipo: o.tipo,
+
+        preco: round2(o.preco),
+
+        quantidade: Number(o.quantidade || 0),
+
+        restante: Number(o.restante || 0),
+
+        status: o.status,
+
+        criadoEm: o.criadoEm,
+
+        minhaOrdem: Boolean(req.usuario?.id) && !o.isInstitutional && String(o.usuarioId) === String(req.usuario.id),
+
+      }));
+
+    return res.json({
+
+      clube: {
+
+        id: clube.legacyId,
+
+        nome: clube.nome,
+
+        precoAtual: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
+
+        ipoEncerrado: isUnifiedLiquidity() || Boolean(clube.ipoEncerrado),
+        cotasEmitidas: Number(clube.cotasEmitidas || 0),
+        maximoCotas: 1000,
+
+      },
+
+      compras,
+
+      vendas,
+
+      melhorCompra: compras.length ? round2(compras[0].preco) : null,
+
+      melhorVenda: vendas.length ? round2(vendas[0].preco) : null,
+
+      ultimoPreco: round2(clube.precoAtual != null ? clube.precoAtual : clube.preco),
+
+    });
+
+  } catch (err) {
+
+    console.error('Erro ao carregar livro de ordens:', err);
+
+    return res.status(500).json({ erro: 'Erro ao carregar livro de ordens.' });
+
+  }
+
+});
+
+router.get('/minhas-ordens', auth, async (req, res) => {
+
+  try {
+
+    const ordens = await Order.find({
+
+      usuarioId: req.usuario.id,
+
+      status: { $in: ['aberta', 'parcial', 'executada', 'cancelada'] },
+
+    })
+
+      .sort({ criadoEm: -1 })
+
+      .lean();
+
+    return res.json(
+
+      ordens.map((o) => ({
+
+        id: String(o._id),
+
+        clubeId: o.clubeLegacyId,
+
+        tipo: o.tipo,
+
+        preco: round2(o.preco),
+
+        quantidade: Number(o.quantidade || 0),
+
+        restante: Number(o.restante || 0),
+
+        status: o.status,
+
+        criadoEm: o.criadoEm,
+
+        canceladoEm: o.canceladoEm,
+
+        executadoEm: o.executadoEm,
+
+      }))
+
+    );
+
+  } catch (err) {
+
+    console.error('Erro ao listar minhas ordens:', err);
+
+    return res.status(500).json({ erro: 'Erro ao listar ordens.' });
+
+  }
+
+});
+
+router.get('/limite-ordens', auth, async (req, res) => {
+  try {
+    const usuario = await User.findById(req.usuario.id)
+      .select(
+        [
+          '_id',
+          'plano',
+          'premiumAtivo',
+          'premiumInicio',
+          'premiumFim',
+        ].join(' ')
+      )
+      .lean();
+
+    if (!usuario) {
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
+        codigo: 'USUARIO_NAO_ENCONTRADO',
+      });
+    }
+
+    const planoEfetivo = obterPlanoEfetivo(usuario);
+    const janela = obterJanelaSemanal();
+
+    const temporada = await RankingSeason.findOne({
+      status: 'ativa',
+    })
+      .sort({
+        iniciadaEm: -1,
+        createdAt: -1,
+      })
+      .lean();
+
+    if (!temporada) {
+      return res.json({
+        temporadaAtiva: false,
+        mercadoAberto: false,
+        temporada: null,
+        plano: planoEfetivo,
+        ordensIlimitadas: planoEfetivo === 'premium',
+        periodo: {
+          tipo: janela.periodoTipo,
+          chave: janela.periodoChave,
+          inicio: janela.periodoInicio,
+          fim: janela.periodoFim,
+          renovaEm: janela.renovaEm,
+          timezone: janela.timezone,
+        },
+        limiteBase: planoEfetivo === 'lite' ? LIMITE_SEMANAL_LITE_PADRAO : null,
+        bonusOrdens: planoEfetivo === 'lite' ? 0 : null,
+        limite: planoEfetivo === 'lite' ? LIMITE_SEMANAL_LITE_PADRAO : null,
+        utilizadas: planoEfetivo === 'lite' ? 0 : null,
+        restantes: planoEfetivo === 'lite' ? LIMITE_SEMANAL_LITE_PADRAO : null,
+        limiteAtingido: false,
+        rewardedAds: {
+          featureKey: REWARDED_AD_FEATURE_KEY,
+          ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          concluidos: 0,
+          maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+          restantes: REWARDED_AD_MAXIMO_SEMANAL,
+          bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+          disponivel: false,
+          ultimoRewardedAdEm: null,
+        },
+      });
+    }
+
+    const mercadoAberto = temporada.mercadoAberto !== false;
+    const limiteLite = obterLimiteSemanalLite(temporada);
+
+    const temporadaResposta = {
+      id: String(temporada._id),
+      codigo: temporada.codigo,
+      nome: temporada.nome,
+      iniciadaEm: temporada.iniciadaEm || null,
+      encerraEm: temporada.encerraEm || temporada.fimPrevisto || null,
+    };
+
+    if (planoEfetivo === 'premium') {
+      return res.json({
+        temporadaAtiva: true,
+        mercadoAberto,
+        temporada: temporadaResposta,
+        plano: 'premium',
+        ordensIlimitadas: true,
+        periodo: {
+          tipo: janela.periodoTipo,
+          chave: janela.periodoChave,
+          inicio: janela.periodoInicio,
+          fim: janela.periodoFim,
+          renovaEm: janela.renovaEm,
+          timezone: janela.timezone,
+        },
+        limiteBase: null,
+        bonusOrdens: null,
+        limite: null,
+        utilizadas: null,
+        restantes: null,
+        limiteAtingido: false,
+        primeiraOrdemEm: null,
+        ultimaOrdemEm: null,
+        limiteAtingidoEm: null,
+        rewardedAds: {
+          featureKey: REWARDED_AD_FEATURE_KEY,
+          ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          concluidos: null,
+          maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+          restantes: null,
+          bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+          disponivel: false,
+          ultimoRewardedAdEm: null,
+        },
+      });
+    }
+
+    const {
+      quota,
+      janela: janelaQuota,
+    } = await reconciliarQuotaComOrdensExecutadas({
+      usuario,
+      temporada,
+      limiteLite,
+    });
+
+    const rewarded = rewardedAdsParaResposta({
+      quota,
+      limiteLite,
+      mercadoAberto,
+    });
+
+    const limite = rewarded.limiteEfetivo;
+    const utilizadas = Math.max(0, Number(quota.ordensUtilizadas || 0));
+    const restantes = Math.max(0, limite - utilizadas);
+
+    return res.json({
+      temporadaAtiva: true,
+      mercadoAberto,
+      temporada: temporadaResposta,
+      plano: 'lite',
+      ordensIlimitadas: false,
+      periodo: {
+        tipo: janelaQuota.periodoTipo,
+        chave: janelaQuota.periodoChave,
+        inicio: janelaQuota.periodoInicio,
+        fim: janelaQuota.periodoFim,
+        renovaEm: janelaQuota.renovaEm,
+        timezone: janelaQuota.timezone,
+      },
+      limiteBase: rewarded.limiteBase,
+      bonusOrdens: rewarded.bonusOrdens,
+      limite,
+      utilizadas,
+      restantes,
+      limiteAtingido: utilizadas >= limite,
+      primeiraOrdemEm: quota.primeiraOrdemEm || null,
+      ultimaOrdemEm: quota.ultimaOrdemEm || null,
+      limiteAtingidoEm: quota.limiteAtingidoEm || null,
+      rewardedAds: rewarded.rewardedAds,
+    });
+  } catch (err) {
+    console.error('Erro ao consultar limite semanal de ordens:', err);
+
+    return res.status(500).json({
+      erro: 'Erro interno ao consultar limite de ordens.',
+      codigo: 'ERRO_CONSULTA_LIMITE_ORDENS',
+    });
+  }
+});
+
+router.post('/rewarded-ad/iniciar', auth, async (req, res) => {
+  try {
+    const featureKey = String(req.body?.featureKey || '').trim();
+
+    if (featureKey !== REWARDED_AD_FEATURE_KEY) {
+      return res.status(400).json({
+        erro: 'Recompensa de anúncio inválida.',
+        codigo: 'REWARDED_AD_RECURSO_INVALIDO',
+      });
+    }
+
+    const usuario = await User.findById(req.usuario.id);
+
+    if (!usuario) {
+      return res.status(404).json({
+        erro: 'Usuário não encontrado.',
+        codigo: 'USUARIO_NAO_ENCONTRADO',
+      });
+    }
+
+    if (obterPlanoEfetivo(usuario) !== 'lite') {
+      return res.status(403).json({
+        erro: 'Anúncios premiados estão disponíveis apenas para usuários Lite.',
+        codigo: 'REWARDED_AD_APENAS_LITE',
+      });
+    }
+
+    const temporada = await RankingSeason.findOne({ status: 'ativa' })
+      .sort({ iniciadaEm: -1, createdAt: -1 });
+
+    if (!temporada) {
+      return res.status(409).json({
+        erro: 'Não existe uma temporada ativa no momento.',
+        codigo: 'TEMPORADA_NAO_ATIVA',
+      });
+    }
+
+    if (temporada.mercadoAberto === false) {
+      return res.status(409).json({
+        erro: 'O mercado está temporariamente fechado.',
+        codigo: 'MERCADO_FECHADO',
+      });
+    }
+
+    const limiteLite = obterLimiteSemanalLite(temporada);
+    const { quota, janela } = await reconciliarQuotaComOrdensExecutadas({
+      usuario,
+      temporada,
+      limiteLite,
+    });
+
+    const rewarded = rewardedAdsParaResposta({
+      quota,
+      limiteLite,
+      mercadoAberto: true,
+    });
+
+    if (!rewarded.rewardedAds.disponivel) {
+      return res.status(403).json({
+        erro: 'Você já utilizou os 5 anúncios premiados disponíveis nesta semana.',
+        codigo: 'REWARDED_AD_LIMITE_SEMANAL',
+        rewardedAds: rewarded.rewardedAds,
+        renovaEm: janela.renovaEm,
+      });
+    }
+
+    const agora = new Date();
+
+    await RewardedAdEvent.updateMany(
+      {
+        usuarioId: usuario._id,
+        periodoChave: janela.periodoChave,
+        status: 'pending',
+      },
+      {
+        $set: {
+          status: 'cancelled',
+          closedAt: agora,
+          'metadata.cancelReason': 'superseded',
+        },
+      }
+    );
+
+    const claimToken = crypto.randomBytes(32).toString('hex');
+    const attemptId = criarAttemptIdRewarded();
+    const expiraEm = new Date(agora.getTime() + REWARDED_AD_TENTATIVA_TTL_MS);
+
+    await RewardedAdEvent.create({
+      usuarioId: usuario._id,
+      temporadaId: temporada._id,
+      quotaId: quota._id,
+      periodoChave: janela.periodoChave,
+      provider: REWARDED_AD_PROVIDER,
+      featureKey: REWARDED_AD_FEATURE_KEY,
+      rewardType: 'orders',
+      rewardAmount: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+      attemptId,
+      tokenHash: hashRewardedToken(claimToken),
+      status: 'pending',
+      iniciadoEm: agora,
+      expiraEm,
+      metadata: {
+        userAgent: String(req.get('user-agent') || '').slice(0, 300),
+      },
+    });
+
+    return res.json({
+      sucesso: true,
+      attemptId,
+      claimToken,
+      expiraEm,
+      recompensa: {
+        tipo: 'orders',
+        quantidade: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+      },
+      rewardedAds: rewarded.rewardedAds,
+      periodo: {
+        inicio: janela.periodoInicio,
+        fim: janela.periodoFim,
+        renovaEm: janela.renovaEm,
+        timezone: janela.timezone,
+      },
+    });
+  } catch (err) {
+    console.error('Erro ao iniciar rewarded ad:', err);
+
+    return res.status(500).json({
+      erro: 'Não foi possível iniciar o anúncio premiado.',
+      codigo: 'ERRO_REWARDED_AD_INICIAR',
+    });
+  }
+});
+
+router.post('/rewarded-ad/concluir', auth, async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const attemptId = String(req.body?.attemptId || '').trim();
+    const claimToken = String(req.body?.claimToken || '').trim();
+    const providerReward = req.body?.providerReward || {};
+
+    if (!attemptId || attemptId.length > 120 || claimToken.length < 32 || claimToken.length > 200) {
+      return res.status(400).json({
+        erro: 'Tentativa de anúncio premiado inválida.',
+        codigo: 'REWARDED_AD_TENTATIVA_INVALIDA',
+      });
+    }
+
+    let resposta = null;
+
+    await session.withTransaction(async () => {
+      const usuario = await User.findById(req.usuario.id).session(session);
+
+      if (!usuario) throw new Error('USUARIO_NAO_ENCONTRADO');
+      if (obterPlanoEfetivo(usuario) !== 'lite') {
+        throw new Error('REWARDED_AD_APENAS_LITE');
+      }
+
+      const temporada = await RankingSeason.findOne({ status: 'ativa' })
+        .sort({ iniciadaEm: -1, createdAt: -1 })
+        .session(session);
+
+      if (!temporada) throw new Error('TEMPORADA_NAO_ATIVA');
+      if (temporada.mercadoAberto === false) throw new Error('MERCADO_FECHADO');
+
+      const evento = await RewardedAdEvent.findOne({
+        attemptId,
+        usuarioId: usuario._id,
+      })
+        .select('+tokenHash')
+        .session(session);
+
+      if (!evento || !rewardedTokenConfere(claimToken, evento.tokenHash)) {
+        throw new Error('REWARDED_AD_TENTATIVA_INVALIDA');
+      }
+
+      const limiteLite = obterLimiteSemanalLite(temporada);
+      const { quota, janela } = await reconciliarQuotaComOrdensExecutadas({
+        usuario,
+        temporada,
+        session,
+        limiteLite,
+      });
+
+      if (
+        evento.periodoChave !== janela.periodoChave ||
+        String(evento.temporadaId) !== String(temporada._id)
+      ) {
+        throw new Error('REWARDED_AD_TENTATIVA_EXPIRADA');
+      }
+
+      if (evento.status === 'rewarded') {
+        const rewardedAtual = rewardedAdsParaResposta({
+          quota,
+          limiteLite,
+          mercadoAberto: true,
+        });
+        const utilizadas = Number(quota.ordensUtilizadas || 0);
+
+        resposta = {
+          sucesso: true,
+          idempotente: true,
+          mensagem: 'A recompensa deste anúncio já havia sido creditada.',
+          recompensa: {
+            tipo: 'orders',
+            quantidade: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          },
+          quota: {
+            base: rewardedAtual.limiteBase,
+            bonus: rewardedAtual.bonusOrdens,
+            limiteEfetivo: rewardedAtual.limiteEfetivo,
+            utilizadas,
+            restantes: Math.max(0, rewardedAtual.limiteEfetivo - utilizadas),
+          },
+          rewardedAds: rewardedAtual.rewardedAds,
+          periodo: {
+            inicio: janela.periodoInicio,
+            fim: janela.periodoFim,
+            renovaEm: janela.renovaEm,
+            timezone: janela.timezone,
+          },
+        };
+        return;
+      }
+
+      if (evento.status !== 'pending') {
+        throw new Error('REWARDED_AD_TENTATIVA_EXPIRADA');
+      }
+
+      const agora = new Date();
+
+      if (agora > new Date(evento.expiraEm)) {
+        throw new Error('REWARDED_AD_TENTATIVA_EXPIRADA');
+      }
+
+      if (
+        agora.getTime() - new Date(evento.iniciadoEm).getTime() <
+        REWARDED_AD_MINIMO_CONCLUSAO_MS
+      ) {
+        throw new Error('REWARDED_AD_TENTATIVA_PREMATURA');
+      }
+
+      const recompensasConfirmadas = await RewardedAdEvent.countDocuments({
+        usuarioId: usuario._id,
+        temporadaId: temporada._id,
+        periodoChave: janela.periodoChave,
+        status: 'rewarded',
+      }).session(session);
+
+      if (recompensasConfirmadas >= REWARDED_AD_MAXIMO_SEMANAL) {
+        throw new Error('REWARDED_AD_LIMITE_SEMANAL');
+      }
+
+      const resumoRewarded = aplicarRecompensaRewardedQuota({
+        quota,
+        limiteLite,
+        rewardedAdsConcluidosConfirmados: recompensasConfirmadas,
+        agora,
+      });
+
+      await quota.save({ session });
+
+      evento.status = 'rewarded';
+      evento.rewardedAt = agora;
+      evento.providerRewardType = String(providerReward?.type || '').slice(0, 120);
+
+      const providerAmount = Number(providerReward?.amount);
+      evento.providerRewardAmount = Number.isFinite(providerAmount)
+        ? providerAmount
+        : null;
+
+      evento.metadata = {
+        ...(evento.metadata || {}),
+        grantedBy: 'gpt_rewardedSlotGranted',
+      };
+      evento.markModified('metadata');
+      await evento.save({ session });
+
+      const utilizadas = Number(quota.ordensUtilizadas || 0);
+      const restantes = Math.max(0, resumoRewarded.limiteEfetivo - utilizadas);
+
+      resposta = {
+        sucesso: true,
+        idempotente: false,
+        mensagem: '+2 ordens liberadas para esta semana.',
+        recompensa: {
+          tipo: 'orders',
+          quantidade: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+        },
+        quota: {
+          base: resumoRewarded.limiteBase,
+          bonus: resumoRewarded.bonusOrdens,
+          limiteEfetivo: resumoRewarded.limiteEfetivo,
+          utilizadas,
+          restantes,
+          limiteAtingido: restantes <= 0,
+        },
+        rewardedAds: {
+          featureKey: REWARDED_AD_FEATURE_KEY,
+          ordensPorAnuncio: REWARDED_AD_ORDENS_POR_RECOMPENSA,
+          concluidos: resumoRewarded.concluidos,
+          maximoSemanal: REWARDED_AD_MAXIMO_SEMANAL,
+          restantes: resumoRewarded.restantesRewardedAds,
+          bonusMaximo: REWARDED_AD_BONUS_MAXIMO_SEMANAL,
+          disponivel: resumoRewarded.disponivel,
+          ultimoRewardedAdEm: quota.ultimoRewardedAdEm || null,
+        },
+        periodo: {
+          inicio: janela.periodoInicio,
+          fim: janela.periodoFim,
+          renovaEm: janela.renovaEm,
+          timezone: janela.timezone,
+        },
+      };
+    });
+
+    return res.json(resposta);
+  } catch (err) {
+    console.error('Erro ao concluir rewarded ad:', err);
+
+    if (err.message === 'USUARIO_NAO_ENCONTRADO') {
+      return res.status(404).json({ erro: 'Usuário não encontrado.', codigo: err.message });
+    }
+
+    if (err.message === 'REWARDED_AD_APENAS_LITE') {
+      return res.status(403).json({
+        erro: 'Anúncios premiados estão disponíveis apenas para usuários Lite.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'TEMPORADA_NAO_ATIVA' || err.message === 'MERCADO_FECHADO') {
+      return res.status(409).json({
+        erro: err.message === 'MERCADO_FECHADO'
+          ? 'O mercado está temporariamente fechado.'
+          : 'Não existe uma temporada ativa no momento.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_TENTATIVA_INVALIDA') {
+      return res.status(400).json({
+        erro: 'Tentativa de anúncio premiado inválida.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_TENTATIVA_EXPIRADA') {
+      return res.status(409).json({
+        erro: 'A tentativa do anúncio expirou. Inicie um novo anúncio.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_TENTATIVA_PREMATURA') {
+      return res.status(409).json({
+        erro: 'A recompensa ainda não pode ser confirmada.',
+        codigo: err.message,
+      });
+    }
+
+    if (err.message === 'REWARDED_AD_LIMITE_SEMANAL') {
+      return res.status(403).json({
+        erro: 'Você já utilizou os 5 anúncios premiados disponíveis nesta semana.',
+        codigo: err.message,
+      });
+    }
+
+    return res.status(500).json({
+      erro: 'Não foi possível concluir a recompensa do anúncio.',
+      codigo: 'ERRO_REWARDED_AD_CONCLUIR',
+      detalhe: process.env.NODE_ENV === 'production' ? undefined : String(err.message || err),
+    });
+  } finally {
+    await session.endSession();
+  }
+});
+
+router.post('/ordem', auth, async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const clubeLegacyId = Number(req.body.clubeId);
+
+    const tipo = String(
+      req.body.tipo || ''
+    ).toLowerCase();
+
+    const preco = Number(req.body.preco);
+
+    const quantidade = Number(
+      req.body.quantidade
+    );
+
+    if (!['compra', 'venda'].includes(tipo)) {
+      return res.status(400).json({
+        erro: 'Tipo de ordem invÃ¡lido.',
+      });
+    }
+
+    if (
+      !Number.isInteger(clubeLegacyId) ||
+      clubeLegacyId <= 0
+    ) {
+      return res.status(400).json({
+        erro: 'clubeId invÃ¡lido.',
+      });
+    }
+
+    if (
+      !Number.isFinite(quantidade) ||
+      quantidade <= 0
+    ) {
+      return res.status(400).json({
+        erro: 'Quantidade invÃ¡lida.',
+      });
+    }
+
+        let resposta = null;
+
+    const usuariosParaVerificarMilestone =
+      new Set();
+
+    await session.withTransaction(async () => {
+      const usuario = await User.findById(
+        req.usuario.id
+      ).session(session);
+
+      const clube = await Club.findOne({
+        legacyId: clubeLegacyId,
+      }).session(session);
+
+      if (!usuario) {
+        throw new Error(
+          'USUARIO_NAO_ENCONTRADO'
+        );
+      }
+
+      if (!clube) {
+        throw new Error(
+          'CLUBE_NAO_ENCONTRADO'
+        );
+      }
+
+      if (!isUnifiedLiquidity() && !Boolean(clube.ipoEncerrado)) {
+        throw new Error(
+          'IPO_AINDA_ABERTO'
+        );
+      }
+
+      /*
+       * O tick pertence exclusivamente ao mercado secundÃ¡rio. A validaÃ§Ã£o
+       * acontece somente depois de confirmar, pelo estado persistido do
+       * clube, que o IPO foi encerrado.
+       */
+      if (
+        !Number.isFinite(preco) ||
+        preco <= 0 ||
+        !validaTick(preco)
+      ) {
+        throw new Error('PRECO_TICK_INVALIDO');
+      }
+
+      usuario.carteira = Array.isArray(
+        usuario.carteira
+      )
+        ? usuario.carteira
+        : [];
+
+      /*
+       * Primeiro validamos saldo ou cotas.
+       * Uma ordem invÃ¡lida nÃ£o deve consumir franquia.
+       */
+      if (tipo === 'venda') {
+        const ativo = getCarteiraAtivo(
+          usuario,
+          clubeLegacyId
+        );
+
+        const reservado =
+          await getReservedSellQty({
+            userId: usuario._id,
+            clubId: clube._id,
+            session,
+          });
+
+        const disponivel =
+          Number(ativo?.quantidade || 0) -
+          Number(reservado || 0);
+
+        if (disponivel < quantidade) {
+          throw new Error(
+            'COTAS_INSUFICIENTES_VENDA'
+          );
+        }
+      }
+
+      if (tipo === 'compra') {
+        const custoMaximo = round2(
+          preco *
+            quantidade *
+            (1 + TAKER_FEE)
+        );
+
+        if (
+          round2(usuario.saldo || 0) <
+          custoMaximo
+        ) {
+          throw new Error(
+            'SALDO_INSUFICIENTE'
+          );
+        }
+      }
+
+            /*
+       * A negociaÃ§Ã£o depende de uma temporada
+       * TradeSports ativa.
+       *
+       * Rodadas esportivas nÃ£o controlam mais
+       * a criaÃ§Ã£o de ordens.
+       */
+      const temporada =
+        await RankingSeason.findOne({
+          status: 'ativa',
+        })
+          .sort({
+            iniciadaEm: -1,
+            createdAt: -1,
+          })
+          .session(session);
+
+      if (!temporada) {
+        throw new Error(
+          'TEMPORADA_NAO_ATIVA'
+        );
+      }
+
+      /*
+       * Compatibilidade:
+       * temporadas antigas sem o campo
+       * mercadoAberto continuam abertas.
+       *
+       * Apenas o valor false fecha o mercado.
+       */
+      if (
+        temporada.mercadoAberto === false
+      ) {
+        const erroMercado =
+          new Error('MERCADO_FECHADO');
+
+        erroMercado.temporadaId =
+          String(temporada._id);
+
+        erroMercado.temporadaCodigo =
+          temporada.codigo || null;
+
+        throw erroMercado;
+      }
+
+      /*
+       * A contraparte institucional precisa existir antes da ordem do usuário
+       * nascer e antes da consulta de matching. Na versão anterior, a
+       * publicação acontecia somente ao final do processamento; por isso a
+       * primeira ordem ficava aberta mesmo cruzando o preço institucional e
+       * apenas uma segunda ordem disparava a execução.
+       *
+       * Este fallback também protege clubes incluídos depois do início da
+       * temporada e eventuais falhas pontuais da reconciliação administrativa.
+       */
+      if (isUnifiedLiquidity()) {
+        const filtroContraparteInstitucional = {
+          clubeId: clube._id,
+          tipo: tipo === 'compra' ? 'venda' : 'compra',
+          isInstitutional: true,
+          status: { $in: ['aberta', 'parcial'] },
+          restante: { $gt: 0 },
+        };
+
+        const contraparteInstitucional =
+          await Order.findOne(filtroContraparteInstitucional)
+            .select('_id')
+            .session(session)
+            .lean();
+
+        /*
+         * Na emissão inicial ainda não há recompra institucional; portanto,
+         * uma venda de usuário pode legitimamente não encontrar bid do bot.
+         * A publicação só é obrigatória para a primeira compra ou quando já
+         * existem cotas emitidas que permitem liquidez bilateral.
+         */
+        const devePublicar =
+          !contraparteInstitucional &&
+          (
+            tipo === 'compra' ||
+            Number(clube.cotasEmitidas || 0) > 0
+          );
+
+        if (devePublicar) {
+          await publishOrdersForClub(clube, { session });
+        }
+      }
+
+      const planoEfetivo =
+        obterPlanoEfetivo(usuario);
+
+      let quotaSemanal = null;
+      let janelaSemanal =
+        obterJanelaSemanal();
+
+      /*
+       * A criação de uma ordem aberta não consome a franquia Lite.
+       * A quota será contabilizada somente na primeira execução da ordem.
+       */
+      if (planoEfetivo === 'lite') {
+        const resultadoQuota =
+          await reconciliarQuotaComOrdensExecutadas({
+            usuario,
+            temporada,
+            session,
+            limiteLite:
+              Number(
+                temporada.limiteOrdensLiteSemanal ??
+                  temporada.limiteOrdensLitePorRodada ??
+                  LIMITE_SEMANAL_LITE_PADRAO
+              ),
+          });
+
+        quotaSemanal = resultadoQuota.quota;
+
+        janelaSemanal =
+          resultadoQuota.janela;
+      }
+
+            /*
+       * A ordem nasce sem consumir franquia. O marcador persistido em
+       * metadata garante que uma execução parcial conte apenas uma vez.
+       */
+      const [ordem] = await Order.create(
+        [
+          {
+            legacyId:
+              `ord_${usuario.legacyId || usuario._id}_${clubeLegacyId}_${Date.now()}_${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
+
+            usuarioId: usuario._id,
+
+            usuarioLegacyId:
+              usuario.legacyId ?? null,
+
+            clubeId: clube._id,
+
+            clubeLegacyId,
+
+            tipo,
+
+            preco: round2(preco),
+
+            quantidade:
+              Number(quantidade),
+
+            restante:
+              Number(quantidade),
+
+            status: 'aberta',
+
+            criadoEm: new Date(),
+          },
+        ],
+        {
+          session,
+        }
+      );
+
+      const matchQuery =
+        tipo === 'compra'
+          ? {
+              clubeId: clube._id,
+
+              tipo: 'venda',
+
+              status: {
+                $in: [
+                  'aberta',
+                  'parcial',
+                ],
+              },
+
+              restante: {
+                $gt: 0,
+              },
+
+              preco: {
+                $lte: round2(preco),
+              },
+
+              usuarioId: {
+                $ne: usuario._id,
+              },
+            }
+          : {
+              clubeId: clube._id,
+
+              tipo: 'compra',
+
+              status: {
+                $in: [
+                  'aberta',
+                  'parcial',
+                ],
+              },
+
+              restante: {
+                $gt: 0,
+              },
+
+              preco: {
+                $gte: round2(preco),
+              },
+
+              usuarioId: {
+                $ne: usuario._id,
+              },
+            };
+
+      const contrapartes =
+        await Order.find(matchQuery)
+          .sort(
+            tipo === 'compra'
+              ? {
+                  preco: 1,
+                  institutionalPriority: 1,
+                  criadoEm: 1,
+                }
+              : {
+                  preco: -1,
+                  institutionalPriority: 1,
+                  criadoEm: 1,
+                }
+          )
+          .session(session);
+
+      const execucoes = [];
+
+      for (
+        const contraparte of
+        contrapartes
+      ) {
+        if (
+          Number(
+            ordem.restante || 0
+          ) <= 0
+        ) {
+          break;
+        }
+
+        const qtdExec = Math.min(
+          Number(ordem.restante || 0),
+          Number(
+            contraparte.restante || 0
+          )
+        );
+
+        if (qtdExec <= 0) {
+          continue;
+        }
+
+        const precoExec = round2(
+          contraparte.preco
+        );
+
+        const buyer =
+          tipo === 'compra'
+            ? usuario
+            : await User.findById(
+                contraparte.usuarioId
+              ).session(session);
+
+        const seller =
+          tipo === 'venda'
+            ? usuario
+            : await User.findById(
+                contraparte.usuarioId
+              ).session(session);
+
+        if (!buyer || !seller) {
+          continue;
+        }
+
+        if (
+          String(buyer._id) ===
+          String(seller._id)
+        ) {
+          continue;
+        }
+
+        const buyerOrder = tipo === 'compra' ? ordem : contraparte;
+        const sellerOrder = tipo === 'venda' ? ordem : contraparte;
+        const buyerInstitutional = Boolean(buyerOrder.isInstitutional);
+        const sellerInstitutional = Boolean(sellerOrder.isInstitutional);
+        const liquidityState = (buyerInstitutional || sellerInstitutional)
+          ? await ensureLiquidityState(clube, session)
+          : null;
+
+        if (buyerInstitutional) {
+          await validateBuybackLimit({
+            state: liquidityState,
+            clubId: clube._id,
+            userId: seller._id,
+            quantity: qtdExec,
+            session,
+          });
+        }
+
+        const bruto = round2(
+          qtdExec * precoExec
+        );
+
+        const buyerFeePct = buyerInstitutional ? 0 : (tipo === 'compra' ? TAKER_FEE : MAKER_FEE);
+        const sellerFeePct = sellerInstitutional ? 0 : (tipo === 'venda' ? TAKER_FEE : MAKER_FEE);
+        const taxaBuyer = round2(bruto * buyerFeePct);
+        const taxaSeller = round2(bruto * sellerFeePct);
+
+        const custoBuyer = round2(
+          bruto + taxaBuyer
+        );
+
+        const creditoSeller = round2(
+          bruto - taxaSeller
+        );
+
+        if (
+          !buyerInstitutional && round2(buyer.saldo || 0) <
+          custoBuyer
+        ) {
+          if (tipo === 'compra') {
+            break;
+          }
+
+          continue;
+        }
+
+        // A ordem que já estava no livro é validada primeiro. Se o titular
+        // Lite esgotou a franquia, ela é cancelada e o motor procura a próxima.
+        try {
+          await registrarPrimeiraExecucaoLite({
+            ordem: contraparte,
+            usuario: tipo === 'compra' ? seller : buyer,
+            temporada,
+            session,
+          });
+        } catch (quotaError) {
+          if (quotaError?.message === 'LIMITE_SEMANAL_ORDENS_ATINGIDO') {
+            contraparte.status = 'cancelada';
+            contraparte.canceladoEm = new Date();
+            await contraparte.save({ session });
+            continue;
+          }
+          throw quotaError;
+        }
+
+        const quotaDaOrdem = await registrarPrimeiraExecucaoLite({
+          ordem,
+          usuario,
+          temporada,
+          session,
+        });
+        if (quotaDaOrdem) quotaSemanal = quotaDaOrdem.quota;
+
+        let newlyIssued = 0;
+        let institutionResold = 0;
+        if (sellerInstitutional) {
+          const purpose = String(sellerOrder.metadata?.purpose || '');
+          if (purpose === 'ISSUANCE') {
+            newlyIssued = qtdExec;
+          } else if (purpose === 'RESALE') {
+            institutionResold = qtdExec;
+          } else {
+            // Compatibilidade com ordens institucionais criadas pela v1.0.0.
+            institutionResold = Math.min(Number(liquidityState.institutionHeldIssuedShares || 0), qtdExec);
+            newlyIssued = qtdExec - institutionResold;
+          }
+          const remainingCapacity = Number(liquidityState.maxShares) - Number(liquidityState.issuedShares);
+          if (newlyIssued > remainingCapacity || liquidityState.issuanceSuspended) continue;
+          if (institutionResold > Number(liquidityState.institutionHeldIssuedShares || 0)) continue;
+          if (institutionResold > 0) {
+            try { debitaVenda(seller, clubeLegacyId, institutionResold); } catch (_) { continue; }
+          }
+          liquidityState.institutionHeldIssuedShares = Math.max(0,
+            Number(liquidityState.institutionHeldIssuedShares) - institutionResold);
+          liquidityState.issuedShares = Number(liquidityState.issuedShares) + newlyIssued;
+          liquidityState.distributionGross = round2(Number(liquidityState.distributionGross) + newlyIssued * precoExec);
+          liquidityState.resaleGross = round2(Number(liquidityState.resaleGross) + institutionResold * precoExec);
+          liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund) + bruto);
+          clube.cotasEmitidas = liquidityState.issuedShares;
+          clube.cotasDisponiveis = Math.max(0, Number(liquidityState.maxShares) - liquidityState.issuedShares);
+          clube.ipoEncerrado = clube.cotasDisponiveis === 0;
+        } else {
+          try { debitaVenda(seller, clubeLegacyId, qtdExec); } catch (_) { continue; }
+        }
+
+        creditaCompra(
+          buyer,
+          clubeLegacyId,
+          clube.nome,
+          qtdExec,
+          precoExec
+        );
+
+        if (buyerInstitutional) {
+          liquidityState.institutionHeldIssuedShares =
+            Number(liquidityState.institutionHeldIssuedShares) + qtdExec;
+          liquidityState.buybackGross = round2(Number(liquidityState.buybackGross) + bruto);
+          liquidityState.liquidationFund = round2(Math.max(0, Number(liquidityState.liquidationFund) - bruto));
+          await recordBuyback({ clubId: clube._id, userId: seller._id, quantity: qtdExec, session });
+        }
+
+        autoFavoritarClubeAoComprar(
+          buyer,
+          clube,
+          {
+            ligaId:
+              'brasileirao-a',
+
+            ligaNome:
+              'BrasileirÃ£o SÃ©rie A',
+
+            criarNotificacao: true,
+          }
+        );
+
+        /*
+         * CorreÃ§Ã£o:
+         * o saldo era alterado duas vezes
+         * no arquivo anterior.
+         */
+        buyer.saldo = round2(
+          Number(buyer.saldo || 0) -
+            custoBuyer
+        );
+
+        seller.saldo = round2(
+          Number(seller.saldo || 0) +
+            creditoSeller
+        );
+
+        buyer.markModified(
+          'carteira'
+        );
+
+        buyer.markModified(
+          'watchlist'
+        );
+
+        buyer.markModified(
+          'alertState'
+        );
+
+        buyer.markModified(
+          'notificacoes'
+        );
+
+        seller.markModified(
+          'carteira'
+        );
+
+        ordem.restante =
+          Number(
+            ordem.restante || 0
+          ) - qtdExec;
+
+        contraparte.restante =
+          Number(
+            contraparte.restante || 0
+          ) - qtdExec;
+
+        ordem.status =
+          Number(
+            ordem.restante || 0
+          ) <= 0
+            ? 'executada'
+            : 'parcial';
+
+        contraparte.status =
+          Number(
+            contraparte.restante || 0
+          ) <= 0
+            ? 'executada'
+            : 'parcial';
+
+        if (
+          ordem.status ===
+          'executada'
+        ) {
+          ordem.executadoEm =
+            new Date();
+        }
+
+        if (
+          contraparte.status ===
+          'executada'
+        ) {
+          contraparte.executadoEm =
+            new Date();
+        }
+
+        clube.precoAtual =
+          precoExec;
+
+        await buyer.save({
+          session,
+        });
+
+        if (
+          String(buyer._id) !==
+          String(seller._id)
+        ) {
+          await seller.save({
+            session,
+          });
+        }
+
+        await ordem.save({
+          session,
+        });
+
+        await contraparte.save({
+          session,
+        });
+
+        await clube.save({
+          session,
+        });
+
+        await criarRegistroInvestment({
+          session,
+          usuario: buyer,
+          clube,
+          quantidade: qtdExec,
+          precoUnitario: precoExec,
+          totalPago: custoBuyer,
+          tipo: 'COMPRA',
+
+          metadata: {
+            mercado: 'secundario',
+
+            fee: taxaBuyer,
+
+            feeType: buyerInstitutional ? 'institutional' : (tipo === 'compra' ? 'taker' : 'maker'),
+            institutionalCounterparty: sellerInstitutional,
+            newlyIssued,
+
+            orderId: String(
+              buyerOrder._id
+            ),
+
+            matchedOrderId: String(
+              sellerOrder._id
+            ),
+          },
+        });
+
+        await criarRegistroInvestment({
+          session,
+          usuario: seller,
+          clube,
+          quantidade: qtdExec,
+          precoUnitario: precoExec,
+          totalPago: creditoSeller,
+          tipo: 'VENDA',
+
+          metadata: {
+            mercado: 'secundario',
+
+            fee: taxaSeller,
+
+            feeType: sellerInstitutional ? 'institutional' : (tipo === 'venda' ? 'taker' : 'maker'),
+            institutionalCounterparty: buyerInstitutional,
+
+            orderId: String(
+              sellerOrder._id
+            ),
+
+            matchedOrderId: String(
+              buyerOrder._id
+            ),
+          },
+        });
+
+        if (liquidityState) await liquidityState.save({ session });
+
+        const journal = buildTradeEntry({
+          buyerId: String(buyer._id), sellerId: String(seller._id), clubeId: clubeLegacyId,
+          qty: qtdExec, price: precoExec, buyerFee: taxaBuyer, sellerFee: taxaSeller,
+          buyerRole: buyerInstitutional ? 'institutional' : (tipo === 'compra' ? 'taker' : 'maker'),
+          sellerRole: sellerInstitutional ? 'institutional' : (tipo === 'venda' ? 'taker' : 'maker'),
+          makerFeePct: MAKER_FEE, takerFeePct: TAKER_FEE,
+        });
+        await postJournal({ ...journal, idemKey: `trade:${buyerOrder._id}:${sellerOrder._id}:${qtdExec}:${ordem.restante}`, session });
+
+                execucoes.push({
+          quantidade: qtdExec,
+          preco: precoExec,
+          bruto,
+          taxaBuyer,
+          taxaSeller,
+        });
+
+        usuariosParaVerificarMilestone.add(
+          String(buyer._id)
+        );
+
+        usuariosParaVerificarMilestone.add(
+          String(seller._id)
+        );
+      }
+
+      if (
+        Number(
+          ordem.restante || 0
+        ) <= 0
+      ) {
+        ordem.restante = 0;
+
+        ordem.status = 'executada';
+
+        ordem.executadoEm =
+          ordem.executadoEm ||
+          new Date();
+      } else if (
+        execucoes.length > 0
+      ) {
+        ordem.status = 'parcial';
+      } else {
+        ordem.status = 'aberta';
+      }
+
+      await ordem.save({
+        session,
+      });
+
+      if (isUnifiedLiquidity() && !ordem.isInstitutional) {
+        const institutionalPrimarySell = await Order.findOne({
+            clubeId: clube._id, tipo: 'venda', isInstitutional: true,
+            status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
+            'metadata.purpose': 'ISSUANCE',
+          }).session(session);
+        const institutionalBuy = await Order.findOne({
+            clubeId: clube._id, tipo: 'compra', isInstitutional: true,
+            status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
+          }).session(session);
+        if (!institutionalBuy || !institutionalPrimarySell || Number(institutionalPrimarySell.restante) <= 5) {
+          await publishOrdersForClub(clube, { session });
+        }
+      }
+
+            const limiteOrdens =
+        planoEfetivo === 'lite'
+          ? Number(
+              quotaSemanal
+                ?.limiteOrdens ||
+                LIMITE_SEMANAL_LITE_PADRAO
+            )
+          : null;
+
+      const ordensUtilizadas =
+        planoEfetivo === 'lite'
+          ? Number(
+              quotaSemanal
+                ?.ordensUtilizadas || 0
+            )
+          : null;
+
+      const ordensRestantes =
+        planoEfetivo === 'lite'
+          ? Math.max(
+              0,
+              limiteOrdens -
+                ordensUtilizadas
+            )
+          : null;
+
+      const resumoRewardedOrdem =
+        planoEfetivo === 'lite' && quotaSemanal
+          ? rewardedAdsParaResposta({
+              quota: quotaSemanal,
+              limiteLite: obterLimiteSemanalLite(temporada),
+              mercadoAberto: true,
+            })
+          : null;
+
+      resposta = {
+        mensagem:
+          execucoes.length
+            ? 'Ordem enviada e processada no mercado.'
+            : 'Ordem enviada para o livro de ordens.',
+
+        ordem: {
+          id: String(ordem._id),
+
+          tipo: ordem.tipo,
+
+          preco: round2(
+            ordem.preco
+          ),
+
+          quantidade: Number(
+            ordem.quantidade || 0
+          ),
+
+          restante: Number(
+            ordem.restante || 0
+          ),
+
+          status: ordem.status,
+
+          clubeId:
+            ordem.clubeLegacyId,
+        },
+
+        execucoes,
+
+        clube: {
+          id: clube.legacyId,
+
+          nome: clube.nome,
+
+          precoAtual: round2(
+            clube.precoAtual != null
+              ? clube.precoAtual
+              : clube.preco
+          ),
+        },
+
+        marketMode: getMarketMode(),
+
+                temporada: {
+          id: String(
+            temporada._id
+          ),
+
+          codigo:
+            temporada.codigo,
+
+          nome:
+            temporada.nome,
+
+          ativa: true,
+
+          mercadoAberto: true,
+        },
+
+        plano: {
+          tipo: planoEfetivo,
+
+          ordensIlimitadas:
+            planoEfetivo ===
+            'premium',
+        },
+
+        franquiaOrdens: {
+          periodoTipo: 'semanal',
+
+          periodoChave:
+            janelaSemanal.periodoChave,
+
+          periodoInicio:
+            janelaSemanal.periodoInicio,
+
+          periodoFim:
+            janelaSemanal.periodoFim,
+
+          renovaEm:
+            janelaSemanal.renovaEm,
+
+          timezone:
+            janelaSemanal.timezone,
+
+          limite:
+            planoEfetivo === 'lite'
+              ? limiteOrdens
+              : null,
+
+          utilizadas:
+            ordensUtilizadas,
+
+          restantes:
+            ordensRestantes,
+
+          limiteAtingido:
+            planoEfetivo === 'lite'
+              ? ordensRestantes <= 0
+              : false,
+
+          limiteBase:
+            resumoRewardedOrdem?.limiteBase ?? null,
+
+          bonusOrdens:
+            resumoRewardedOrdem?.bonusOrdens ?? null,
+
+          rewardedAds:
+            resumoRewardedOrdem?.rewardedAds ?? null,
+        },
+      };
+        });
+
+    if (usuariosParaVerificarMilestone.size > 0) {
+      await Promise.allSettled(
+        Array.from(usuariosParaVerificarMilestone).map((usuarioId) =>
+          verificarMilestoneRentabilidadeUsuario(usuarioId, {
+            origem: 'trade_executed',
+          })
+        )
+      );
+    }
+
+    if (isUnifiedLiquidity()) {
+      await enforceSolvency().catch((error) =>
+        console.error('Falha ao recalcular solvência institucional:', error)
+      );
+    }
+
+    return res.json(resposta);
+  } catch (err) {
+    console.error(
+      'Erro ao enviar ordem:',
+      err
+    );
+
+    if (
+      err.message ===
+      'USUARIO_NAO_ENCONTRADO'
+    ) {
+      return res.status(404).json({
+        erro:
+          'UsuÃ¡rio nÃ£o encontrado.',
+      });
+    }
+
+    if (
+      err.message ===
+      'CLUBE_NAO_ENCONTRADO'
+    ) {
+      return res.status(404).json({
+        erro:
+          'Clube nÃ£o encontrado.',
+      });
+    }
+
+    if (
+      err.message ===
+      'IPO_AINDA_ABERTO'
+    ) {
+      return res.status(400).json({
+        erro:
+          'Mercado secundÃ¡rio sÃ³ abre apÃ³s o fim do IPO.',
+      });
+    }
+
+    if (err.message === 'PRECO_TICK_INVALIDO') {
+      return res.status(400).json({
+        erro: `PreÃ§o invÃ¡lido. Tick mÃ­nimo: T$ ${TICK_SIZE.toFixed(2)}`,
+        codigo: 'PRECO_TICK_INVALIDO',
+      });
+    }
+
+    if (
+      err.message ===
+      'COTAS_INSUFICIENTES_VENDA'
+    ) {
+      return res.status(400).json({
+        erro:
+          'VocÃª nÃ£o possui cotas livres suficientes para vender.',
+      });
+    }
+
+    if (
+      err.message ===
+      'SALDO_INSUFICIENTE'
+    ) {
+      return res.status(400).json({
+        erro:
+          'Saldo insuficiente para enviar a ordem.',
+      });
+    }
+
+    if (err.message === 'LIMITE_RECOMPRA_USUARIO') {
+      return res.status(409).json({
+        erro: 'O limite diário de liquidez para este clube foi atingido nesta conta.',
+        codigo: 'LIMITE_RECOMPRA_USUARIO',
+      });
+    }
+
+    if (err.message === 'LIMITE_RECOMPRA_CLUBE') {
+      return res.status(409).json({
+        erro: 'A liquidez disponível para este clube foi utilizada hoje. As negociações entre usuários continuam abertas.',
+        codigo: 'LIMITE_RECOMPRA_CLUBE',
+      });
+    }
+
+    if (
+      err.message ===
+      'TEMPORADA_NAO_ATIVA'
+    ) {
+      return res.status(409).json({
+        erro:
+          'NÃ£o existe uma temporada ativa no momento.',
+
+        codigo:
+          'TEMPORADA_NAO_ATIVA',
+      });
+    }
+
+        if (
+      err.message ===
+      'MERCADO_FECHADO'
+    ) {
+      return res.status(409).json({
+        erro:
+          'O mercado estÃ¡ temporariamente fechado para novas ordens.',
+
+        codigo:
+          'MERCADO_FECHADO',
+
+        temporada: {
+          id:
+            err.temporadaId || null,
+
+          codigo:
+            err.temporadaCodigo || null,
+        },
+      });
+    }
+
+    if (
+      err.message ===
+      'LIMITE_SEMANAL_ORDENS_ATINGIDO'
+    ) {
+      return res.status(403).json({
+        erro:
+          'VocÃª atingiu o limite semanal de ordens.',
+
+        codigo:
+          'LIMITE_ORDENS_ATINGIDO',
+
+        plano: 'lite',
+
+        limite:
+          Number(err.limite || 15),
+
+        utilizadas:
+          Number(
+            err.utilizadas ||
+              err.limite ||
+              15
+          ),
+
+        restantes: 0,
+
+        rodada:
+          err.rodada || null,
+
+        temporada:
+          err.temporada || null,
+      });
+    }
+
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        erro:
+          'NÃ£o foi possÃ­vel atualizar o contador de ordens. Tente novamente.',
+
+        codigo:
+          'CONFLITO_CONTADOR_ORDENS',
+      });
+    }
+
+    return res.status(500).json({
+      erro:
+        'Erro interno ao enviar ordem.',
+
+      detalhe:
+        process.env.NODE_ENV ===
+        'production'
+          ? undefined
+          : String(
+              err.message || err
+            ),
+    });
+  } finally {
+    await session.endSession();
+  }
+});
+
+router.post('/ordem/cancelar/:id', auth, async (req, res) => {
+
+  try {
+
+    const ordem = await Order.findOne({
+
+      _id: req.params.id,
+
+      usuarioId: req.usuario.id,
+
+      status: { $in: ['aberta', 'parcial'] },
+
+    });
+
+    if (!ordem) {
+
+      return res.status(404).json({ erro: 'Ordem nÃ£o encontrada ou nÃ£o cancelÃ¡vel.' });
+
+    }
+
+    ordem.status = 'cancelada';
+
+    ordem.canceladoEm = new Date();
+
+    await ordem.save();
+
+    const usuario = await User.findById(req.usuario.id);
+    const temporada = await RankingSeason.findOne({ status: 'ativa' }).sort({ iniciadaEm: -1, createdAt: -1 });
+    let franquiaOrdens = null;
+    if (usuario && temporada && obterPlanoEfetivo(usuario) === 'lite') {
+      const reconciliada = await reconciliarQuotaComOrdensExecutadas({
+        usuario,
+        temporada,
+        limiteLite: Number(
+          temporada.limiteOrdensLiteSemanal ??
+            temporada.limiteOrdensLitePorRodada ??
+            LIMITE_SEMANAL_LITE_PADRAO
+        ),
+      });
+      const resumoRewarded = rewardedAdsParaResposta({
+        quota: reconciliada.quota,
+        limiteLite: obterLimiteSemanalLite(temporada),
+        mercadoAberto: temporada.mercadoAberto !== false,
+      });
+      const limite = resumoRewarded.limiteEfetivo;
+      const utilizadas = Number(reconciliada.quota.ordensUtilizadas || 0);
+      franquiaOrdens = {
+        limiteBase: resumoRewarded.limiteBase,
+        bonusOrdens: resumoRewarded.bonusOrdens,
+        limite,
+        utilizadas,
+        restantes: Math.max(0, limite - utilizadas),
+        rewardedAds: resumoRewarded.rewardedAds,
+      };
+    }
+
+    return res.json({
+
+      mensagem: 'Ordem cancelada com sucesso.',
+
+      ordem: {
+
+        id: String(ordem._id),
+
+        status: ordem.status,
+
+      },
+
+      franquiaOrdens,
+
+    });
+
+  } catch (err) {
+
+    console.error('Erro ao cancelar ordem:', err);
+
+    return res.status(500).json({ erro: 'Erro ao cancelar ordem.' });
+
+  }
+
+});
+
+module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
