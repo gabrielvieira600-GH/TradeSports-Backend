@@ -604,31 +604,70 @@ router.get('/minhas-ordens', auth, async (req, res) => {
 
       .lean();
 
+    const orderIds = ordens.map((o) => String(o._id));
+
+    const execucoes = orderIds.length
+      ? await Investment.find({
+          usuarioId: req.usuario.id,
+          'metadata.orderId': { $in: orderIds },
+          tipo: { $in: ['COMPRA', 'VENDA'] },
+        })
+          .select('quantidade precoUnitario valorUnitario metadata.orderId')
+          .lean()
+      : [];
+
+    const execucoesPorOrdem = new Map();
+
+    for (const execucao of execucoes) {
+      const orderId = String(execucao?.metadata?.orderId || '');
+      if (!orderId) continue;
+
+      const quantidade = Number(execucao.quantidade || 0);
+      const precoExecutado = Number(
+        execucao.precoUnitario != null
+          ? execucao.precoUnitario
+          : execucao.valorUnitario
+      );
+
+      if (!(quantidade > 0) || !Number.isFinite(precoExecutado)) continue;
+
+      const acumulado = execucoesPorOrdem.get(orderId) || {
+        quantidade: 0,
+        valorBruto: 0,
+      };
+
+      acumulado.quantidade += quantidade;
+      acumulado.valorBruto += quantidade * precoExecutado;
+      execucoesPorOrdem.set(orderId, acumulado);
+    }
+
     return res.json(
 
-      ordens.map((o) => ({
+      ordens.map((o) => {
+        const id = String(o._id);
+        const execucao = execucoesPorOrdem.get(id);
+        const quantidadeExecutada = Number(execucao?.quantidade || 0);
+        const precoExecutadoMedio = quantidadeExecutada > 0
+          ? round2(Number(execucao.valorBruto || 0) / quantidadeExecutada)
+          : null;
 
-        id: String(o._id),
-
-        clubeId: o.clubeLegacyId,
-
-        tipo: o.tipo,
-
-        preco: round2(o.preco),
-
-        quantidade: Number(o.quantidade || 0),
-
-        restante: Number(o.restante || 0),
-
-        status: o.status,
-
-        criadoEm: o.criadoEm,
-
-        canceladoEm: o.canceladoEm,
-
-        executadoEm: o.executadoEm,
-
-      }))
+        return {
+          id,
+          clubeId: o.clubeLegacyId,
+          tipo: o.tipo,
+          preco: round2(o.preco),
+          precoLimite: round2(o.preco),
+          precoExecutadoMedio,
+          valorExecutado: execucao ? round2(execucao.valorBruto) : 0,
+          quantidade: Number(o.quantidade || 0),
+          quantidadeExecutada,
+          restante: Number(o.restante || 0),
+          status: o.status,
+          criadoEm: o.criadoEm,
+          canceladoEm: o.canceladoEm,
+          executadoEm: o.executadoEm,
+        };
+      })
 
     );
 

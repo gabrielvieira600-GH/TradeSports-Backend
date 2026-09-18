@@ -7,11 +7,13 @@ const Club = require('../models/Club');
 
 const Investment = require('../models/Investment');
 
+const InstitutionalLiquidity = require('../models/InstitutionalLiquidity');
+
 const auth = require('../middleware/auth');
 
 const InvestimentoController = require('../controllers/InvestimentoController');
 
-function toClubResponse(clube) {
+function toClubResponse(clube, liquidityState = null) {
 
   return {
 
@@ -29,9 +31,17 @@ function toClubResponse(clube) {
 
       clube.precoAtual != null ? Number(clube.precoAtual) : Number(clube.preco || 0),
 
-    cotasDisponiveis: Number(clube.cotasDisponiveis || 0),
+    cotasDisponiveis: liquidityState
+      ? Math.max(0, Number(liquidityState.maxShares || 0) - Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0)))
+      : Number(clube.cotasDisponiveis || 0),
 
-    cotasEmitidas: Number(clube.cotasEmitidas || 0),
+    cotasEmitidas: liquidityState
+      ? Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0))
+      : Number(clube.cotasEmitidas || 0),
+
+    cotasEmCirculacao: liquidityState
+      ? Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0))
+      : Number(clube.cotasEmitidas || 0),
 
     ipoEncerrado: Boolean(clube.ipoEncerrado),
 
@@ -80,7 +90,10 @@ router.get('/clubes', async (req, res) => {
 
       .lean();
 
-    return res.json(clubes.map(toClubResponse));
+    const liquidityStates = await InstitutionalLiquidity.find({ clubId: { $in: clubes.map((c) => c._id) } }).lean();
+    const liquidityByClub = new Map(liquidityStates.map((l) => [String(l.clubId), l]));
+
+    return res.json(clubes.map((clube) => toClubResponse(clube, liquidityByClub.get(String(clube._id)))));
 
   } catch (err) {
 
@@ -106,7 +119,9 @@ router.get('/clubes/:id', async (req, res) => {
 
     }
 
-    return res.json(toClubResponse(clube));
+    const liquidityState = await InstitutionalLiquidity.findOne({ clubId: clube._id }).lean();
+
+    return res.json(toClubResponse(clube, liquidityState));
 
   } catch (err) {
 
@@ -226,7 +241,9 @@ router.get('/:id', async (req, res) => {
 
     }
 
-    return res.json(toClubResponse(clube));
+    const liquidityState = await InstitutionalLiquidity.findOne({ clubId: clube._id }).lean();
+
+    return res.json(toClubResponse(clube, liquidityState));
 
   } catch (err) {
 
