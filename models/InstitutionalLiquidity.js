@@ -11,6 +11,9 @@ const InstitutionalLiquiditySchema = new mongoose.Schema(
     replenishAt: { type: Number, default: 5 },
     sellMarginPct: { type: Number, default: 0.02 },
     buyDiscountPct: { type: Number, default: 0.04 },
+    // Proteção geral contra ordens fora de mercado. Vale igualmente para
+    // compras e vendas de usuários e não altera a prioridade do book.
+    userOrderBandPct: { type: Number, default: 0.10, min: 0, max: 1 },
     dailyBuybackPerUser: { type: Number, default: 10 },
     dailyBuybackPerClub: { type: Number, default: 50 },
     minimumCoveragePct: { type: Number, default: 1.1 },

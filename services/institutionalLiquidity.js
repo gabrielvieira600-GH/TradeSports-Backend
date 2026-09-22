@@ -6,7 +6,12 @@ const InstitutionalDailyLimit = require('../models/InstitutionalDailyLimit');
 const MarketLiquiditySettings = require('../models/MarketLiquiditySettings');
 const bcrypt = require('bcryptjs');
 
-const { TICK_SIZE, round2, tickUp, tickDown, tickNearest, pricesFor } = require('../utils/institutionalPricing');
+const {
+  TICK_SIZE,
+  round2,
+  pricesFor,
+  positionReferenceForClub,
+} = require('../utils/institutionalPricing');
 const ACCOUNT_EMAIL = 'liquidez@system.tradesports';
 
 async function getInstitutionalUser(session = null) {
@@ -63,6 +68,8 @@ async function ensureOrdersForClub(club, { round = null, session = null } = {}) 
   const state = await ensureLiquidityState(club, session);
   if (state.institutionalSuspended) return { state, orders: [], published: false };
 
+  const referencePrice = positionReferenceForClub(club);
+  const referenceChanged = round2(state.basePositionValue) !== round2(referencePrice);
   const unissued = Math.max(0, Number(state.maxShares) - Number(state.issuedShares));
   const resale = Math.max(0, Number(state.institutionHeldIssuedShares));
   const needsSell = unissued > 0 || resale > 0;
@@ -76,7 +83,7 @@ async function ensureOrdersForClub(club, { round = null, session = null } = {}) 
           isInstitutional: true,
           status: { $in: ['aberta', 'parcial'] },
           restante: { $gt: 0 },
-        }).select('_id').session(session).lean()
+        }).select('_id restante').session(session).lean()
       : null,
     needsBuy
       ? Order.findOne({
@@ -89,7 +96,11 @@ async function ensureOrdersForClub(club, { round = null, session = null } = {}) 
       : null,
   ]);
 
-  if ((!needsSell || sell) && (!needsBuy || buy)) {
+  const sellLotHealthy =
+    !needsSell ||
+    (sell && Number(sell.restante || 0) > Number(state.replenishAt || 0));
+
+  if (!referenceChanged && sellLotHealthy && (!needsBuy || buy)) {
     return { state, orders: [], published: false };
   }
 
@@ -104,7 +115,9 @@ async function publishOrdersForClub(club, { round = null, session = null } = {})
 
   if (state.institutionalSuspended) return { state, orders: [] };
 
-  const base = tickNearest(club.precoAtual ?? club.preco ?? 0);
+  // A instituição acompanha o preço oficial da posição esportiva, não o
+  // último negócio realizado entre participantes.
+  const base = positionReferenceForClub(club);
   const { primaryAsk, resaleAsk, bid } = pricesFor(state, base);
   const orders = [];
   const unissued = Math.max(0, Number(state.maxShares) - Number(state.issuedShares));
@@ -236,7 +249,8 @@ async function enforceSolvency() {
 
 module.exports = {
   TICK_SIZE, getInstitutionalUser, ensureLiquidityState, pricesFor,
-  cancelInstitutionalOrders, publishOrdersForClub, ensureOrdersForClub, validateBuybackLimit,
+  cancelInstitutionalOrders, publishOrdersForClub, ensureOrdersForClub,
+  validateBuybackLimit,
   recordBuyback, exposureSnapshot,
   enforceSolvency,
 };

@@ -96,6 +96,7 @@ router.patch('/clubes/:clubLegacyId', async (req, res) => {
   const state = await ensureLiquidityState(club);
   const allowed = [
     'visibleSellLot', 'replenishAt', 'sellMarginPct', 'buyDiscountPct',
+    'userOrderBandPct',
     'dailyBuybackPerUser', 'dailyBuybackPerClub', 'minimumCoveragePct',
     'concentrationAboveAveragePct', 'institutionalSuspended', 'issuanceSuspended',
   ];

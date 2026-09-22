@@ -24,16 +24,20 @@ const Investment = require('../models/Investment');
 
 const RankingSeason = require('../models/RankingSeason');
 const RewardedAdEvent = require('../models/RewardedAdEvent');
-const InstitutionalLiquidity = require('../models/InstitutionalLiquidity');
 const { isUnifiedLiquidity, getMarketMode } = require('../config/marketMode');
 const {
   ensureLiquidityState,
   validateBuybackLimit,
   recordBuyback,
-  publishOrdersForClub,
   ensureOrdersForClub,
   enforceSolvency,
 } = require('../services/institutionalLiquidity');
+const {
+  positionReferenceForClub,
+  userOrderPriceBand,
+  isUserOrderPriceAllowed,
+  canReachInstitutionAfterUserOrders,
+} = require('../utils/institutionalPricing');
 const { buildTradeEntry, postJournal } = require('../utils/ledger');
 
 const {
@@ -132,6 +136,58 @@ function round2(n) {
 
   return Number(Number(n || 0).toFixed(2));
 
+}
+
+function orderForPublicBook(order, currentUserId = null) {
+  return {
+    id: String(order._id),
+    clubeId: order.clubeLegacyId,
+    tipo: order.tipo,
+    preco: round2(order.preco),
+    quantidade: Number(order.quantidade || 0),
+    restante: Number(order.restante || 0),
+    status: order.status,
+    criadoEm: order.criadoEm,
+    minhaOrdem:
+      Boolean(currentUserId) &&
+      !order.isInstitutional &&
+      String(order.usuarioId) === String(currentUserId),
+  };
+}
+
+function normalizeBookView(value) {
+  const view = String(value || '').toLowerCase();
+  return ['compra', 'venda'].includes(view) ? view : null;
+}
+
+function visibleOrdersForBook(orders = [], view = null) {
+  if (!isUnifiedLiquidity()) return orders;
+
+  const hasUserOrder = {
+    compra: orders.some(
+      (order) =>
+        order.tipo === 'compra' &&
+        !order.isInstitutional &&
+        Number(order.restante || 0) > 0
+    ),
+    venda: orders.some(
+      (order) =>
+        order.tipo === 'venda' &&
+        !order.isInstitutional &&
+        Number(order.restante || 0) > 0
+    ),
+  };
+
+  return orders.filter((order) => {
+    if (!order.isInstitutional) return true;
+
+    // A liquidez automática fica dormente sempre que existe uma ordem real
+    // no mesmo lado. Além disso, a aba atual não mostra a instituição como
+    // concorrente do usuário que está formando preço naquele lado.
+    if (hasUserOrder[order.tipo]) return false;
+    if (view && order.tipo === view) return false;
+    return true;
+  });
 }
 
 function validaTick(preco) {
@@ -379,10 +435,15 @@ router.get('/livro', async (req, res) => {
       return res.status(400).json({ erro: 'clubeId invÃ¡lido.' });
     }
 
-    const clube = await Club.findOne({ legacyId: clubeLegacyId }).lean();
+    const clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    const clube = clubeDocumento?.toObject();
 
     if (!clube) {
       return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
+    }
+
+    if (isUnifiedLiquidity()) {
+      await ensureOrdersForClub(clubeDocumento);
     }
 
     const ordens = await Order.find({
@@ -393,41 +454,28 @@ router.get('/livro', async (req, res) => {
       .sort({ tipo: 1, preco: 1, criadoEm: 1 })
       .lean();
 
-    const compras = ordens
+    const ordensVisiveis = visibleOrdersForBook(
+      ordens,
+      normalizeBookView(req.query.visao || req.query.lado)
+    );
+
+    const compras = ordensVisiveis
       .filter((o) => o.tipo === 'compra')
       .sort(
         (a, b) =>
           Number(b.preco) - Number(a.preco) ||
           new Date(a.criadoEm) - new Date(b.criadoEm)
       )
-      .map((o) => ({
-        id: String(o._id),
-        clubeId: o.clubeLegacyId,
-        tipo: o.tipo,
-        preco: round2(o.preco),
-        quantidade: Number(o.quantidade || 0),
-        restante: Number(o.restante || 0),
-        status: o.status,
-        criadoEm: o.criadoEm,
-      }));
+      .map((o) => orderForPublicBook(o));
 
-    const vendas = ordens
+    const vendas = ordensVisiveis
       .filter((o) => o.tipo === 'venda')
       .sort(
         (a, b) =>
           Number(a.preco) - Number(b.preco) ||
           new Date(a.criadoEm) - new Date(b.criadoEm)
       )
-      .map((o) => ({
-        id: String(o._id),
-        clubeId: o.clubeLegacyId,
-        tipo: o.tipo,
-        preco: round2(o.preco),
-        quantidade: Number(o.quantidade || 0),
-        restante: Number(o.restante || 0),
-        status: o.status,
-        criadoEm: o.criadoEm,
-      }));
+      .map((o) => orderForPublicBook(o));
 
     return res.json({
       clube: {
@@ -491,64 +539,26 @@ router.get('/livro/:clubeId', authOpcional, async (req, res) => {
 
       .lean();
 
-    const compras = ordens
+    const ordensVisiveis = visibleOrdersForBook(
+      ordens,
+      normalizeBookView(req.query.visao || req.query.lado)
+    );
+
+    const compras = ordensVisiveis
 
       .filter((o) => o.tipo === 'compra')
 
       .sort((a, b) => Number(b.preco) - Number(a.preco) || new Date(a.criadoEm) - new Date(b.criadoEm))
 
-      .map((o) => ({
+      .map((o) => orderForPublicBook(o, req.usuario?.id));
 
-        id: String(o._id),
-
-
-        clubeId: o.clubeLegacyId,
-
-        tipo: o.tipo,
-
-        preco: round2(o.preco),
-
-        quantidade: Number(o.quantidade || 0),
-
-        restante: Number(o.restante || 0),
-
-        status: o.status,
-
-        criadoEm: o.criadoEm,
-
-        // Informa somente se pertence à sessão atual; nunca expõe o dono.
-        minhaOrdem: Boolean(req.usuario?.id) && !o.isInstitutional && String(o.usuarioId) === String(req.usuario.id),
-
-      }));
-
-    const vendas = ordens
+    const vendas = ordensVisiveis
 
       .filter((o) => o.tipo === 'venda')
 
       .sort((a, b) => Number(a.preco) - Number(b.preco) || new Date(a.criadoEm) - new Date(b.criadoEm))
 
-      .map((o) => ({
-
-        id: String(o._id),
-
-
-        clubeId: o.clubeLegacyId,
-
-        tipo: o.tipo,
-
-        preco: round2(o.preco),
-
-        quantidade: Number(o.quantidade || 0),
-
-        restante: Number(o.restante || 0),
-
-        status: o.status,
-
-        criadoEm: o.criadoEm,
-
-        minhaOrdem: Boolean(req.usuario?.id) && !o.isInstitutional && String(o.usuarioId) === String(req.usuario.id),
-
-      }));
+      .map((o) => orderForPublicBook(o, req.usuario?.id));
 
     return res.json({
 
@@ -1301,6 +1311,8 @@ router.post('/ordem', auth, async (req, res) => {
       new Set();
 
     await session.withTransaction(async () => {
+      let liquidityStateForOrder = null;
+
       const usuario = await User.findById(
         req.usuario.id
       ).session(session);
@@ -1443,39 +1455,23 @@ router.post('/ordem', auth, async (req, res) => {
        * primeira ordem ficava aberta mesmo cruzando o preço institucional e
        * apenas uma segunda ordem disparava a execução.
        *
-       * Este fallback também protege clubes incluídos depois do início da
-       * temporada e eventuais falhas pontuais da reconciliação administrativa.
+       * A reconciliação também acontece quando a contraparte já existe: se a
+       * posição esportiva mudou, a cotação institucional antiga precisa ser
+       * substituída antes do matching para nunca executar pelo preço defasado.
        */
       if (isUnifiedLiquidity()) {
-        const filtroContraparteInstitucional = {
-          clubeId: clube._id,
-          tipo: tipo === 'compra' ? 'venda' : 'compra',
-          isInstitutional: true,
-          status: { $in: ['aberta', 'parcial'] },
-          restante: { $gt: 0 },
-        };
+        const liquidity = await ensureOrdersForClub(clube, { session });
+        liquidityStateForOrder = liquidity.state;
 
-        const contraparteInstitucional =
-          await Order.findOne(filtroContraparteInstitucional)
-            .select('_id')
-            .session(session)
-            .lean();
-
-        /*
-         * Na emissão inicial ainda não há recompra institucional; portanto,
-         * uma venda de usuário pode legitimamente não encontrar bid do bot.
-         * A publicação só é obrigatória para a primeira compra ou quando já
-         * existem cotas emitidas que permitem liquidez bilateral.
-         */
-        const devePublicar =
-          !contraparteInstitucional &&
-          (
-            tipo === 'compra' ||
-            Number(clube.cotasEmitidas || 0) > 0
-          );
-
-        if (devePublicar) {
-          await publishOrdersForClub(clube, { session });
+        const referencePrice = positionReferenceForClub(clube);
+        if (!isUserOrderPriceAllowed(preco, liquidityStateForOrder, referencePrice)) {
+          const band = userOrderPriceBand(liquidityStateForOrder, referencePrice);
+          const error = new Error('PRECO_FORA_FAIXA');
+          error.precoReferencia = referencePrice;
+          error.precoMinimo = band.min;
+          error.precoMaximo = band.max;
+          error.faixaPct = band.bandPct;
+          throw error;
         }
       }
 
@@ -1602,22 +1598,66 @@ router.post('/ordem', auth, async (req, res) => {
               },
             };
 
-      const contrapartes =
-        await Order.find(matchQuery)
+      let contrapartes;
+      let priorityUserCounterparts = [];
+
+      if (isUnifiedLiquidity()) {
+        const counterpartType = tipo === 'compra' ? 'venda' : 'compra';
+        const userCounterpartSort = tipo === 'compra'
+          ? { preco: 1, criadoEm: 1 }
+          : { preco: -1, criadoEm: 1 };
+
+        const allUserCounterparts = await Order.find({
+          clubeId: clube._id,
+          tipo: counterpartType,
+          isInstitutional: { $ne: true },
+          status: { $in: ['aberta', 'parcial'] },
+          restante: { $gt: 0 },
+        })
+          .sort(userCounterpartSort)
+          .session(session);
+        priorityUserCounterparts = allUserCounterparts;
+
+        const matchingUserCounterparts = allUserCounterparts.filter((counterparty) => {
+          if (String(counterparty.usuarioId) === String(usuario._id)) return false;
+          return tipo === 'compra'
+            ? Number(counterparty.preco) <= round2(preco)
+            : Number(counterparty.preco) >= round2(preco);
+        });
+
+        const institutionCanTrade = canReachInstitutionAfterUserOrders({
+          incomingType: tipo,
+          incomingPrice: preco,
+          incomingQuantity: ordem.restante,
+          incomingUserId: usuario._id,
+          userOrders: allUserCounterparts,
+        });
+
+        const institutionalCounterparts = institutionCanTrade
+          ? await Order.find({
+              ...matchQuery,
+              isInstitutional: true,
+            })
+              .sort(userCounterpartSort)
+              .session(session)
+          : [];
+
+        // A instituição é sempre a última fonte de liquidez. Mesmo oferecendo
+        // preço melhor, ela só entra depois que todas as ordens reais do lado
+        // oposto puderem ser integralmente atendidas pela ordem recebida.
+        contrapartes = [
+          ...matchingUserCounterparts,
+          ...institutionalCounterparts,
+        ];
+      } else {
+        contrapartes = await Order.find(matchQuery)
           .sort(
             tipo === 'compra'
-              ? {
-                  preco: 1,
-                  institutionalPriority: 1,
-                  criadoEm: 1,
-                }
-              : {
-                  preco: -1,
-                  institutionalPriority: 1,
-                  criadoEm: 1,
-                }
+              ? { preco: 1, institutionalPriority: 1, criadoEm: 1 }
+              : { preco: -1, institutionalPriority: 1, criadoEm: 1 }
           )
           .session(session);
+      }
 
       const execucoes = [];
 
@@ -1629,6 +1669,17 @@ router.post('/ordem', auth, async (req, res) => {
           Number(
             ordem.restante || 0
           ) <= 0
+        ) {
+          break;
+        }
+
+        if (
+          contraparte.isInstitutional &&
+          priorityUserCounterparts.some(
+            (userOrder) =>
+              ['aberta', 'parcial'].includes(userOrder.status) &&
+              Number(userOrder.restante || 0) > 0
+          )
         ) {
           break;
         }
@@ -2019,18 +2070,12 @@ router.post('/ordem', auth, async (req, res) => {
       });
 
       if (isUnifiedLiquidity() && !ordem.isInstitutional) {
-        const institutionalPrimarySell = await Order.findOne({
-            clubeId: clube._id, tipo: 'venda', isInstitutional: true,
-            status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
-            'metadata.purpose': 'ISSUANCE',
-          }).session(session);
-        const institutionalBuy = await Order.findOne({
-            clubeId: clube._id, tipo: 'compra', isInstitutional: true,
-            status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
-          }).session(session);
-        if (!institutionalBuy || !institutionalPrimarySell || Number(institutionalPrimarySell.restante) <= 5) {
-          await publishOrdersForClub(clube, { session });
-        }
+        /*
+         * Mantém as cotações automáticas alinhadas à posição esportiva. Elas
+         * podem continuar persistidas como reserva, mas o book e o matching
+         * só as ativam quando não há ordens de usuários no mesmo lado.
+         */
+        await ensureOrdersForClub(clube, { session });
       }
 
             const limiteOrdens =
@@ -2243,6 +2288,19 @@ router.post('/ordem', auth, async (req, res) => {
       });
     }
 
+    if (err.message === 'PRECO_FORA_FAIXA') {
+      return res.status(400).json({
+        erro: `Preço fora da faixa permitida para este ativo. Informe um valor entre T$ ${Number(
+          err.precoMinimo
+        ).toFixed(2)} e T$ ${Number(err.precoMaximo).toFixed(2)}.`,
+        codigo: 'PRECO_FORA_FAIXA',
+        precoReferencia: round2(err.precoReferencia),
+        precoMinimo: round2(err.precoMinimo),
+        precoMaximo: round2(err.precoMaximo),
+        faixaPct: Number(err.faixaPct || 0),
+      });
+    }
+
     if (
       err.message ===
       'COTAS_INSUFICIENTES_VENDA'
@@ -2397,6 +2455,11 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 
     await ordem.save();
 
+    if (isUnifiedLiquidity() && !ordem.isInstitutional) {
+      const clube = await Club.findById(ordem.clubeId);
+      if (clube) await ensureOrdersForClub(clube);
+    }
+
     const usuario = await User.findById(req.usuario.id);
     const temporada = await RankingSeason.findOne({ status: 'ativa' }).sort({ iniciadaEm: -1, createdAt: -1 });
     let franquiaOrdens = null;
@@ -2454,20 +2517,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
