@@ -335,14 +335,6 @@ router.post('/', requirePremium, async (req, res) => {
 
     const planoDestinatario = obterPlanoEfetivo(destinatario);
 
-    if (planoDestinatario !== 'premium') {
-      return res.status(403).json({
-        erro:
-          'Apenas usuários Premium podem participar de rankings privados.',
-        codigo: 'DESTINATARIO_PREMIUM_NECESSARIO',
-      });
-    }
-
     const membroExistente =
       await PrivateRankingMember.findOne({
         rankingId: ranking._id,
@@ -490,7 +482,7 @@ router.post('/', requirePremium, async (req, res) => {
  *
  * Lista convites recebidos pelo usuário logado.
  */
-router.get('/recebidos', requirePremium, async (req, res) => {
+router.get('/recebidos', async (req, res) => {
   try {
     const status = String(req.query.status || '')
       .trim()
@@ -586,7 +578,7 @@ router.get('/enviados', requirePremium, async (req, res) => {
  *
  * Aceita convite recebido e cria vínculo no PrivateRankingMember.
  */
-router.post('/:id/aceitar', requirePremium, async (req, res) => {
+router.post('/:id/aceitar', async (req, res) => {
   try {
     const convite = await PrivateRankingInvite.findById(
       req.params.id
@@ -656,14 +648,6 @@ router.post('/:id/aceitar', requirePremium, async (req, res) => {
     }
 
     const plano = obterPlanoEfetivo(usuario);
-
-    if (plano !== 'premium') {
-      return res.status(403).json({
-        erro:
-          'Apenas usuários Premium podem participar de rankings privados.',
-        codigo: 'PREMIUM_NECESSARIO',
-      });
-    }
 
     const membroExistente =
       await PrivateRankingMember.findOne({
@@ -869,7 +853,7 @@ await criarEventoFeedSocial({
  *
  * Recusa convite recebido.
  */
-router.post('/:id/recusar', requirePremium, async (req, res) => {
+router.post('/:id/recusar', async (req, res) => {
   try {
     const convite = await PrivateRankingInvite.findById(
       req.params.id

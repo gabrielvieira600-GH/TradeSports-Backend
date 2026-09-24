@@ -73,6 +73,9 @@ const UserSchema = new mongoose.Schema(
     nome: { type: String, required: true },
     sobrenome: { type: String, default: '' },
     nomeUsuario: { type: String, required: true, unique: true, index: true },
+    bio: { type: String, default: '', trim: true, maxlength: 160 },
+    fotoPerfilUrl: { type: String, default: '', trim: true },
+    fotoPerfilPublicId: { type: String, default: '', trim: true, select: false },
     email: {
       type: String,
       required: true,

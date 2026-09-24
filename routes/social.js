@@ -519,6 +519,7 @@ function montarPerfilPublico({
     nomeUsuario: usuario.nomeUsuario || '',
     nomePublico: montarNomePublico(usuario),
     fotoPerfilUrl: usuario.fotoPerfilUrl || '',
+    bio: usuario.bio || '',
 
     plano,
     premiumAtivo: plano === 'premium',
@@ -862,6 +863,7 @@ router.get('/usuarios', async (req, res) => {
           'carteira',
           'carteiraPublica',
           'fotoPerfilUrl',
+          'bio',
         ].join(' ')
       )
       .sort({
@@ -1031,6 +1033,7 @@ router.get('/usuarios/:id', async (req, res) => {
           'carteira',
           'carteiraPublica',
           'fotoPerfilUrl',
+          'bio',
         ].join(' ')
       )
       .lean();

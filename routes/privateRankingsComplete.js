@@ -12,6 +12,7 @@ const PrivateRankingPost = require('../models/PrivateRankingPost');
 const { obterPlanoEfetivo, obterLimitesDoPlano } = require('../utils/planFeatures');
 const { concederTrofeusPeriodo } = require('../services/trophyService');
 const { performanceForPatrimony } = require('../utils/rankingPerformance');
+const { notify } = require('../utils/socialNotificationService');
 
 const router = express.Router();
 router.use(auth);
@@ -148,8 +149,18 @@ router.post('/entrar/:codigo', async (req, res) => {
     if (limite.erro) return res.status(limite.status).json(limite);
     if (ranking.totalParticipantes >= ranking.maxParticipantes) return res.status(409).json({ erro: 'A competição atingiu o limite de participantes.' });
     const status = ranking.aprovacaoManual ? 'pendente' : 'aprovado';
-    await PrivateRankingMember.findOneAndUpdate({ rankingId: ranking._id, usuarioId: req.usuario.id }, { $set: { status, papel: 'participante', entrouEm: status === 'aprovado' ? new Date() : null, aprovadoEm: status === 'aprovado' ? new Date() : null } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    await PrivateRankingMember.findOneAndUpdate({ rankingId: ranking._id, usuarioId: req.usuario.id }, { $set: { status, papel: 'participante', entrouEm: status === 'aprovado' ? new Date() : null, aprovadoEm: status === 'aprovado' ? new Date() : null, recusadoEm: null, recusadoPor: null, removidoEm: null, removidoPor: null } }, { upsert: true, new: true, setDefaultsOnInsert: true });
     if (status === 'aprovado') await PrivateRanking.updateOne({ _id: ranking._id }, { $inc: { totalParticipantes: 1 } });
+    if (status === 'pendente') {
+      const solicitante = await User.findById(req.usuario.id).select('nome nomeUsuario').lean();
+      await notify(ranking.criadorId, {
+        tipo: 'PRIVATE_RANKING_JOIN_REQUEST',
+        title: 'Nova solicitação de entrada',
+        body: `@${solicitante?.nomeUsuario || solicitante?.nome || 'Usuário'} quer participar de "${ranking.nome}".`,
+        targetUrl: `/rankings-privados?ranking=${ranking._id}&aba=gestao`,
+        metadata: { rankingId: String(ranking._id), solicitanteId: String(req.usuario.id) },
+      });
+    }
     return res.json({ ok: true, rankingId: ranking._id, status });
   } catch (err) { console.error(err); return res.status(500).json({ erro: 'Erro ao entrar na competição.' }); }
 });
@@ -158,6 +169,22 @@ router.get('/:id', async (req, res) => {
   try {
     const ctx = await contexto(req.params.id, req.usuario.id);
     if (!ctx) return res.status(404).json({ erro: 'Competição não encontrada.' });
+    if (!ctx.participante && ctx.membro?.status === 'pendente') {
+      return res.json({
+        ok: true,
+        ranking: ctx.ranking,
+        papel: ctx.papel,
+        participante: false,
+        podeGerir: false,
+        solicitacaoPendente: true,
+        linkConvite: '',
+        classificacao: [],
+        membros: [],
+        posts: [],
+        estatisticas: { participantes: Number(ctx.ranking.totalParticipantes || 0), patrimonioMedio: 0, rentabilidadeMedia: 0, lider: null },
+        historicoCampeoes: [],
+      });
+    }
     if (!ctx.participante && ctx.ranking.visibilidade !== 'publico') return res.status(403).json({ erro: 'Esta competição é acessível somente por convite.' });
     const [classificacao, membros, posts, campeoes] = await Promise.all([
       calcularClassificacao(ctx.ranking),
@@ -218,7 +245,8 @@ router.patch('/:id/membros/:usuarioId', async (req, res) => {
     const membro = await PrivateRankingMember.findOne({ rankingId: ctx.ranking._id, usuarioId: req.params.usuarioId });
     if (!membro) return res.status(404).json({ erro: 'Participante não encontrado.' });
     const acao = req.body?.acao;
-    if (acao === 'aprovar') { const limite = await validarLimiteParticipacao(membro.usuarioId, ctx.ranking._id); if (limite.erro) return res.status(limite.status).json(limite); membro.status = 'aprovado'; membro.aprovadoEm = new Date(); membro.aprovadoPor = req.usuario.id; }
+    if (acao === 'aprovar') { const limite = await validarLimiteParticipacao(membro.usuarioId, ctx.ranking._id); if (limite.erro) return res.status(limite.status).json(limite); membro.status = 'aprovado'; membro.entrouEm = membro.entrouEm || new Date(); membro.aprovadoEm = new Date(); membro.aprovadoPor = req.usuario.id; membro.recusadoEm = null; membro.recusadoPor = null; }
+    else if (acao === 'recusar' && membro.status === 'pendente') { membro.status = 'recusado'; membro.recusadoEm = new Date(); membro.recusadoPor = req.usuario.id; }
     else if (acao === 'administrador' && ctx.papel === 'proprietario') membro.papel = 'administrador';
     else if (acao === 'participante' && ctx.papel === 'proprietario') membro.papel = 'participante';
     else if (acao === 'remover') { membro.status = 'removido'; membro.removidoEm = new Date(); membro.removidoPor = req.usuario.id; }
@@ -227,6 +255,17 @@ router.patch('/:id/membros/:usuarioId', async (req, res) => {
     await membro.save();
     const total = await PrivateRankingMember.countDocuments({ rankingId: ctx.ranking._id, status: 'aprovado' });
     await PrivateRanking.updateOne({ _id: ctx.ranking._id }, { $set: { totalParticipantes: total } });
+    if (acao === 'aprovar' || acao === 'recusar') {
+      await notify(membro.usuarioId, {
+        tipo: acao === 'aprovar' ? 'PRIVATE_RANKING_JOIN_APPROVED' : 'PRIVATE_RANKING_JOIN_REFUSED',
+        title: acao === 'aprovar' ? 'Entrada aprovada' : 'Solicitação recusada',
+        body: acao === 'aprovar'
+          ? `Sua entrada em "${ctx.ranking.nome}" foi aprovada.`
+          : `Sua solicitação para entrar em "${ctx.ranking.nome}" foi recusada.`,
+        targetUrl: acao === 'aprovar' ? `/rankings-privados?ranking=${ctx.ranking._id}` : '/rankings-privados',
+        metadata: { rankingId: String(ctx.ranking._id) },
+      });
+    }
     return res.json({ ok: true, membro });
   } catch (err) { return res.status(500).json({ erro: 'Erro ao gerenciar participante.' }); }
 });

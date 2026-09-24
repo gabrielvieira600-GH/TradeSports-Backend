@@ -18,7 +18,7 @@ function positionReferenceForClub(club) {
     return tickNearest(club?.preco ?? club?.precoAtual ?? 0);
   }
 
-  return tickNearest(5 * Math.pow(1.05, totalParticipants - position));
+  return tickDown(round2(5 * Math.pow(1.05, totalParticipants - position)));
 }
 
 function userOrderPriceBand(state, referencePrice) {

@@ -46,7 +46,9 @@ function calcularPrecoPorPosicao(posicao) {
 
   const valor = precoBase * Math.pow(1.05, 20 - Number(posicao));
 
-  return Number((Math.round(valor / 0.05) * 0.05).toFixed(2));
+  const centavos = Math.round(valor * 100);
+
+  return Number(((Math.floor(centavos / 5) * 5) / 100).toFixed(2));
 
 }
 

@@ -3,7 +3,8 @@ const GROWTH_FACTOR = 1.05;
 const TICK_SIZE = 0.05;
 
 function ajustarAoTick(valor) {
-  return Number((Math.round(Number(valor) / TICK_SIZE) * TICK_SIZE).toFixed(2));
+  const centavos = Math.round(Number(valor) * 100);
+  return Number(((Math.floor(centavos / 5) * 5) / 100).toFixed(2));
 }
 
 function calcularPrecoPorPosicao(posicao, totalParticipantes = 20) {

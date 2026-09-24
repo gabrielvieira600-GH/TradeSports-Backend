@@ -90,6 +90,7 @@ router.put("/foto-perfil", auth, (req, res, next) => {
         nome: usuario.nome,
         nomeUsuario: usuario.nomeUsuario,
         email: usuario.email,
+        bio: usuario.bio || "",
         saldo: Number(usuario.saldo || 0),
         plano: usuario.plano,
         fotoPerfilUrl: usuario.fotoPerfilUrl,
@@ -189,6 +190,68 @@ router.get("/", auth, async (req, res) => {
   } catch (err) {
     console.error("Erro ao obter usuÃ¡rio:", err);
     res.status(500).json({ erro: "Erro interno ao obter usuÃ¡rio." });
+  }
+});
+
+router.put("/perfil", auth, async (req, res) => {
+  try {
+    const nome = String(req.body?.nome || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const bio = String(req.body?.bio || "").trim();
+
+    if (nome.length < 2 || nome.length > 120) {
+      return res.status(400).json({ erro: "Informe um nome válido." });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ erro: "Informe um e-mail válido." });
+    }
+
+    if (bio.length > 160) {
+      return res.status(400).json({
+        erro: "A bio deve ter no máximo 160 caracteres.",
+        codigo: "BIO_MUITO_LONGA",
+      });
+    }
+
+    const emailEmUso = await User.exists({
+      _id: { $ne: req.usuario.id },
+      email,
+    });
+
+    if (emailEmUso) {
+      return res.status(409).json({ erro: "Este e-mail já está em uso." });
+    }
+
+    const usuario = await User.findById(req.usuario.id);
+    if (!usuario) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    usuario.nome = nome;
+    usuario.email = email;
+    usuario.bio = bio;
+    await usuario.save();
+
+    return res.json({
+      ok: true,
+      usuario: {
+        id: String(usuario._id),
+        nome: usuario.nome,
+        nomeUsuario: usuario.nomeUsuario,
+        email: usuario.email,
+        bio: usuario.bio || "",
+        fotoPerfilUrl: usuario.fotoPerfilUrl || "",
+        plano: usuario.plano,
+        premiumAtivo: usuario.premiumAtivo === true,
+      },
+    });
+  } catch (err) {
+    console.error("Erro ao atualizar perfil:", err);
+    if (err?.code === 11000) {
+      return res.status(409).json({ erro: "Este e-mail já está em uso." });
+    }
+    return res.status(500).json({ erro: "Erro interno ao atualizar o perfil." });
   }
 });
 
