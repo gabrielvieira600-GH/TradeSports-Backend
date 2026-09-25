@@ -4,6 +4,7 @@ const router = express.Router();
 
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const { enviarPushParaUsuario } = require('../services/pushNotificationService');
 
 function ensureWatchlist(user) {
   if (!user.watchlist) {
@@ -55,7 +56,7 @@ function adicionarNotificacaoFavorito(user, { entityType, entityId, nome, ligaNo
     ? `${nome || 'Clube'} foi adicionado à sua lista de favoritos. Você receberá alertas sobre movimentações de preço.`
     : `${nome || 'Liga'} foi adicionada à sua lista de favoritos.`;
 
-  user.notificacoes.unshift({
+  const notificacao = {
     id: criarIdNotificacao('watchlist'),
     title,
     body,
@@ -71,7 +72,12 @@ function adicionarNotificacaoFavorito(user, { entityType, entityId, nome, ligaNo
       targetUrl: isClube ? `/clube/${idStr}` : null,
       tipo: 'WATCHLIST_FAVORITED',
     },
-  });
+  };
+
+  user.notificacoes.unshift(notificacao);
+  enviarPushParaUsuario(user._id, notificacao).catch((erro) =>
+    console.error('[WEB PUSH WATCHLIST] erro não bloqueante:', erro?.message)
+  );
 
   user.notificacoes = user.notificacoes.slice(0, 100);
   user.markModified('notificacoes');

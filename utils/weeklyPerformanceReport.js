@@ -7,6 +7,7 @@ const Dividendo = require('../models/dividendos');
 const PerformanceSnapshot = require('../models/PerformanceSnapshot');
 const WeeklyPerformanceReport = require('../models/WeeklyPerformanceReport');
 const { obterPlanoEfetivo } = require('./planFeatures');
+const { enviarPushParaUsuario } = require('../services/pushNotificationService');
 
 const OFFSET_BRASIL_MS = 3 * 60 * 60 * 1000;
 
@@ -154,17 +155,22 @@ async function calcularRanking(usuarioId, clubes) {
 function adicionarNotificacao(usuario, relatorio) {
   if (!Array.isArray(usuario.notificacoes)) usuario.notificacoes = [];
   const id = `weekly-report:${relatorio.chaveSemana}`;
-  if (usuario.notificacoes.some((item) => String(item.id) === id)) return;
-  usuario.notificacoes.unshift({
+  if (usuario.notificacoes.some((item) => String(item.id) === id)) return null;
+  const notificacao = {
     id,
     title: 'Seu relatório semanal está pronto',
     body: 'Veja a evolução da carteira, suas operações e os destaques da semana.',
     read: false,
     createdAt: new Date(),
     metadata: { tipo: 'relatorio_semanal', relatorioId: String(relatorio._id), url: `/relatorios-semanais?id=${relatorio._id}` },
-  });
+  };
+  usuario.notificacoes.unshift(notificacao);
   usuario.notificacoes = usuario.notificacoes.slice(0, 100);
   usuario.markModified?.('notificacoes');
+  enviarPushParaUsuario(usuario._id, notificacao).catch((erro) =>
+    console.error('[WEB PUSH RELATÓRIO] erro não bloqueante:', erro?.message)
+  );
+  return notificacao;
 }
 
 async function garantirRelatorioSemanal(usuario) {

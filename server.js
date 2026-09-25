@@ -70,12 +70,18 @@ const socialModerationRoutes = require("./routes/api/socialModeration");
 const trophiesRoutes = require("./routes/trophies");
 const socialOwnershipRoutes = require("./routes/socialOwnership");
 const socialCommentsV2Routes = require("./routes/socialCommentsV2");
+const pushNotificationsRoutes = require('./routes/pushNotifications');
 
 const {
   router: recoveryRechargeRoutes,
   stripeWebhook: recoveryRechargeStripeWebhook,
 } = require('./routes/recoveryRecharge');
 const { iniciarAgendadorTrofeus } = require('./services/trophyService');
+const { iniciarAgendadorNotificacoesPush } = require('./services/pushNotificationScheduler');
+const {
+  ensureUserNotificationFields,
+  synthesizeWatchlistNotifications,
+} = require('./utils/watchlistNotifications');
 
 let watchlistRoutes = null;
 try {
@@ -132,6 +138,7 @@ connectDB()
   .then(async () => {
     console.log("Mongo inicializado.");
     iniciarAgendadorTrofeus();
+    iniciarAgendadorNotificacoesPush();
     if (isUnifiedLiquidity()) {
       try {
         const clubes = await Club.find({});
@@ -295,6 +302,7 @@ app.use('/recarga-recuperacao', recoveryRechargeRoutes);
 app.use('/social-community', socialOwnershipRoutes);
 app.use('/social-community', socialCommentsV2Routes);
 app.use('/social-community', socialCommunityRoutes);
+app.use('/push', pushNotificationsRoutes);
 app.use("/api/admin/social-moderation", socialModerationRoutes);
 
 
@@ -695,144 +703,6 @@ app.post("/resetar-senha", async (req, res) => {
 });
 
 // Notificações Mongo
-function ensureUserNotificationFields(user) {
-  if (!user.notificacoes) user.notificacoes = [];
-  if (!user.watchlist) user.watchlist = { clubes: [], ligas: [] };
-  if (!user.alertState) user.alertState = { clubPrices: {} };
-}
-
-async function synthesizeWatchlistNotifications(user) {
-  ensureUserNotificationFields(user);
-
-  const THRESHOLD_PERCENT = 3;
-
-  const clubesWatch = Array.isArray(user.watchlist?.clubes)
-    ? user.watchlist.clubes
-    : [];
-
-  if (!clubesWatch.length) return false;
-
-  const legacyIds = clubesWatch
-    .map((c) => Number(c.id))
-    .filter((id) => Number.isFinite(id));
-
-  if (!legacyIds.length) return false;
-
-  const clubes = await Club.find({ legacyId: { $in: legacyIds } }).lean();
-
-  let mudou = false;
-
-  if (!user.alertState || typeof user.alertState !== "object") {
-    user.alertState = { clubPrices: {} };
-    mudou = true;
-  }
-
-  if (
-    !user.alertState.clubPrices ||
-    typeof user.alertState.clubPrices !== "object"
-  ) {
-    user.alertState.clubPrices = {};
-    mudou = true;
-  }
-
-  user.notificacoes = Array.isArray(user.notificacoes) ? user.notificacoes : [];
-
-  for (const clube of clubes) {
-    const key = String(clube.legacyId);
-    const precoAtual = Number(clube.precoAtual ?? clube.preco ?? 0);
-
-    if (!Number.isFinite(precoAtual) || precoAtual <= 0) continue;
-
-    const anteriorRaw = user.alertState.clubPrices[key];
-
-    // Primeira vez: registra o preço-base, mas não notifica.
-    if (anteriorRaw === undefined || anteriorRaw === null) {
-      user.alertState.clubPrices[key] = precoAtual;
-      mudou = true;
-      continue;
-    }
-
-    const precoAnterior = Number(anteriorRaw);
-
-    if (!Number.isFinite(precoAnterior) || precoAnterior <= 0) {
-      user.alertState.clubPrices[key] = precoAtual;
-      mudou = true;
-      continue;
-    }
-
-    const variacaoPercentual =
-      ((precoAtual - precoAnterior) / precoAnterior) * 100;
-    const variacaoAbs = Math.abs(variacaoPercentual);
-
-    // Só notifica se a alteração for acima de 3%.
-    // Importante: se for menor que 3%, NÃO atualiza o preço-base.
-    // Assim, pequenas alterações acumuladas também podem disparar alerta depois.
-    if (variacaoAbs < THRESHOLD_PERCENT) {
-      continue;
-    }
-
-    const subiu = variacaoPercentual > 0;
-    const direcao = subiu ? "subiu" : "caiu";
-    const tipo = subiu ? "PRICE_UP" : "PRICE_DOWN";
-
-    const variacaoFormatada = Number(variacaoAbs.toFixed(2));
-    const precoAtualFormatado = Number(precoAtual.toFixed(2));
-    const precoAnteriorFormatado = Number(precoAnterior.toFixed(2));
-
-    const notificationKey = `price:${key}:${tipo}:${precoAtualFormatado.toFixed(2)}`;
-
-    const jaExiste = user.notificacoes.some((n) => {
-      const meta = n?.metadata || {};
-
-      return (
-        String(meta.notificationKey || "") === notificationKey ||
-        (String(meta.clubeId) === key &&
-          String(meta.tipo || "") === tipo &&
-          Number(meta.precoAtual || 0).toFixed(2) ===
-            precoAtualFormatado.toFixed(2))
-      );
-    });
-
-    if (!jaExiste) {
-      user.notificacoes.unshift({
-        id: `price_${key}_${tipo}_${precoAtualFormatado.toFixed(2)}_${Date.now()}`,
-        title: `${clube.nome} ${direcao} ${variacaoFormatada.toFixed(2)}%`,
-        body: `Novo preço de mercado: T$ ${precoAtualFormatado.toFixed(2)}.`,
-        read: false,
-        createdAt: new Date(),
-        metadata: {
-          notificationKey,
-          tipo,
-          entityType: "clube",
-          clubeId: clube.legacyId,
-          clubeNome: clube.nome,
-          precoAnterior: precoAnteriorFormatado,
-          precoAtual: precoAtualFormatado,
-          variacaoPercentual: Number(variacaoPercentual.toFixed(4)),
-          variacaoAbsoluta: variacaoFormatada,
-          thresholdPercent: THRESHOLD_PERCENT,
-          targetUrl: `/clube/${clube.legacyId}`,
-        },
-      });
-
-      mudou = true;
-    }
-
-    // Atualiza o preço-base somente quando a variação bate o gatilho.
-    user.alertState.clubPrices[key] = precoAtualFormatado;
-    mudou = true;
-  }
-
-  user.notificacoes = user.notificacoes.slice(0, 100);
-
-  if (mudou) {
-    user.markModified("alertState");
-    user.markModified("notificacoes");
-  }
-
-  return mudou;
-}
-
 app.get("/notifications", auth, async (req, res) => {
   try {
     const user = await User.findById(req.usuario.id);

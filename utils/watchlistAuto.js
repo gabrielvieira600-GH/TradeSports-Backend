@@ -1,4 +1,5 @@
 // utils/watchlistAuto.js
+const { enviarPushParaUsuario } = require('../services/pushNotificationService');
 
 function ensureUserWatchlistFields(user) {
   if (!user.watchlist) {
@@ -92,7 +93,7 @@ function autoFavoritarClubeAoComprar(user, clube, options = {}) {
     });
 
     if (!jaExisteNotificacao) {
-      user.notificacoes.unshift({
+      const notificacao = {
         id: criarIdNotificacao('watchlist_auto'),
         title: 'Clube adicionado aos favoritos',
         body: `${clube.nome || 'Clube'} foi adicionado automaticamente aos seus favoritos porque você adquiriu cotas dele.`,
@@ -106,7 +107,12 @@ function autoFavoritarClubeAoComprar(user, clube, options = {}) {
           clubeNome: clube.nome || '',
           targetUrl: `/clube/${clubeIdStr}`,
         },
-      });
+      };
+
+      user.notificacoes.unshift(notificacao);
+      enviarPushParaUsuario(user._id, notificacao).catch((erro) =>
+        console.error('[WEB PUSH WATCHLIST AUTO] erro não bloqueante:', erro?.message)
+      );
 
       user.notificacoes = user.notificacoes.slice(0, 100);
       user.markModified?.('notificacoes');

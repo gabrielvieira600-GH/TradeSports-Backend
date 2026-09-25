@@ -10,6 +10,7 @@ const PrivateRanking = require('../models/PrivateRanking');
 const PrivateRankingMember = require('../models/PrivateRankingMember');
 const PrivateRankingInvite = require('../models/PrivateRankingInvite');
 const SocialFeedEvent = require('../models/SocialFeedEvent');
+const { notify } = require('../utils/socialNotificationService');
 
 const {
   obterPlanoEfetivo,
@@ -32,21 +33,13 @@ async function adicionarNotificacaoUsuario(
     metadata = {},
   }
 ) {
-  const notificacao = {
-    id: criarIdNotificacao('ranking_invite'),
+  return notify(usuarioId, {
+    tipo: metadata.tipo || 'PRIVATE_RANKING_INVITE',
     title,
     body,
-    read: false,
-    createdAt: new Date(),
+    targetUrl: metadata.targetUrl || metadata.url || '/convites',
     metadata,
-  };
-
-  const resultado = await User.updateOne(
-    { _id: usuarioId },
-    { $push: { notificacoes: { $each: [notificacao], $position: 0, $slice: 100 } } }
-  );
-
-  return resultado.matchedCount ? notificacao : null;
+  });
 }
 
 function montarUsuarioPublico(usuario) {

@@ -9,6 +9,7 @@ const UserFollow = require('../models/UserFollow');
 const Club = require('../models/Club');
 const SocialFeedEvent = require('../models/SocialFeedEvent');
 const PerformanceSnapshot = require('../models/PerformanceSnapshot');
+const { notify } = require('../utils/socialNotificationService');
 
 
 const {
@@ -26,29 +27,13 @@ async function adicionarNotificacaoUsuario(
   usuarioId,
   { title, body = '', metadata = {} }
 ) {
-  const usuario = await User.findById(usuarioId);
-
-  if (!usuario) return null;
-
-  if (!Array.isArray(usuario.notificacoes)) {
-    usuario.notificacoes = [];
-  }
-
-  usuario.notificacoes.unshift({
-    id: criarIdNotificacao('social'),
+  return notify(usuarioId, {
+    tipo: metadata.tipo || 'SOCIAL',
     title,
     body,
-    read: false,
-    createdAt: new Date(),
+    targetUrl: metadata.targetUrl || metadata.url || '/social',
     metadata,
   });
-
-  usuario.notificacoes = usuario.notificacoes.slice(0, 100);
-  usuario.markModified('notificacoes');
-
-  await usuario.save();
-
-  return usuario.notificacoes[0];
 }
 
 async function criarEventoFeedSocial({
@@ -581,29 +566,13 @@ async function adicionarNotificacaoUsuario(
   usuarioId,
   { title, body = '', metadata = {} }
 ) {
-  const usuario = await User.findById(usuarioId);
-
-  if (!usuario) return null;
-
-  if (!Array.isArray(usuario.notificacoes)) {
-    usuario.notificacoes = [];
-  }
-
-  usuario.notificacoes.unshift({
-    id: criarIdNotificacao('social'),
+  return notify(usuarioId, {
+    tipo: metadata.tipo || 'SOCIAL',
     title,
     body,
-    read: false,
-    createdAt: new Date(),
+    targetUrl: metadata.targetUrl || metadata.url || '/social',
     metadata,
   });
-
-  usuario.notificacoes = usuario.notificacoes.slice(0, 100);
-  usuario.markModified('notificacoes');
-
-  await usuario.save();
-
-  return usuario.notificacoes[0];
 }
 
 async function criarEventoFeedSocial({

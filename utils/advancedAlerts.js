@@ -4,6 +4,7 @@ const Club = require('../models/Club');
 const Order = require('../models/Order');
 const Top4Rodada = require('../models/Top4Rodada');
 const RankingSeason = require('../models/RankingSeason');
+const { enviarPushParaUsuario } = require('../services/pushNotificationService');
 
 const round2 = (v) => Number(Number(v || 0).toFixed(2));
 const passouCooldown = (a, agora) => !a.ultimoDisparoEm || agora - new Date(a.ultimoDisparoEm) >= Number(a.cooldownMinutos || 60) * 60000;
@@ -75,7 +76,11 @@ async function avaliarAlertasDoUsuario(user) {
       const titulo = `Alerta: ${alerta.nome}`;
       const metadata = { tipo: 'ADVANCED_ALERT', alertaId: String(alerta._id), clubeId: alerta.clubeLegacyId, targetUrl: '/alertas' };
       await AdvancedAlertTrigger.create({ usuarioId: user._id, alertaId: alerta._id, tipo: alerta.tipo, titulo, mensagem: resultado.texto, valorObservado: resultado.valor ?? null, metadata, disparadoEm: agora });
-      user.notificacoes.unshift({ id: `advanced_alert_${alerta._id}_${agora.getTime()}`, title: titulo, body: resultado.texto, read: false, createdAt: agora, metadata: { ...metadata, notificationKey: `advanced:${alerta._id}:${agora.getTime()}` } });
+      const notificacao = { id: `advanced_alert_${alerta._id}_${agora.getTime()}`, title: titulo, body: resultado.texto, read: false, createdAt: agora, metadata: { ...metadata, notificationKey: `advanced:${alerta._id}:${agora.getTime()}` } };
+      user.notificacoes.unshift(notificacao);
+      enviarPushParaUsuario(user._id, notificacao).catch((erro) =>
+        console.error('[WEB PUSH ALERTA] erro não bloqueante:', erro?.message)
+      );
       alerta.ultimoDisparoEm = agora; disparos += 1;
       if (!alerta.recorrente || (alerta.tipo === 'ORDEM_EXECUCAO' && estado.ordem?.status === 'executada')) alerta.status = 'PAUSADO';
     }

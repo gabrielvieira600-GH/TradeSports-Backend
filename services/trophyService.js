@@ -351,6 +351,7 @@ async function classificacaoPrivada(ranking, base) {
 }
 
 async function notificarNovosTrofeus(criados) {
+  const { notify } = require('../utils/socialNotificationService');
   const porUsuario = new Map();
 
   for (const item of criados) {
@@ -367,31 +368,13 @@ async function notificarNovosTrofeus(criados) {
           ? primeiro.titulo
           : `Você conquistou ${lista.length} novos troféus. Visite sua Sala de Troféus.`;
 
-      return User.updateOne(
-        { _id: usuarioId },
-        {
-          $push: {
-            notificacoes: {
-              $each: [
-                {
-                  id: `trofeu_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                  title: 'Novo troféu conquistado!',
-                  body,
-                  read: false,
-                  createdAt: new Date(),
-                  metadata: {
-                    tipo: 'trofeu',
-                    targetUrl: `/perfil/${usuarioId}#sala-de-trofeus`,
-                    quantidade: lista.length,
-                  },
-                },
-              ],
-              $position: 0,
-              $slice: 100,
-            },
-          },
-        }
-      );
+      return notify(usuarioId, {
+        tipo: 'TROPHY_EARNED',
+        title: 'Novo troféu conquistado!',
+        body,
+        targetUrl: `/perfil/${usuarioId}#sala-de-trofeus`,
+        metadata: { quantidade: lista.length },
+      });
     })
   );
 }
