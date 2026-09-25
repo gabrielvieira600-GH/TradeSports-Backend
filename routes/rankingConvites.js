@@ -32,30 +32,21 @@ async function adicionarNotificacaoUsuario(
     metadata = {},
   }
 ) {
-  const usuario = await User.findById(usuarioId);
-
-  if (!usuario) return null;
-
-  if (!Array.isArray(usuario.notificacoes)) {
-    usuario.notificacoes = [];
-  }
-
-  usuario.notificacoes.unshift({
+  const notificacao = {
     id: criarIdNotificacao('ranking_invite'),
     title,
     body,
     read: false,
     createdAt: new Date(),
     metadata,
-  });
+  };
 
-  usuario.notificacoes = usuario.notificacoes.slice(0, 100);
+  const resultado = await User.updateOne(
+    { _id: usuarioId },
+    { $push: { notificacoes: { $each: [notificacao], $position: 0, $slice: 100 } } }
+  );
 
-  usuario.markModified('notificacoes');
-
-  await usuario.save();
-
-  return usuario.notificacoes[0];
+  return resultado.matchedCount ? notificacao : null;
 }
 
 function montarUsuarioPublico(usuario) {
