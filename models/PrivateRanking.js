@@ -86,6 +86,12 @@ const PrivateRankingSchema = new mongoose.Schema(
 
     encerradoEm: { type: Date, default: null },
     arquivadoEm: { type: Date, default: null },
+    canceladoEm: { type: Date, default: null },
+    canceladoPor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     campeaoUsuarioId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

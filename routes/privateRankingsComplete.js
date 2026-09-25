@@ -51,7 +51,7 @@ async function calcularClassificacao(ranking) {
   const ids = membros.map((m) => m.usuarioId);
   if (!ids.length) return [];
   const [usuarios, clubes] = await Promise.all([
-    User.find({ _id: { $in: ids }, rankingAtivo: { $ne: false } }).select('_id nome nomeUsuario saldo capitalInicial carteira patrimonioInicialTemporada temporadaRanking rankingPerformance plano premiumAtivo premiumInicio premiumFim').lean(),
+    User.find({ _id: { $in: ids }, rankingAtivo: { $ne: false } }).select('_id nome nomeUsuario fotoPerfilUrl saldo capitalInicial carteira patrimonioInicialTemporada temporadaRanking rankingPerformance plano premiumAtivo premiumInicio premiumFim').lean(),
     Club.find({}).select('legacyId precoAtual preco').lean(),
   ]);
   const precos = new Map(clubes.map((c) => [String(c.legacyId), Number(c.precoAtual ?? c.preco ?? 0)]));
@@ -72,7 +72,7 @@ async function calcularClassificacao(ranking) {
     );
     const resultado = performance.resultado;
     return {
-      usuarioId: String(u._id), nome: u.nome || '', nomeUsuario: u.nomeUsuario || '',
+      usuarioId: String(u._id), nome: u.nome || '', nomeUsuario: u.nomeUsuario || '', fotoPerfilUrl: u.fotoPerfilUrl || '',
       plano: obterPlanoEfetivo(u), papel: papel.get(String(u._id)), patrimonio,
       resultado, rentabilidade: performance.rentabilidade,
       aportesExternosTotal: performance.aportesExternosTotal,
@@ -176,6 +176,7 @@ router.get('/:id', async (req, res) => {
     if (!ctx.participante && ctx.membro?.status === 'pendente') {
       return res.json({
         ok: true,
+        usuarioAtualId: String(req.usuario.id),
         ranking: ctx.ranking,
         papel: ctx.papel,
         participante: false,
@@ -197,7 +198,7 @@ router.get('/:id', async (req, res) => {
       PrivateRanking.find({ criadorId: ctx.ranking.criadorId, status: { $in: ['encerrado', 'arquivado'] }, campeaoUsuarioId: { $ne: null } }).populate('campeaoUsuarioId', 'nome nomeUsuario').sort({ encerradoEm: -1 }).limit(20).lean(),
     ]);
     const patrimonioMedio = classificacao.length ? round2(classificacao.reduce((s, x) => s + x.patrimonio, 0) / classificacao.length) : 0;
-    return res.json({ ok: true, ranking: ctx.ranking, papel: ctx.papel, participante: ctx.participante, podeGerir: ctx.podeGerir, linkConvite: `/rankings-privados?codigo=${ctx.ranking.codigoConvite}`, classificacao, membros, posts, estatisticas: { participantes: classificacao.length, patrimonioMedio, rentabilidadeMedia: classificacao.length ? round2(classificacao.reduce((s, x) => s + x.rentabilidade, 0) / classificacao.length) : 0, lider: classificacao[0] || null }, historicoCampeoes: campeoes.map((r) => ({ rankingId: r._id, nome: r.nome, encerradoEm: r.encerradoEm, campeao: r.campeaoUsuarioId, trofeu: r.resultadoFinal?.trofeu || 'Campeão' })) });
+    return res.json({ ok: true, usuarioAtualId: String(req.usuario.id), ranking: ctx.ranking, papel: ctx.papel, participante: ctx.participante, podeGerir: ctx.podeGerir, linkConvite: `/rankings-privados?codigo=${ctx.ranking.codigoConvite}`, classificacao, membros, posts, estatisticas: { participantes: classificacao.length, patrimonioMedio, rentabilidadeMedia: classificacao.length ? round2(classificacao.reduce((s, x) => s + x.rentabilidade, 0) / classificacao.length) : 0, lider: classificacao[0] || null }, historicoCampeoes: campeoes.map((r) => ({ rankingId: r._id, nome: r.nome, encerradoEm: r.encerradoEm, campeao: r.campeaoUsuarioId, trofeu: r.resultadoFinal?.trofeu || 'Campeão' })) });
   } catch (err) { console.error(err); return res.status(500).json({ erro: 'Erro ao carregar competição.' }); }
 });
 
@@ -318,6 +319,34 @@ router.post('/:id/arquivar', async (req, res) => {
     const ranking = await PrivateRanking.findByIdAndUpdate(ctx.ranking._id, { $set: { status: 'arquivado', arquivadoEm: new Date() } }, { new: true });
     return res.json({ ok: true, ranking });
   } catch (err) { return res.status(500).json({ erro: 'Erro ao arquivar competição.' }); }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const ctx = await contexto(req.params.id, req.usuario.id);
+    if (!ctx || ctx.papel !== 'proprietario') {
+      return res.status(403).json({ erro: 'Apenas o proprietário pode excluir a competição.' });
+    }
+    if (ctx.ranking.status === 'cancelado') {
+      return res.status(409).json({ erro: 'Esta competição já foi excluída.' });
+    }
+
+    await PrivateRanking.updateOne(
+      { _id: ctx.ranking._id },
+      {
+        $set: {
+          status: 'cancelado',
+          canceladoEm: new Date(),
+          canceladoPor: req.usuario.id,
+        },
+      }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Erro ao excluir competição privada:', err);
+    return res.status(500).json({ erro: 'Erro ao excluir competição.' });
+  }
 });
 
 module.exports = router;
