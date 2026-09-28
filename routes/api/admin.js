@@ -23,6 +23,8 @@ const Liquidacao = require('../../models/Liquidacao');
 const RankingSeason = require('../../models/RankingSeason');
 const RankingRound = require('../../models/RankingRound');
 const InstitutionalLiquidity = require('../../models/InstitutionalLiquidity');
+const MarketControl = require('../../models/MarketControl');
+const sportsMarkets = require('../../config/sportsMarkets');
 const RecoveryRecharge = require('../../models/RecoveryRecharge');
 const { isUnifiedLiquidity } = require('../../config/marketMode');
 const { cancelInstitutionalOrders, publishOrdersForClub } = require('../../services/institutionalLiquidity');
@@ -53,6 +55,64 @@ function round2(n) {
 
 router.use(auth);
 router.use(isAdmin);
+
+router.get('/market-controls', async (_req, res) => {
+  try {
+    const controls = await MarketControl.find({}).lean();
+    const byId = new Map(controls.map((item) => [item.ligaId, item]));
+    const mercados = Object.values(sportsMarkets).map((market) => ({
+      id: market.id,
+      nome: market.nome,
+      fechado: Boolean(byId.get(market.id)?.fechado),
+      atualizadoEm: byId.get(market.id)?.updatedAt || null,
+    }));
+    return res.json({ ok: true, mercados });
+  } catch (err) {
+    console.error('[ADMIN MARKET CONTROLS] Erro ao consultar:', err);
+    return res.status(500).json({ erro: 'Não foi possível consultar o estado dos mercados.' });
+  }
+});
+
+router.patch('/market-controls/:ligaId', async (req, res) => {
+  try {
+    const ligaId = String(req.params.ligaId || '').trim().toLowerCase();
+    if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga não encontrada.' });
+    if (typeof req.body?.fechado !== 'boolean') {
+      return res.status(400).json({ erro: 'Informe fechado como verdadeiro ou falso.' });
+    }
+    const control = await MarketControl.findOneAndUpdate(
+      { ligaId },
+      { $set: { fechado: req.body.fechado, atualizadoPor: req.usuario.id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    await audit.logEvent({ kind: 'ADMIN', action: req.body.fechado ? 'MARKET_CLOSED' : 'MARKET_OPENED', userId: req.usuario.id, meta: { ligaId } });
+    return res.json({ ok: true, mercado: control });
+  } catch (err) {
+    console.error('[ADMIN MARKET CONTROLS] Erro ao atualizar:', err);
+    return res.status(500).json({ erro: 'Não foi possível atualizar o mercado.' });
+  }
+});
+
+router.post('/market-controls/batch', async (req, res) => {
+  try {
+    if (typeof req.body?.fechado !== 'boolean') {
+      return res.status(400).json({ erro: 'Informe fechado como verdadeiro ou falso.' });
+    }
+    const ligaIds = Object.keys(sportsMarkets);
+    await MarketControl.bulkWrite(ligaIds.map((ligaId) => ({
+      updateOne: {
+        filter: { ligaId },
+        update: { $set: { fechado: req.body.fechado, atualizadoPor: req.usuario.id } },
+        upsert: true,
+      },
+    })));
+    await audit.logEvent({ kind: 'ADMIN', action: req.body.fechado ? 'ALL_MARKETS_CLOSED' : 'ALL_MARKETS_OPENED', userId: req.usuario.id, meta: { quantidade: ligaIds.length } });
+    return res.json({ ok: true, fechado: req.body.fechado, quantidade: ligaIds.length });
+  } catch (err) {
+    console.error('[ADMIN MARKET CONTROLS] Erro na atualização em lote:', err);
+    return res.status(500).json({ erro: 'Não foi possível atualizar todas as ligas.' });
+  }
+});
 
 router.get('/test-environment/preview', async (req, res) => {
   try {

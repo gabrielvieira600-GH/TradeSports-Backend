@@ -6,6 +6,7 @@ const Club = require('../models/Club');
 const Investment = require('../models/Investment');
 const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
 const ledger = require('../utils/ledger');
+const { mercadoFechadoParaClube } = require('../services/marketAccess');
 
 function round2(n) {
   return Number(Number(n || 0).toFixed(2));
@@ -141,6 +142,10 @@ async function comprarCota(req, res) {
         throw new Error('CLUBE_NAO_ENCONTRADO');
       }
 
+      if (await mercadoFechadoParaClube(clube, session)) {
+        throw new Error('MERCADO_FECHADO');
+      }
+
       if (Boolean(clube.ipoEncerrado) || Number(clube.cotasDisponiveis || 0) <= 0) {
         throw new Error('IPO_ENCERRADO');
       }
@@ -257,6 +262,7 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
     const mapa = {
       USUARIO_NAO_ENCONTRADO: [404, 'Usuário não encontrado.'],
       CLUBE_NAO_ENCONTRADO: [404, 'Clube não encontrado.'],
+      MERCADO_FECHADO: [409, 'Mercado fechado para esta liga.'],
       IPO_ENCERRADO: [400, 'IPO encerrado para este clube.'],
       COTAS_INSUFICIENTES: [400, 'Quantidade acima das cotas disponíveis.'],
       SALDO_INSUFICIENTE: [400, 'Saldo insuficiente.'],

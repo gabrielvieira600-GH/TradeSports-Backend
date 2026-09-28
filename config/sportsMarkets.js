@@ -1,6 +1,7 @@
 const anoAtual = new Date().getFullYear();
 
 module.exports = {
+  'brasileirao-a': { id: 'brasileirao-a', nome: 'Brasileirão Série A', esporte: 'football', league: 71, season: Number(process.env.API_FOOTBALL_SEASON_BR_A || process.env.API_FOOTBALL_SEASON || 2024), participantes: 20, namespace: 7100000 },
   'brasileirao-b': { id: 'brasileirao-b', nome: 'Brasileirão Série B', esporte: 'football', league: 72, season: Number(process.env.API_FOOTBALL_SEASON_BR_B || 2024), participantes: 20, namespace: 7200000 },
   'premier-league': { id: 'premier-league', nome: 'Premier League', esporte: 'football', league: 39, season: Number(process.env.API_FOOTBALL_SEASON_PREMIER || 2023), participantes: 20, namespace: 3900000 },
   'la-liga': { id: 'la-liga', nome: 'La Liga', esporte: 'football', league: 140, season: Number(process.env.API_FOOTBALL_SEASON_LALIGA || 2023), participantes: 20, namespace: 14000000 },

@@ -15,6 +15,7 @@ function authOpcional(req, res, next) {
 }
 
 const User = require('../models/User');
+const { mercadoFechadoParaClube } = require('../services/marketAccess');
 
 const Club = require('../models/Club');
 
@@ -1333,6 +1334,10 @@ router.post('/ordem', auth, async (req, res) => {
         );
       }
 
+      if (await mercadoFechadoParaClube(clube, session)) {
+        throw new Error('MERCADO_FECHADO');
+      }
+
       if (!isUnifiedLiquidity() && !Boolean(clube.ipoEncerrado)) {
         throw new Error(
           'IPO_AINDA_ABERTO'
@@ -2517,8 +2522,6 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
 
 
 

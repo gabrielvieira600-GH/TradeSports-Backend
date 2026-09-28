@@ -4,8 +4,19 @@ const Club = require('../models/Club');
 const mercados = require('../config/sportsMarkets');
 const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 const { loadCachedTable } = require('../services/sportsTableCache');
+const MarketControl = require('../models/MarketControl');
 
 const router = express.Router();
+
+router.get('/market-status', async (_req, res) => {
+  try {
+    const controls = await MarketControl.find({ fechado: true }).select('ligaId fechado').lean();
+    return res.json({ ok: true, mercados: controls });
+  } catch (erro) {
+    console.error('[MARKET STATUS] erro:', erro?.message);
+    return res.status(500).json({ erro: 'Não foi possível consultar o estado dos mercados.' });
+  }
+});
 
 function texto(v) { return String(v || '').trim(); }
 function normalizar(v) { return texto(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -23,6 +34,52 @@ function confereConferencia(valor, esperada) {
   if (esperada === 'afc') return atual.includes('afc') || atual.includes('american');
   if (esperada === 'nfc') return atual.includes('nfc') || atual.includes('national');
   return true;
+}
+
+const equipesReserva = {
+  'nba-oeste': [
+    ['Denver Nuggets', 'den'], ['Minnesota Timberwolves', 'min'], ['Oklahoma City Thunder', 'okc'],
+    ['Portland Trail Blazers', 'por'], ['Utah Jazz', 'uta'], ['Golden State Warriors', 'gs'],
+    ['LA Clippers', 'lac'], ['Los Angeles Lakers', 'lal'], ['Phoenix Suns', 'phx'], ['Sacramento Kings', 'sac'],
+    ['Dallas Mavericks', 'dal'], ['Houston Rockets', 'hou'], ['Memphis Grizzlies', 'mem'], ['New Orleans Pelicans', 'no'], ['San Antonio Spurs', 'sa'],
+  ],
+  'nba-leste': [
+    ['Boston Celtics', 'bos'], ['Brooklyn Nets', 'bkn'], ['New York Knicks', 'ny'],
+    ['Philadelphia 76ers', 'phi'], ['Toronto Raptors', 'tor'], ['Chicago Bulls', 'chi'],
+    ['Cleveland Cavaliers', 'cle'], ['Detroit Pistons', 'det'], ['Indiana Pacers', 'ind'], ['Milwaukee Bucks', 'mil'],
+    ['Atlanta Hawks', 'atl'], ['Charlotte Hornets', 'cha'], ['Miami Heat', 'mia'], ['Orlando Magic', 'orl'], ['Washington Wizards', 'wsh'],
+  ],
+  'nfl-afc': [
+    ['Buffalo Bills', 'buf', 'East'], ['Miami Dolphins', 'mia', 'East'], ['New England Patriots', 'ne', 'East'], ['New York Jets', 'nyj', 'East'],
+    ['Baltimore Ravens', 'bal', 'North'], ['Cincinnati Bengals', 'cin', 'North'], ['Cleveland Browns', 'cle', 'North'], ['Pittsburgh Steelers', 'pit', 'North'],
+    ['Houston Texans', 'hou', 'South'], ['Indianapolis Colts', 'ind', 'South'], ['Jacksonville Jaguars', 'jax', 'South'], ['Tennessee Titans', 'ten', 'South'],
+    ['Denver Broncos', 'den', 'West'], ['Kansas City Chiefs', 'kc', 'West'], ['Las Vegas Raiders', 'lv', 'West'], ['Los Angeles Chargers', 'lac', 'West'],
+  ],
+  'nfl-nfc': [
+    ['Dallas Cowboys', 'dal', 'East'], ['New York Giants', 'nyg', 'East'], ['Philadelphia Eagles', 'phi', 'East'], ['Washington Commanders', 'wsh', 'East'],
+    ['Chicago Bears', 'chi', 'North'], ['Detroit Lions', 'det', 'North'], ['Green Bay Packers', 'gb', 'North'], ['Minnesota Vikings', 'min', 'North'],
+    ['Atlanta Falcons', 'atl', 'South'], ['Carolina Panthers', 'car', 'South'], ['New Orleans Saints', 'no', 'South'], ['Tampa Bay Buccaneers', 'tb', 'South'],
+    ['Arizona Cardinals', 'ari', 'West'], ['Los Angeles Rams', 'lar', 'West'], ['San Francisco 49ers', 'sf', 'West'], ['Seattle Seahawks', 'sea', 'West'],
+  ],
+};
+
+function classificacaoReserva(config) {
+  const equipes = equipesReserva[config.id];
+  if (!equipes) return [];
+  const sportPath = config.esporte === 'nba' ? 'nba' : 'nfl';
+  return equipes.map(([nome, abreviacao, divisao], indice) => ({
+    apiId: 900000 + indice + (config.esporte === 'nba' ? 0 : config.id === 'nfl-nfc' ? 100 : 50),
+    nome,
+    escudo: `https://a.espncdn.com/i/teamlogos/${sportPath}/500/${abreviacao}.png`,
+    posicao: indice + 1,
+    pontos: 0,
+    jogos: 0,
+    vitorias: 0,
+    empates: 0,
+    derrotas: 0,
+    saldo: 0,
+    grupo: divisao ? `${config.conference.toUpperCase()} ${divisao}` : config.conference,
+  }));
 }
 
 async function buscarFootball(config) {
@@ -117,8 +174,10 @@ router.get('/tabelas/:mercadoId', async (req, res) => {
   const configBase = mercados[req.params.mercadoId];
   if (!configBase) return res.status(404).json({ erro: 'Mercado esportivo não encontrado.' });
   let config = { ...configBase };
+  let classificacao = [];
+  let fonteReserva = false;
   try {
-    let classificacao = config.esporte === 'football' ? await buscarFootball(config)
+    classificacao = config.esporte === 'football' ? await buscarFootball(config)
       : config.esporte === 'nba' ? await buscarNBA(config) : await buscarNFL(config);
     const temporadaNumerica = Number(config.season);
     if (!classificacao.length && Number.isInteger(temporadaNumerica)) {
@@ -126,34 +185,38 @@ router.get('/tabelas/:mercadoId', async (req, res) => {
       classificacao = config.esporte === 'football' ? await buscarFootball(config)
         : config.esporte === 'nba' ? await buscarNBA(config) : await buscarNFL(config);
     }
-    if (!classificacao.length) throw new Error('A classificação da temporada ainda não está disponível.');
-    const data = await sincronizar(config, classificacao);
-    return res.json({ data, mercado: config.id, nome: config.nome, temporada: config.season,
-      participantes: config.participantes, atualizadoEm: new Date().toISOString() });
   } catch (erro) {
-    console.error(`[TABELAS:${configBase.id}]`, erro?.response?.data || erro);
-    try {
-      const data = await loadCachedTable(Club, configBase.id);
-      if (data.length) {
-        return res.json({
-          data,
-          mercado: configBase.id,
-          nome: configBase.nome,
-          temporada: configBase.season,
-          participantes: configBase.participantes,
-          atualizadoEm: new Date().toISOString(),
-          fonte: 'mongodb',
-          contingencia: true,
-        });
-      }
-    } catch (cacheError) {
-      console.error(`[TABELAS:${configBase.id}:CACHE]`, cacheError);
-    }
-
-    return res.status(503).json({
-      erro: `Não foi possível carregar a tabela de ${configBase.nome} e ainda não existe uma cópia salva.`,
-    });
+    console.error(`[TABELAS:${configBase.id}]`, erro?.response?.data || erro?.message || erro);
   }
+
+  if (!classificacao.length && configBase.esporte !== 'football') {
+    classificacao = classificacaoReserva(configBase);
+    fonteReserva = classificacao.length > 0;
+  }
+
+  if (classificacao.length) {
+    try {
+      const data = await sincronizar(configBase, classificacao);
+      return res.json({ data, mercado: configBase.id, nome: configBase.nome, temporada: configBase.season,
+        participantes: configBase.participantes, atualizadoEm: new Date().toISOString(),
+        ...(fonteReserva ? { fonte: 'reserva', contingencia: true } : {}) });
+    } catch (erro) {
+      console.error(`[TABELAS:${configBase.id}:SYNC]`, erro);
+    }
+  }
+
+  try {
+    const data = await loadCachedTable(Club, configBase.id);
+    if (data.length) {
+      return res.json({ data, mercado: configBase.id, nome: configBase.nome,
+        temporada: configBase.season, participantes: configBase.participantes,
+        atualizadoEm: new Date().toISOString(), fonte: 'mongodb', contingencia: true });
+    }
+  } catch (cacheError) {
+    console.error(`[TABELAS:${configBase.id}:CACHE]`, cacheError);
+  }
+
+  return res.status(503).json({ erro: `Não foi possível carregar a tabela de ${configBase.nome} e ainda não existe uma cópia salva.` });
 });
 
 module.exports = router;
