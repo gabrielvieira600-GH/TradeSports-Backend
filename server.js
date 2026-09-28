@@ -47,6 +47,7 @@ const {
 const adminRoutes = require("./routes/api/admin");
 const institutionalLiquidityAdminRoutes = require('./routes/api/institutionalLiquidityAdmin');
 const loginRoute = require("./routes/api/login");
+const sessionRoute = require("./routes/api/session");
 
 const clubeRoutes = require("./routes/clube");
 const investimentoRoutes = require("./routes/investimento");
@@ -271,6 +272,7 @@ app.use('/api/admin/liquidez-institucional', institutionalLiquidityAdminRoutes);
 app.use("/admin", adminRoutes); // compatibilidade com endpoints antigos
 
 app.use("/api/login", loginRoute);
+app.use("/api/session", sessionRoute);
 app.use("/api", classificacaoRoutes);
 app.use("/api", sportsStandingsRoutes);
 

@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const antifraude = require("../../utils/antifraude");
 const User = require("../../models/User");
 const { pendenciasAceite } = require("../../config/legalDocuments");
+const { criarSessaoPersistente } = require("../../services/authSessionService");
 
 const MAX_TENTATIVAS = 5;
 const JANELA_TENTATIVAS_MS = 15 * 60 * 1000;
@@ -197,23 +197,14 @@ router.post("/", loginLimiter, async (req, res) => {
       decision: "ALLOW",
     });
 
-    const token = jwt.sign(
-      {
-        id: String(usuario._id),
-        legacyId: usuario.legacyId ?? null,
-        email: usuario.email,
-        nomeUsuario: usuario.nomeUsuario,
-        role: usuario.role || (usuario.admin ? "admin" : "user"),
-      },
-      process.env.JWT_SECRET || "segredo_nao_definido",
-      { expiresIn: "2h" },
-    );
+    const { token, refreshToken } = await criarSessaoPersistente(usuario, req);
 
     const aceitesPendentes = pendenciasAceite(usuario.aceites);
 
     return res.status(200).json({
       mensagem: "Login realizado com sucesso!",
       token,
+      refreshToken,
       aceitesJuridicos: {
         pendencias: aceitesPendentes,
         exigeNovoAceite: aceitesPendentes.length > 0,
