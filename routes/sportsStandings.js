@@ -37,6 +37,14 @@ function confereConferencia(valor, esperada) {
 }
 
 const equipesReserva = {
+  'serie-a': [
+    ['Inter'], ['AC Milan'], ['Juventus'], ['Atalanta'], ['Bologna'], ['AS Roma'], ['Lazio'], ['Fiorentina'], ['Torino'], ['Napoli'],
+    ['Genoa'], ['Monza'], ['Verona'], ['Lecce'], ['Udinese'], ['Cagliari'], ['Empoli'], ['Frosinone'], ['Sassuolo'], ['Salernitana'],
+  ],
+  eredivisie: [
+    ['PSV'], ['Feyenoord'], ['FC Twente'], ['AZ Alkmaar'], ['Ajax'], ['NEC Nijmegen'], ['FC Utrecht'], ['Sparta Rotterdam'], ['Go Ahead Eagles'],
+    ['Fortuna Sittard'], ['SC Heerenveen'], ['PEC Zwolle'], ['Almere City'], ['Heracles Almelo'], ['RKC Waalwijk'], ['Excelsior Rotterdam'], ['FC Volendam'], ['Vitesse'],
+  ],
   'nba-oeste': [
     ['Denver Nuggets', 'den'], ['Minnesota Timberwolves', 'min'], ['Oklahoma City Thunder', 'okc'],
     ['Portland Trail Blazers', 'por'], ['Utah Jazz', 'uta'], ['Golden State Warriors', 'gs'],
@@ -66,11 +74,17 @@ const equipesReserva = {
 function classificacaoReserva(config) {
   const equipes = equipesReserva[config.id];
   if (!equipes) return [];
-  const sportPath = config.esporte === 'nba' ? 'nba' : 'nfl';
+  const sportPath = config.esporte === 'nba' ? 'nba' : config.esporte === 'nfl' ? 'nfl' : '';
+  const offset = config.id === 'serie-a' ? 1000
+    : config.id === 'eredivisie' ? 2000
+    : config.esporte === 'nba' ? 0
+    : config.id === 'nfl-nfc' ? 100 : 50;
   return equipes.map(([nome, abreviacao, divisao], indice) => ({
-    apiId: 900000 + indice + (config.esporte === 'nba' ? 0 : config.id === 'nfl-nfc' ? 100 : 50),
+    apiId: 900000 + offset + indice,
     nome,
-    escudo: `https://a.espncdn.com/i/teamlogos/${sportPath}/500/${abreviacao}.png`,
+    escudo: sportPath && abreviacao
+      ? `https://a.espncdn.com/i/teamlogos/${sportPath}/500/${abreviacao}.png`
+      : '',
     posicao: indice + 1,
     pontos: 0,
     jogos: 0,
@@ -189,7 +203,7 @@ router.get('/tabelas/:mercadoId', async (req, res) => {
     console.error(`[TABELAS:${configBase.id}]`, erro?.response?.data || erro?.message || erro);
   }
 
-  if (!classificacao.length && configBase.esporte !== 'football') {
+  if (!classificacao.length && equipesReserva[configBase.id]) {
     classificacao = classificacaoReserva(configBase);
     fonteReserva = classificacao.length > 0;
   }
