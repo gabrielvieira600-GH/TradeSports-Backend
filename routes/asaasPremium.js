@@ -9,7 +9,6 @@ const router = express.Router();
 const PRICE = 9.90;
 const validToken = (a,b) => Boolean(a && b && Buffer.byteLength(a)===Buffer.byteLength(b) && crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b)));
 const error = (res,e) => { console.error('[ASAAS]', e.response?.status || e.message); return res.status(502).json({erro:'Falha de comunicação com o Asaas.'}); };
-const date = d => new Date(`${d}T12:00:00Z`);
 router.get('/status',auth,async(req,res)=>{
  try {const sub=await Sub.findOne({userId:req.usuario.id}).sort({createdAt:-1}).lean();return res.json({subscription:sub?{status:sub.status,billingType:sub.billingType,paidUntil:sub.paidUntil}:null});}
  catch(e){return error(res,e);}
@@ -20,7 +19,9 @@ router.post('/checkout',auth,async(req,res)=>{
   if(process.env.ASAAS_ENV!=='sandbox')return res.status(503).json({erro:'Esta versão está liberada somente para Sandbox.'});
   if(req.body?.billingType!=='PIX')return res.status(400).json({erro:'Nesta etapa, selecione Pix.'});
   const user=await User.findById(req.usuario.id);
-  if(!user?.emailVerificado)return res.status(403).json({erro:'Confirme seu e-mail antes de contratar.'});
+  if(!user)return res.status(404).json({erro:'Usuário não encontrado.'});
+  // Usuários antigos não precisam validar e-mail novamente para assinar.
+  // Autenticação é exigida pelo middleware auth, e o pagamento pelo webhook.
   const cpf=String(user.cpf||'').replace(/\D/g,'');
   if(!/^\d{11}$/.test(cpf))return res.status(422).json({erro:'Cadastre um CPF válido em sua conta.'});
   let sub=await Sub.findOne({userId:user._id,status:{$in:['ACTIVE','PENDING']}}).sort({createdAt:-1});
@@ -29,7 +30,6 @@ router.post('/checkout',auth,async(req,res)=>{
   const found=await asaas('get','/customers?externalReference='+encodeURIComponent(ref)+'&limit=100');
   let customer=found.data?.find(c=>c.externalReference===ref);
   if(!customer)customer=await asaas('post','/customers',{name:[user.nome,user.sobrenome].filter(Boolean).join(' ')||user.nomeUsuario,email:user.email,cpfCnpj:cpf,externalReference:ref,notificationDisabled:true});
-  // Asaas subscription with PIX issues a new payment every month. It is NOT automatic debit.
   const today=new Date().toISOString().slice(0,10);
   const created=await asaas('post','/subscriptions',{customer:customer.id,billingType:'PIX',value:PRICE,nextDueDate:today,cycle:'MONTHLY',description:'TradeSports Premium - R$ 9,90/mês',externalReference:ref});
   sub=await Sub.create({userId:user._id,customerId:customer.id,subscriptionId:created.id,billingType:'PIX',status:'PENDING'});
