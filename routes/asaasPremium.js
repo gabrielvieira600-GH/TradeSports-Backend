@@ -8,7 +8,7 @@ const asaas = require('../services/asaas');
 const router = express.Router();
 const PRICE = 9.90;
 const validToken = (a,b) => Boolean(a && b && Buffer.byteLength(a)===Buffer.byteLength(b) && crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b)));
-const error = (res,e) => { console.error('[ASAAS]', e.response?.status || e.message); return res.status(502).json({erro:'Falha de comunicação com o Asaas.'}); };
+const error = (res,e) => { console.error('[ASAAS ROUTE]', e.response?.status || e.code || e.message); return res.status(502).json({erro:'Falha de comunicação com o Asaas.'}); };
 router.get('/status',auth,async(req,res)=>{
  try {const sub=await Sub.findOne({userId:req.usuario.id}).sort({createdAt:-1}).lean();return res.json({subscription:sub?{status:sub.status,billingType:sub.billingType,paidUntil:sub.paidUntil}:null});}
  catch(e){return error(res,e);}
@@ -20,8 +20,6 @@ router.post('/checkout',auth,async(req,res)=>{
   if(req.body?.billingType!=='PIX')return res.status(400).json({erro:'Nesta etapa, selecione Pix.'});
   const user=await User.findById(req.usuario.id);
   if(!user)return res.status(404).json({erro:'Usuário não encontrado.'});
-  // Usuários antigos não precisam validar e-mail novamente para assinar.
-  // Autenticação é exigida pelo middleware auth, e o pagamento pelo webhook.
   const cpf=String(user.cpf||'').replace(/\D/g,'');
   if(!/^\d{11}$/.test(cpf))return res.status(422).json({erro:'Cadastre um CPF válido em sua conta.'});
   let sub=await Sub.findOne({userId:user._id,status:{$in:['ACTIVE','PENDING']}}).sort({createdAt:-1});
