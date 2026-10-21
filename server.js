@@ -73,6 +73,7 @@ const socialOwnershipRoutes = require("./routes/socialOwnership");
 const socialCommentsV2Routes = require("./routes/socialCommentsV2");
 const pushNotificationsRoutes = require('./routes/pushNotifications');
 const asaasPremiumRoutes = require("./routes/asaasPremium");
+const asaasCardRoutes = require("./routes/asaasCardCheckout");
 
 const {
   router: recoveryRechargeRoutes,
@@ -308,6 +309,7 @@ app.use('/social-community', socialCommunityRoutes);
 app.use('/push', pushNotificationsRoutes);
 app.use("/api/admin/social-moderation", socialModerationRoutes);
 app.use("/asaas/premium", asaasPremiumRoutes);
+app.use("/asaas/card", asaasCardRoutes);
 
 if (watchlistRoutes) {
   app.use("/watchlist", watchlistRoutes);
