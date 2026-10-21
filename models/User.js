@@ -309,12 +309,11 @@ function normalizarCarteira(carteira) {
   return Array.from(mapa.values());
 }
 
-UserSchema.pre('validate', function (next) {
+UserSchema.pre('validate', function () {
   this.carteira = normalizarCarteira(this.carteira);
-  next();
 });
 
-UserSchema.pre('save', function (next) {
+UserSchema.pre('save', function () {
   if (this.admin === true || this.role === 'admin') {
     this.role = 'admin';
     this.admin = true;
@@ -327,7 +326,6 @@ UserSchema.pre('save', function (next) {
     this.email = String(this.email).trim().toLowerCase();
   }
 
-  next();
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);
