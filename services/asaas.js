@@ -30,6 +30,21 @@ async function asaas(method, path, data) {
       errorCodes: details,
       networkCode: err.code || null
     }));
+    if (
+  err.response?.status === 400 &&
+  String(path).startsWith('/customers')
+) {
+  console.error(
+    '[ASAAS CUSTOMER VALIDATION]',
+    JSON.stringify({
+      status: err.response.status,
+      errors: (err.response.data?.errors || []).map(item => ({
+        code: item.code,
+        description: item.description
+      }))
+    })
+  );
+}
     throw err;
   }
 }
