@@ -309,6 +309,10 @@ app.use('/social-community', socialCommunityRoutes);
 app.use('/push', pushNotificationsRoutes);
 app.use("/api/admin/social-moderation", socialModerationRoutes);
 app.use("/asaas/premium", asaasPremiumRoutes);
+app.use(
+  "/usuario/dados-faturamento",
+  require("./routes/billingProfile")
+);
 app.use("/asaas/card", asaasCardRoutes);
 
 if (watchlistRoutes) {
