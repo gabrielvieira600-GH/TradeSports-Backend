@@ -5,6 +5,7 @@ const User=require('../models/User');
 const Sub=require('../models/AsaasSubscription');
 const Event=require('../models/AsaasEvent');
 const asaas=require('../services/asaas');
+const { validCpf } = require('../utils/cpf');
 const {PRICE,reconcile,latest,usable}=require('../services/premiumLifecycle');
 const router=express.Router();
 const fail=(res,e)=>{console.error('[ASAAS PREMIUM]',e.response?.status||e.code||e.message);return res.status(502).json({erro:'Não foi possível consultar o serviço de pagamentos.'});};
@@ -18,7 +19,7 @@ router.post('/checkout',auth,async(req,res)=>{
   if(process.env.ASAAS_PREMIUM_ENABLED!=='true'||process.env.ASAAS_ENV!=='sandbox')return res.status(503).json({erro:'Contratação disponível apenas no Sandbox nesta etapa.'});
   if(req.body?.billingType!=='PIX')return res.status(400).json({erro:'Selecione Pix.'});
   const user=await User.findById(req.usuario.id);if(!user)return res.sendStatus(404);
-  const cpf=String(user.cpf||'').replace(/\D/g,'');if(!/^\d{11}$/.test(cpf))return res.status(422).json({erro:'Cadastre um CPF válido.'});
+  const cpf=String(user.cpf||'').replace(/\D/g,'');if (!validCpf(cpf))return res.status(422).json({erro:'Cadastre um CPF válido.'});
   let sub=await latest(user._id);
   if(sub&&sub.subscriptionId&&['PENDING','ACTIVE'].includes(sub.status))return res.json({subscriptionId:sub.subscriptionId,status:sub.status});
   if(sub&&usable(sub))return res.status(409).json({erro:'Seu período Premium ainda está vigente.'});
