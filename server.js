@@ -77,8 +77,13 @@ const asaasCardRoutes = require("./routes/asaasCardCheckout");
 
 const {
   router: recoveryRechargeRoutes,
-  stripeWebhook: recoveryRechargeStripeWebhook,
+  asaasRecoveryWebhook,
 } = require('./routes/recoveryRecharge');
+const {
+  startPremiumExpiryJob,
+} = require('./services/premiumExpiryJob');
+
+const premiumSandboxTests = require('./routes/premiumSandboxTests');
 const { iniciarAgendadorTrofeus } = require('./services/trophyService');
 const { iniciarAgendadorNotificacoesPush } = require('./services/pushNotificationScheduler');
 const {
@@ -142,6 +147,7 @@ connectDB()
     console.log("Mongo inicializado.");
     iniciarAgendadorTrofeus();
     iniciarAgendadorNotificacoesPush();
+    startPremiumExpiryJob();
     if (isUnifiedLiquidity()) {
       try {
         const clubes = await Club.find({});
@@ -229,14 +235,11 @@ try {
 }
 
 // A assinatura da Stripe exige o corpo bruto, antes do parser JSON global.
-app.post(
-  '/recarga-recuperacao/webhook/stripe',
-  express.raw({ type: 'application/json', limit: '250kb' }),
-  recoveryRechargeStripeWebhook
-);
-
 app.use(express.json({ limit: "1250kb" }));
-
+app.post(
+  '/recarga-recuperacao/webhook/asaas',
+  asaasRecoveryWebhook
+);
 app.use((req, res, next) => {
   const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 
@@ -270,6 +273,10 @@ app.use(checkLiquidacao);
 
 // Rotas principais
 app.use("/api/admin", adminRoutes);
+app.use(
+  "/api/admin/premium-sandbox",
+  premiumSandboxTests
+);
 app.use('/api/admin/liquidez-institucional', institutionalLiquidityAdminRoutes);
 app.use("/admin", adminRoutes); // compatibilidade com endpoints antigos
 
