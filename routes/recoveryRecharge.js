@@ -16,7 +16,7 @@ const safeEq = (a,b) => Boolean(a && b && Buffer.byteLength(a) === Buffer.byteLe
 const serialize = r => r && ({id:String(r._id), quantidadeTs:r.quantidadeTs,valorReaisCentavos:r.valorReaisCentavos,valorReais:r.valorReaisCentavos/100,patrimonioSolicitacao:r.patrimonioSolicitacao,patrimonioConfirmacao:r.patrimonioConfirmacao,status:r.status,expiraEm:r.expiraEm,confirmadaEm:r.confirmadaEm,reembolsadaEm:r.reembolsadaEm,motivoFalha:r.motivoFalha,createdAt:r.createdAt,checkoutUrl:r.status==='PENDENTE' && r.provedor==='asaas' && isId(r.pagamentoId) && new Date(r.expiraEm)>new Date()?urlFor(r.pagamentoId):null});
 function age(value){if(!value)return null;const d=new Date(value);if(!Number.isFinite(d.getTime()))return null;const n=new Date();return n.getFullYear()-d.getFullYear()-((n.getMonth()<d.getMonth()||(n.getMonth()===d.getMonth()&&n.getDate()<d.getDate()))?1:0);}
 async function asaasRecoveryWebhook(req,res){
- if(!safeEq(process.env.ASAAS_WEBHOOK_TOKEN,req.get('asaas-access-token')))return res.sendStatus(401);
+ if(!safeEq(process.env.ASAAS_RECOVERY_WEBHOOK_TOKEN,req.get('asaas-access-token')))return res.sendStatus(401);
  const ev=req.body;
  if(typeof ev?.id!=='string'||typeof ev?.event!=='string')return res.sendStatus(400);
  if(!ev.event.startsWith('CHECKOUT_'))return res.sendStatus(200);
