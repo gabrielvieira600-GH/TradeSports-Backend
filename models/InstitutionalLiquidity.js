@@ -14,8 +14,8 @@ const InstitutionalLiquiditySchema = new mongoose.Schema(
     // Proteção geral contra ordens fora de mercado. Vale igualmente para
     // compras e vendas de usuários e não altera a prioridade do book.
     userOrderBandPct: { type: Number, default: 0.10, min: 0, max: 1 },
-    dailyBuybackPerUser: { type: Number, default: 100 },
-    dailyBuybackPerClub: { type: Number, default: 500 },
+    dailyBuybackPerUser: { type: Number, default: 100, min: 0 },
+    dailyBuybackPerClub: { type: Number, default: 500, min: 0 },
     minimumCoveragePct: { type: Number, default: 1.1 },
     concentrationAboveAveragePct: { type: Number, default: 0.25 },
     basePositionValue: { type: Number, default: 0 },
