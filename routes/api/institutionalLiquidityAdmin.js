@@ -32,8 +32,18 @@ router.get('/', async (_req, res) => {
       } },
     ]),
   ]);
+
+  const clubs = await Club.find({
+    _id: { $in: states.map((state) => state.clubId).filter(Boolean) },
+  }).select('_id legacyId nome').lean();
+  const clubNames = new Map(clubs.map((club) => [String(club._id), club.nome]));
+  const enrichedStates = states.map((state) => ({
+    ...state,
+    clubName: clubNames.get(String(state.clubId)) || `Clube #${state.clubLegacyId}`,
+  }));
+
   return res.json({
-    ok: true, marketMode: getMarketMode(), settings, exposure, states, marketMetrics,
+    ok: true, marketMode: getMarketMode(), settings, exposure, states: enrichedStates, marketMetrics,
     account: {
       id: account._id, nome: account.nome, saldo: account.saldo,
       carteira: account.carteira, publicProfile: false, rankingsEligible: false,
@@ -100,9 +110,60 @@ router.patch('/clubes/:clubLegacyId', async (req, res) => {
     'dailyBuybackPerUser', 'dailyBuybackPerClub', 'minimumCoveragePct',
     'concentrationAboveAveragePct', 'institutionalSuspended', 'issuanceSuspended',
   ];
+
+  const limitFields = ['dailyBuybackPerUser', 'dailyBuybackPerClub'];
+  for (const key of limitFields) {
+    if (req.body?.[key] == null) continue;
+    const value = Number(req.body[key]);
+    if (!Number.isInteger(value) || value < 0) {
+      return res.status(400).json({
+        erro: 'Os limites diários devem ser números inteiros iguais ou maiores que zero.',
+        codigo: 'LIMITE_LIQUIDEZ_INVALIDO',
+      });
+    }
+  }
+
+  const nextPerUser = req.body?.dailyBuybackPerUser == null
+    ? Number(state.dailyBuybackPerUser)
+    : Number(req.body.dailyBuybackPerUser);
+  const nextPerClub = req.body?.dailyBuybackPerClub == null
+    ? Number(state.dailyBuybackPerClub)
+    : Number(req.body.dailyBuybackPerClub);
+
+  if (nextPerUser > nextPerClub) {
+    return res.status(400).json({
+      erro: 'O limite por usuário não pode ser maior que o limite total do clube.',
+      codigo: 'LIMITE_USUARIO_MAIOR_QUE_CLUBE',
+    });
+  }
+
+  const previousLimits = {
+    dailyBuybackPerUser: Number(state.dailyBuybackPerUser),
+    dailyBuybackPerClub: Number(state.dailyBuybackPerClub),
+  };
+
   for (const key of allowed) if (req.body?.[key] != null) state[key] = req.body[key];
   await state.save();
   await publishOrdersForClub(club);
+
+  if (limitFields.some((key) => req.body?.[key] != null)) {
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'INSTITUTIONAL_DAILY_LIMITS_UPDATED',
+      userId: req.usuario.id,
+      meta: {
+        clubId: String(club._id),
+        clubLegacyId: club.legacyId,
+        clubName: club.nome,
+        previous: previousLimits,
+        current: {
+          dailyBuybackPerUser: Number(state.dailyBuybackPerUser),
+          dailyBuybackPerClub: Number(state.dailyBuybackPerClub),
+        },
+      },
+    });
+  }
+
   return res.json({ ok: true, state });
 });
 
