@@ -21,7 +21,7 @@ async function asaas(method, path, data) {
     return response.data;
   } catch (err) {
     const details = Array.isArray(err.response?.data?.errors)
-      ? err.response.data.errors.map(x => ({code: String(x.code || '').slice(0,80)}))
+      ? err.response.data.errors.map(x => ({code: String(x.code || '').slice(0,80), description: String(x.description || '').replace(/[\r\n]/g,' ').slice(0,350)}))
       : undefined;
     console.error('[ASAAS API]', JSON.stringify({
       operation: String(method).toUpperCase(),

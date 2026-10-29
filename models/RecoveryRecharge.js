@@ -19,7 +19,8 @@ const RecoveryRechargeSchema = new mongoose.Schema(
     patrimonioSolicitacao: { type: Number, required: true },
     patrimonioConfirmacao: { type: Number, default: null },
     provedor: { type: String, default: 'stripe', index: true },
-    pagamentoId: { type: String, default: null, unique: true, sparse: true, index: true },
+    // RECOVERY_INDEX_FIX_V1: IDs só existem após checkout criado.
+    pagamentoId: { type: String, default: undefined },
     idempotencyKey: { type: String, required: true, unique: true, index: true },
     status: {
       type: String,
@@ -37,6 +38,12 @@ const RecoveryRechargeSchema = new mongoose.Schema(
 );
 
 RecoveryRechargeSchema.index({ usuarioId: 1, status: 1, createdAt: -1 });
+// Índice parcial ignora documentos sem ID ou com ID nulo.
+RecoveryRechargeSchema.index(
+  { pagamentoId: 1 },
+  { name: 'pagamentoId_1', unique: true,
+    partialFilterExpression: { pagamentoId: { $type: 'string' } } }
+);
 
 module.exports = mongoose.models.RecoveryRecharge ||
   mongoose.model('RecoveryRecharge', RecoveryRechargeSchema);
