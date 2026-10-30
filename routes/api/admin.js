@@ -56,6 +56,13 @@ function round2(n) {
 router.use(auth);
 router.use(isAdmin);
 
+// TRADE SPORTS LEAGUE SETTLEMENT V1
+const leagueSettlement = require('../../services/leagueSettlement');
+router.get('/league-settlement/markets', async (_req,res)=>{try{const controls=await MarketControl.find({}).lean();const byId=new Map(controls.map(c=>[c.ligaId,c]));res.json({mercados:Object.values(sportsMarkets).map(m=>({id:m.id,nome:m.nome,fechado:byId.get(m.id)?.fechado===true}))});}catch(e){res.status(500).json({erro:e.message})}});
+router.get('/league-settlement/preview/:ligaId',async(req,res)=>{try{res.json(await leagueSettlement.preview(req.params.ligaId,req.query.temporada))}catch(e){res.status(e.status||500).json({erro:e.message})}});
+router.post('/league-settlement/execute/:ligaId',async(req,res)=>{try{res.json(await leagueSettlement.execute(req.params.ligaId,Number(req.body?.temporada),req.body?.confirmation,req.usuario?.id))}catch(e){console.error('[LEAGUE SETTLEMENT]',e);res.status(e.status||500).json({erro:e.message})}});
+
+
 
 // PREÇOS INICIAIS — administração antes da abertura do IPO
 router.get('/initial-prices/markets', async (_req, res) => {
@@ -73,8 +80,8 @@ router.get('/initial-prices/:ligaId', async (req, res) => {
     const ids = clubs.map(c => c._id);
     const Order = require('../../models/Order');
     const orders = await Order.distinct('clubeId', { clubeId: { $in: ids } });
-    const blocked = new Set(orders.map(String));
-    res.json({ ok: true, clubes: clubs.map(c => ({ id: c.legacyId, nome: c.nome, precoInicial: c.preco, precoAtual: c.precoAtual, cotasDisponiveis: c.cotasDisponiveis, editavel: c.cotasEmitidas === 0 && c.cotasDisponiveis === 1000 && !c.ipoEncerrado && !blocked.has(String(c._id)) })) });
+    const blocked = new Set(orders.map(String)); const recentOrders = await Order.find({ clubeId: { $in: ids } }, { clubeId: 1, criadoEm: 1 }).lean(); const recentInvestments = await Investment.find({ clubeId: { $in: ids } }, { clubeId: 1, data: 1 }).lean(); const recentBlocked = new Set(clubs.filter(c => c.metadata?.precificacaoLiberadaEm && (recentOrders.some(o => String(o.clubeId) === String(c._id) && new Date(o.criadoEm) > new Date(c.metadata.precificacaoLiberadaEm)) || recentInvestments.some(i => String(i.clubeId) === String(c._id) && new Date(i.data) > new Date(c.metadata.precificacaoLiberadaEm)))).map(c => String(c._id)));
+    res.json({ ok: true, clubes: clubs.map(c => ({ id: c.legacyId, nome: c.nome, precoInicial: c.preco, precoAtual: c.precoAtual, cotasDisponiveis: c.cotasDisponiveis, editavel: c.cotasEmitidas === 0 && c.cotasDisponiveis === 1000 && !c.ipoEncerrado && (c.metadata?.precificacaoLiberadaEm ? !recentBlocked.has(String(c._id)) : !blocked.has(String(c._id))) })) });
   } catch (err) { console.error('[INITIAL PRICES]', err); res.status(500).json({ erro: 'Erro ao consultar preços.' }); }
 });
 router.patch('/initial-prices/:ligaId', async (req, res) => {
@@ -93,7 +100,7 @@ router.patch('/initial-prices/:ligaId', async (req, res) => {
     const Investment = require('../../models/Investment');
     for (const c of clubs) {
       const [orders, investments] = await Promise.all([Order.exists({ clubeId: c._id }), Investment.exists({ clubeId: c._id })]);
-      if (orders || investments || c.cotasEmitidas !== 0 || c.cotasDisponiveis !== 1000 || c.ipoEncerrado || (c.splits || []).length) return res.status(409).json({ erro: 'O clube ' + c.nome + ' já possui operações, split ou IPO iniciado.' });
+      if ((c.metadata?.precificacaoLiberadaEm ? (await Order.exists({ clubeId: c._id, criadoEm: { $gt: new Date(c.metadata.precificacaoLiberadaEm) } }) || await Investment.exists({ clubeId: c._id, data: { $gt: new Date(c.metadata.precificacaoLiberadaEm) } })) : (orders || investments)) || c.cotasEmitidas !== 0 || c.cotasDisponiveis !== 1000 || c.ipoEncerrado || (c.splits || []).length) return res.status(409).json({ erro: 'O clube ' + c.nome + ' já possui operações, split ou IPO iniciado.' });
     }
     // Atualiza preço-base e preço atual, sem alterar a tabela de liquidação.
     for (const c of clubs) {
