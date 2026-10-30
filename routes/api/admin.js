@@ -56,6 +56,9 @@ function round2(n) {
 router.use(auth);
 router.use(isAdmin);
 
+// TRADE SPORTS CLUB MANAGEMENT V1
+router.use('/club-management', require('./clubManagementRoutes'));
+
 // TRADE SPORTS LEAGUE SETTLEMENT V1
 const leagueSettlement = require('../../services/leagueSettlement');
 router.get('/league-settlement/markets', async (_req,res)=>{try{const controls=await MarketControl.find({}).lean();const byId=new Map(controls.map(c=>[c.ligaId,c]));res.json({mercados:Object.values(sportsMarkets).map(m=>({id:m.id,nome:m.nome,fechado:byId.get(m.id)?.fechado===true}))});}catch(e){res.status(500).json({erro:e.message})}});
