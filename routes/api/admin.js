@@ -75,16 +75,46 @@ router.get('/initial-prices/markets', async (_req, res) => {
     res.json({ ok: true, mercados: Object.values(sportsMarkets).map(m => ({ id: m.id, nome: m.nome, fechado: byId.get(m.id)?.fechado === true })) });
   } catch (err) { res.status(500).json({ erro: 'Erro ao consultar mercados.' }); }
 });
+// TRADE SPORTS: PRECIFICACAO POS-LIQUIDACAO V3
+// Operações históricas permanecem no banco. Uma liquidação concluída inicia
+// novo ciclo: somente negociações humanas posteriores à liquidação bloqueiam.
+async function clubeTemOperacaoDoCiclo(clube, OrderModel, InvestmentModel) {
+  const dataLiberacao = clube.metadata?.precificacaoLiberadaEm;
+  if (!dataLiberacao) {
+    const [ordem, investimento] = await Promise.all([
+      OrderModel.exists({ clubeId: clube._id, isInstitutional: { $ne: true } }),
+      InvestmentModel.exists({ clubeId: clube._id })
+    ]);
+    return Boolean(ordem || investimento);
+  }
+  const inicio = new Date(dataLiberacao);
+  if (Number.isNaN(inicio.getTime())) return true;
+  const [ordem, investimento] = await Promise.all([
+    OrderModel.exists({ clubeId: clube._id, isInstitutional: { $ne: true }, criadoEm: { $gt: inicio }, status: { $in: ['aberta', 'parcial', 'executada'] } }),
+    InvestmentModel.exists({ clubeId: clube._id, data: { $gt: inicio }, tipo: { $nin: ['LIQUIDACAO', 'DIVIDENDO'] } })
+  ]);
+  return Boolean(ordem || investimento);
+}
+function clubeProntoParaPrecificar(clube) {
+  return clube.cotasEmitidas === 0 && clube.cotasDisponiveis === 1000 &&
+    !clube.ipoEncerrado && !(clube.splits || []).length;
+}
+
 router.get('/initial-prices/:ligaId', async (req, res) => {
   try {
     const ligaId = req.params.ligaId;
     if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga inválida.' });
     const clubs = await Club.find({ 'metadata.ligaId': ligaId }).sort({ nome: 1 }).lean();
-    const ids = clubs.map(c => c._id);
     const Order = require('../../models/Order');
-    const orders = await Order.distinct('clubeId', { clubeId: { $in: ids } });
-    const blocked = new Set(orders.map(String)); const recentOrders = await Order.find({ clubeId: { $in: ids } }, { clubeId: 1, criadoEm: 1 }).lean(); const recentInvestments = await Investment.find({ clubeId: { $in: ids } }, { clubeId: 1, data: 1 }).lean(); const recentBlocked = new Set(clubs.filter(c => c.metadata?.precificacaoLiberadaEm && (recentOrders.some(o => String(o.clubeId) === String(c._id) && new Date(o.criadoEm) > new Date(c.metadata.precificacaoLiberadaEm)) || recentInvestments.some(i => String(i.clubeId) === String(c._id) && new Date(i.data) > new Date(c.metadata.precificacaoLiberadaEm)))).map(c => String(c._id)));
-    res.json({ ok: true, clubes: clubs.map(c => ({ id: c.legacyId, nome: c.nome, precoInicial: c.preco, precoAtual: c.precoAtual, cotasDisponiveis: c.cotasDisponiveis, editavel: c.cotasEmitidas === 0 && c.cotasDisponiveis === 1000 && !c.ipoEncerrado && (c.metadata?.precificacaoLiberadaEm ? !recentBlocked.has(String(c._id)) : !blocked.has(String(c._id))) })) });
+    const clubes = await Promise.all(clubs.map(async c => {
+      const operacoes = await clubeTemOperacaoDoCiclo(c, Order, Investment);
+      return { id: c.legacyId, nome: c.nome, precoInicial: c.preco,
+        precoAtual: c.precoAtual, cotasDisponiveis: c.cotasDisponiveis,
+        editavel: clubeProntoParaPrecificar(c) && !operacoes,
+        motivoBloqueio: !clubeProntoParaPrecificar(c) ? 'Existem cotas emitidas, IPO encerrado ou split pendente.' :
+          operacoes ? 'Existem operações de usuários no ciclo atual.' : null };
+    }));
+    res.json({ ok: true, clubes });
   } catch (err) { console.error('[INITIAL PRICES]', err); res.status(500).json({ erro: 'Erro ao consultar preços.' }); }
 });
 router.patch('/initial-prices/:ligaId', async (req, res) => {
@@ -94,23 +124,31 @@ router.patch('/initial-prices/:ligaId', async (req, res) => {
     const control = await MarketControl.findOne({ ligaId }).lean();
     if (control?.fechado !== true) return res.status(409).json({ erro: 'Feche a liga antes de alterar os preços.' });
     const entries = req.body?.clubes;
-    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 50) return res.status(400).json({ erro: 'Informe de 1 a 50 clubes.' });
+    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 50)
+      return res.status(400).json({ erro: 'Informe de 1 a 50 clubes.' });
     const ids = entries.map(e => Number(e.id));
-    if (new Set(ids).size !== ids.length || entries.some(e => !Number.isSafeInteger(Number(e.id)) || !Number.isFinite(Number(e.preco)) || Number(e.preco) <= 0 || Math.abs(Number(e.preco)*100 - Math.round(Number(e.preco)*100)) > 1e-7)) return res.status(400).json({ erro: 'IDs e preços inválidos (até duas casas decimais).' });
+    if (new Set(ids).size !== ids.length || entries.some(e =>
+      !Number.isSafeInteger(Number(e.id)) || !Number.isFinite(Number(e.preco)) ||
+      Number(e.preco) <= 0 || Math.abs(Number(e.preco)*100-Math.round(Number(e.preco)*100)) > 1e-7))
+      return res.status(400).json({ erro: 'IDs e preços inválidos (até duas casas decimais).' });
     const clubs = await Club.find({ legacyId: { $in: ids }, 'metadata.ligaId': ligaId });
     if (clubs.length !== entries.length) return res.status(404).json({ erro: 'Algum clube não pertence à liga.' });
     const Order = require('../../models/Order');
-    const Investment = require('../../models/Investment');
     for (const c of clubs) {
-      const [orders, investments] = await Promise.all([Order.exists({ clubeId: c._id }), Investment.exists({ clubeId: c._id })]);
-      if ((c.metadata?.precificacaoLiberadaEm ? (await Order.exists({ clubeId: c._id, criadoEm: { $gt: new Date(c.metadata.precificacaoLiberadaEm) } }) || await Investment.exists({ clubeId: c._id, data: { $gt: new Date(c.metadata.precificacaoLiberadaEm) } })) : (orders || investments)) || c.cotasEmitidas !== 0 || c.cotasDisponiveis !== 1000 || c.ipoEncerrado || (c.splits || []).length) return res.status(409).json({ erro: 'O clube ' + c.nome + ' já possui operações, split ou IPO iniciado.' });
+      if (!clubeProntoParaPrecificar(c) || await clubeTemOperacaoDoCiclo(c, Order, Investment))
+        return res.status(409).json({ erro: 'O clube ' + c.nome + ' possui cotas, split ou operações do ciclo atual.' });
     }
-    // Atualiza preço-base e preço atual, sem alterar a tabela de liquidação.
     for (const c of clubs) {
       const preco = Number(entries.find(e => Number(e.id) === c.legacyId).preco);
-      await Club.updateOne({ _id: c._id, cotasEmitidas: 0, cotasDisponiveis: 1000, ipoEncerrado: false }, { $set: { preco, precoAtual: preco, 'metadata.precoInicialDefinidoPorAdmin': true, 'metadata.precoInicialAtualizadoEm': new Date() } });
+      const result = await Club.updateOne({ _id: c._id, cotasEmitidas: 0,
+        cotasDisponiveis: 1000, ipoEncerrado: false },
+        { $set: { preco, precoAtual: preco,
+          'metadata.precoInicialDefinidoPorAdmin': true,
+          'metadata.precoInicialAtualizadoEm': new Date() } });
+      if (result.matchedCount !== 1) return res.status(409).json({ erro: 'Estado do clube mudou durante a atualização. Atualize a página.' });
     }
-    await audit.logEvent({ kind: 'ADMIN', action: 'INITIAL_PRICES_UPDATED', userId: req.usuario?.id, meta: { ligaId, quantidade: entries.length, clubes: entries } });
+    await audit.logEvent({ kind: 'ADMIN', action: 'INITIAL_PRICES_UPDATED', userId: req.usuario?.id,
+      meta: { ligaId, quantidade: entries.length, clubes: entries } });
     res.json({ ok: true, atualizados: entries.length });
   } catch (err) { console.error('[INITIAL PRICES SAVE]', err); res.status(500).json({ erro: 'Não foi possível atualizar os preços.' }); }
 });
