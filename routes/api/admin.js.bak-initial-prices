@@ -1,0 +1,1711 @@
+// routes/api/admin.js (CAMADA 12 + SPLIT)
+const express = require('express');
+const mongoose = require('mongoose');
+
+const router = express.Router();
+
+const auth = require('../../middleware/auth');
+const isAdmin = require('../../middleware/admin');
+const audit = require('../../utils/audit');
+const HistoricoPosse = require('../../models/HistoricoPosse');
+const antifraude = require('../../utils/antifraude');
+
+const {
+  liquidarBrasileirao,
+} = require('../../middleware/checkLiquidacao');
+
+const User = require('../../models/User');
+const Club = require('../../models/Club');
+const Investment = require('../../models/Investment');
+const Top4Rodada = require('../../models/Top4Rodada');
+const Dividendo = require('../../models/dividendos');
+const Liquidacao = require('../../models/Liquidacao');
+const RankingSeason = require('../../models/RankingSeason');
+const RankingRound = require('../../models/RankingRound');
+const InstitutionalLiquidity = require('../../models/InstitutionalLiquidity');
+const MarketControl = require('../../models/MarketControl');
+const sportsMarkets = require('../../config/sportsMarkets');
+const RecoveryRecharge = require('../../models/RecoveryRecharge');
+const { isUnifiedLiquidity } = require('../../config/marketMode');
+const { cancelInstitutionalOrders, publishOrdersForClub } = require('../../services/institutionalLiquidity');
+const {
+  mesAtual,
+  validarMes,
+  deslocarMes,
+  obterOuAtualizarSnapshot,
+} = require('../../utils/adminMetrics');
+const {
+  chavePeriodoAtual,
+  chavePeriodoAnterior,
+  concederTrofeusPeriodo,
+  processarFechamentosPeriodicos,
+} = require('../../services/trophyService');
+const {
+  collectPreview,
+  listBackups,
+  resetTestEnvironment,
+  restoreTestEnvironment,
+} = require('../../services/testEnvironmentReset');
+
+function round2(n) {
+  return Math.round(
+    (Number(n) + Number.EPSILON) * 100
+  ) / 100;
+}
+
+router.use(auth);
+router.use(isAdmin);
+
+router.get('/market-controls', async (_req, res) => {
+  try {
+    const controls = await MarketControl.find({}).lean();
+    const byId = new Map(controls.map((item) => [item.ligaId, item]));
+    const mercados = Object.values(sportsMarkets).map((market) => ({
+      id: market.id,
+      nome: market.nome,
+      fechado: Boolean(byId.get(market.id)?.fechado),
+      atualizadoEm: byId.get(market.id)?.updatedAt || null,
+    }));
+    return res.json({ ok: true, mercados });
+  } catch (err) {
+    console.error('[ADMIN MARKET CONTROLS] Erro ao consultar:', err);
+    return res.status(500).json({ erro: 'Não foi possível consultar o estado dos mercados.' });
+  }
+});
+
+router.patch('/market-controls/:ligaId', async (req, res) => {
+  try {
+    const ligaId = String(req.params.ligaId || '').trim().toLowerCase();
+    if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga não encontrada.' });
+    if (typeof req.body?.fechado !== 'boolean') {
+      return res.status(400).json({ erro: 'Informe fechado como verdadeiro ou falso.' });
+    }
+    const control = await MarketControl.findOneAndUpdate(
+      { ligaId },
+      { $set: { fechado: req.body.fechado, atualizadoPor: req.usuario.id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    await audit.logEvent({ kind: 'ADMIN', action: req.body.fechado ? 'MARKET_CLOSED' : 'MARKET_OPENED', userId: req.usuario.id, meta: { ligaId } });
+    return res.json({ ok: true, mercado: control });
+  } catch (err) {
+    console.error('[ADMIN MARKET CONTROLS] Erro ao atualizar:', err);
+    return res.status(500).json({ erro: 'Não foi possível atualizar o mercado.' });
+  }
+});
+
+router.post('/market-controls/batch', async (req, res) => {
+  try {
+    if (typeof req.body?.fechado !== 'boolean') {
+      return res.status(400).json({ erro: 'Informe fechado como verdadeiro ou falso.' });
+    }
+    const ligaIds = Object.keys(sportsMarkets);
+    await MarketControl.bulkWrite(ligaIds.map((ligaId) => ({
+      updateOne: {
+        filter: { ligaId },
+        update: { $set: { fechado: req.body.fechado, atualizadoPor: req.usuario.id } },
+        upsert: true,
+      },
+    })));
+    await audit.logEvent({ kind: 'ADMIN', action: req.body.fechado ? 'ALL_MARKETS_CLOSED' : 'ALL_MARKETS_OPENED', userId: req.usuario.id, meta: { quantidade: ligaIds.length } });
+    return res.json({ ok: true, fechado: req.body.fechado, quantidade: ligaIds.length });
+  } catch (err) {
+    console.error('[ADMIN MARKET CONTROLS] Erro na atualização em lote:', err);
+    return res.status(500).json({ erro: 'Não foi possível atualizar todas as ligas.' });
+  }
+});
+
+router.get('/test-environment/preview', async (req, res) => {
+  try {
+    const preview = await collectPreview(mongoose.connection.db);
+    return res.json({
+      ok: true,
+      preview,
+      resetBlocked: preview.pendingPayments > 0,
+    });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Erro ao montar prévia:', err);
+    return res.status(err.status || 500).json({
+      erro: err.message || 'Erro interno ao montar a prévia do reset.',
+      code: err.code || 'TEST_ENVIRONMENT_PREVIEW_FAILED',
+    });
+  }
+});
+
+router.get('/test-environment/backups', async (req, res) => {
+  try {
+    const backups = await listBackups(mongoose.connection.db, req.query.limit);
+    return res.json({ ok: true, backups });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Erro ao listar backups:', err);
+    return res.status(500).json({
+      erro: 'Erro interno ao listar os backups do ambiente de testes.',
+      code: 'TEST_ENVIRONMENT_BACKUPS_FAILED',
+    });
+  }
+});
+
+router.post('/test-environment/reset', async (req, res) => {
+  try {
+    const result = await resetTestEnvironment(mongoose.connection.db, {
+      confirmation: req.body?.confirmation,
+      actorUserId: req.usuario?.id || null,
+    });
+
+    const liquidity = {
+      required: isUnifiedLiquidity(),
+      reconciled: false,
+      clubs: 0,
+      orders: 0,
+      warning: null,
+    };
+
+    if (liquidity.required) {
+      try {
+        const clubs = await Club.find({});
+        for (const club of clubs) {
+          const published = await publishOrdersForClub(club);
+          liquidity.orders += Number(published?.orders?.length || 0);
+        }
+        liquidity.reconciled = true;
+        liquidity.clubs = clubs.length;
+      } catch (error) {
+        liquidity.warning =
+          'O reset foi concluído, mas a liquidez institucional precisa ser reconciliada reiniciando o backend.';
+        console.error('[ADMIN TEST ENV] Falha ao reconciliar liquidez:', error);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      mensagem: 'Ambiente de testes resetado e verificado.',
+      ...result,
+      liquidity,
+    });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Reset não concluído:', err);
+    return res.status(err.status || 500).json({
+      erro: err.message || 'Erro interno ao resetar o ambiente de testes.',
+      code: err.code || 'TEST_ENVIRONMENT_RESET_FAILED',
+    });
+  }
+});
+
+router.post('/test-environment/restore', async (req, res) => {
+  try {
+    const result = await restoreTestEnvironment(mongoose.connection.db, {
+      backupId: req.body?.backupId,
+      confirmation: req.body?.confirmation,
+      actorUserId: req.usuario?.id || null,
+    });
+
+    return res.json({
+      ok: true,
+      mensagem: 'Backup restaurado com sucesso.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('[ADMIN TEST ENV] Restauração não concluída:', err);
+    return res.status(err.status || 500).json({
+      erro: err.message || 'Erro interno ao restaurar o ambiente de testes.',
+      code: err.code || 'TEST_ENVIRONMENT_RESTORE_FAILED',
+    });
+  }
+});
+
+router.get('/dashboard/metricas', async (req, res) => {
+  try {
+    const mes = validarMes(req.query.mes || mesAtual());
+    const mesesSerie = Array.from({ length: 12 }, (_, indice) =>
+      deslocarMes(mes, indice - 11)
+    );
+    const mesAnterior = deslocarMes(mes, -1);
+    const mesesUnicos = [...new Set([...mesesSerie, mes, mesAnterior])];
+    const snapshots = await Promise.all(
+      mesesUnicos.map((item) => obterOuAtualizarSnapshot(item))
+    );
+    const porMes = new Map(snapshots.map((item) => [item.mes, item]));
+    const selecionado = porMes.get(mes);
+    const anterior = porMes.get(mesAnterior);
+    const serie = mesesSerie.map((item) => porMes.get(item));
+    return res.json({ ok: true, mes, selecionado, anterior, serie });
+  } catch (err) {
+    console.error('[ADMIN METRICAS] Erro ao montar dashboard:', err);
+    return res.status(err.status || 500).json({
+      erro: err.status ? err.message : 'Erro interno ao montar métricas administrativas.',
+    });
+  }
+});
+
+router.post('/dashboard/metricas/recalcular', async (req, res) => {
+  try {
+    const mes = validarMes(req.body?.mes || mesAtual());
+    const snapshot = await obterOuAtualizarSnapshot(mes, { forcar: true });
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'ADMIN_METRICS_RECALCULATED',
+      userId: req.usuario?.id || null,
+      meta: { mes },
+    });
+    return res.json({ ok: true, snapshot });
+  } catch (err) {
+    return res.status(err.status || 500).json({
+      erro: err.status ? err.message : 'Erro interno ao recalcular métricas.',
+    });
+  }
+});
+
+router.post('/trofeus/processar-fechamentos', async (req, res) => {
+  try {
+    const resultado = await processarFechamentosPeriodicos(new Date());
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'TROPHY_PERIODIC_CLOSURES_PROCESSED',
+      userId: req.usuario?.id || null,
+      meta: resultado,
+    });
+    return res.json(resultado);
+  } catch (err) {
+    console.error('[ADMIN TROFEUS] Erro ao processar fechamentos:', err);
+    return res.status(500).json({
+      erro: 'Erro interno ao processar os fechamentos de troféus.',
+    });
+  }
+});
+
+router.post('/trofeus/fechar-periodo', async (req, res) => {
+  try {
+    const periodoTipo = String(req.body?.periodoTipo || '').trim().toLowerCase();
+    const periodoChave = String(req.body?.periodoChave || '').trim();
+
+    if (!['semana', 'mes'].includes(periodoTipo) || !periodoChave) {
+      return res.status(400).json({
+        erro: 'Informe periodoTipo (semana ou mes) e periodoChave.',
+      });
+    }
+
+    if (periodoChave === chavePeriodoAtual(periodoTipo)) {
+      return res.status(409).json({
+        erro: 'O período atual ainda está aberto e não pode ser premiado.',
+      });
+    }
+
+    const ultimoPeriodoCompleto = chavePeriodoAnterior(periodoTipo);
+    if (periodoChave !== ultimoPeriodoCompleto) {
+      return res.status(409).json({
+        erro: `Somente o último período completo (${ultimoPeriodoCompleto}) pode ser premiado.`,
+      });
+    }
+
+    const temporada = await RankingSeason.findOne({ status: 'ativa' }).sort({
+      iniciadaEm: -1,
+      createdAt: -1,
+    });
+    if (!temporada) {
+      return res.status(409).json({ erro: 'Não existe temporada ativa.' });
+    }
+
+    const resultado = await concederTrofeusPeriodo({
+      temporada,
+      periodoTipo,
+      periodoChave,
+      concedidoEm: new Date(),
+    });
+    await audit.logEvent({
+      kind: 'ADMIN',
+      action: 'TROPHY_PERIOD_MANUALLY_CLOSED',
+      userId: req.usuario?.id || null,
+      meta: { temporadaId: String(temporada._id), ...resultado },
+    });
+    return res.json(resultado);
+  } catch (err) {
+    console.error('[ADMIN TROFEUS] Erro ao fechar período:', err);
+    return res.status(500).json({ erro: 'Erro interno ao fechar período.' });
+  }
+});
+
+router.get('/status', async (req, res) => {
+  const usuarios = await User.countDocuments();
+
+  const historicoPosse =
+    await HistoricoPosse.countDocuments();
+
+  const clubes = await Club.countDocuments();
+
+  const investimentos =
+    await Investment.countDocuments();
+
+  const top4Snapshots =
+    await Top4Rodada.countDocuments();
+
+  const dividendos =
+    await Dividendo.countDocuments();
+
+  const liquidacoes =
+    await Liquidacao.countDocuments();
+
+  const recargasRecuperacao =
+    await RecoveryRecharge.countDocuments({ status: 'CONFIRMADA' });
+
+  const lastAudit = await audit.readRecent(20);
+
+  return res.json({
+    ok: true,
+
+    counts: {
+      usuarios,
+      clubes,
+      investimentos,
+      top4Snapshots,
+      historicoPosse,
+      dividendos,
+      liquidacoes,
+      recargasRecuperacao,
+    },
+
+    lastAudit,
+
+    ts: new Date().toISOString(),
+  });
+});
+
+router.post(
+  '/liquidacao/disparar',
+  async (req, res) => {
+    try {
+      const result =
+        await liquidarBrasileirao();
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action: 'LIQUIDACAO_MANUAL_OK',
+        userId: req.usuario?.id || null,
+        meta: result,
+      });
+
+      return res.json({
+        ok: true,
+        mensagem:
+          'Liquidação disparada com sucesso.',
+        ...result,
+      });
+    } catch (err) {
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action: 'LIQUIDACAO_MANUAL_FAIL',
+        userId: req.usuario?.id || null,
+        error: String(err),
+      });
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao disparar liquidação.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/dashboard/antifraude',
+  async (req, res) => {
+    try {
+      const stateDoc =
+        await antifraude.loadState();
+
+      const state = stateDoc.toObject();
+
+      const usersArr = Object.entries(
+        state.users || {}
+      ).map(([userId, u]) => ({
+        userId,
+        score: Number(u.score || 0),
+
+        cooldownUntil: Number(
+          u.cooldownUntil || 0
+        ),
+
+        frozenUntil: Number(
+          u.frozenUntil || 0
+        ),
+
+        last: u.last || {},
+      }));
+
+      usersArr.sort(
+        (a, b) => b.score - a.score
+      );
+
+      const frozenUsers = usersArr
+        .filter(
+          (u) =>
+            u.frozenUntil > Date.now()
+        )
+        .slice(0, 50);
+
+      const clubesArr = Object.entries(
+        state.clubes || {}
+      ).map(([clubeId, c]) => ({
+        clubeId,
+
+        frozenUntil: Number(
+          c.frozenUntil || 0
+        ),
+
+        last: c.last || {},
+
+        trades5m: Array.isArray(
+          c.stats?.trades
+        )
+          ? c.stats.trades.length
+          : null,
+
+        cancels10m: Array.isArray(
+          c.stats?.cancels
+        )
+          ? c.stats.cancels.length
+          : null,
+      }));
+
+      const frozenClubes =
+        clubesArr.filter(
+          (c) =>
+            c.frozenUntil > Date.now()
+        );
+
+      const recentSignals =
+        await antifraude.AntifraudeLog.find({
+          action: {
+            $in: [
+              'CANCEL_RATIO_SIGNAL',
+              'CLUBE_VOLUME_SPIKE',
+              'ADMIN_FREEZE',
+              'ADMIN_FREEZE_CLUBE',
+              'WASH_TRADING_SIGNAL',
+              'SPOOFING_SIGNAL',
+              'SELF_TRADE_BLOCK',
+            ],
+          },
+        })
+          .sort({ ts: -1 })
+          .limit(100)
+          .lean();
+
+      return res.json({
+        topUsers: usersArr.slice(0, 20),
+        frozenUsers,
+        frozenClubes,
+        recentSignals,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        erro:
+          'Erro interno ao montar dashboard antifraude.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/freeze-user',
+  async (req, res) => {
+    try {
+      const {
+        userId,
+        minutos = 10,
+        motivo = 'freeze manual',
+      } = req.body;
+
+      const stateDoc =
+        await antifraude.loadState();
+
+      const state = stateDoc.toObject();
+
+      antifraude.freezeUser(
+        state,
+        userId,
+        Number(minutos) * 60_000,
+        motivo
+      );
+
+      stateDoc.users = state.users;
+
+      await antifraude.saveState(
+        stateDoc
+      );
+
+      await antifraude.logEvent({
+        userId: String(userId),
+        action: 'ADMIN_FREEZE',
+        decision: 'BLOCK',
+        reason: motivo,
+      });
+
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({
+        erro:
+          'Erro ao congelar usuário.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/unfreeze-user',
+  async (req, res) => {
+    try {
+      const { userId } = req.body;
+
+      const stateDoc =
+        await antifraude.loadState();
+
+      const state = stateDoc.toObject();
+
+      antifraude.unfreezeUser(
+        state,
+        userId
+      );
+
+      stateDoc.users = state.users;
+
+      await antifraude.saveState(
+        stateDoc
+      );
+
+      await antifraude.logEvent({
+        userId: String(userId),
+        action: 'ADMIN_UNFREEZE',
+        decision: 'ALLOW',
+      });
+
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({
+        erro:
+          'Erro ao descongelar usuário.',
+      });
+    }
+  }
+);
+
+// ==============================
+// TEMPORADAS DO RANKING
+// ==============================
+
+router.post(
+  '/temporadas',
+  async (req, res) => {
+    try {
+      const {
+        codigo,
+        nome,
+        descricao = '',
+        capitalInicial = 1000,
+        limiteOrdensLiteSemanal = 15,
+        inicioPrevisto = null,
+        fimPrevisto = null,
+        configuracoes = {},
+      } = req.body || {};
+
+      if (!codigo || !nome) {
+        return res.status(400).json({
+          erro:
+            'Código e nome da temporada são obrigatórios.',
+        });
+      }
+
+      const codigoNormalizado =
+        String(codigo)
+          .trim()
+          .toLowerCase();
+
+      const existente =
+        await RankingSeason.findOne({
+          codigo: codigoNormalizado,
+        }).lean();
+
+      if (existente) {
+        return res.status(409).json({
+          erro:
+            'Já existe uma temporada com este código.',
+        });
+      }
+
+      const temporada =
+        await RankingSeason.create({
+          codigo: codigoNormalizado,
+
+          nome: String(nome).trim(),
+
+          descricao: String(
+            descricao || ''
+          ).trim(),
+
+          status: 'rascunho',
+
+          capitalInicial: Number(
+            capitalInicial
+          ),
+
+          limiteOrdensLiteSemanal:
+            Number(
+              limiteOrdensLiteSemanal
+            ),
+
+          inicioPrevisto:
+            inicioPrevisto
+              ? new Date(inicioPrevisto)
+              : null,
+
+          fimPrevisto:
+            fimPrevisto
+              ? new Date(fimPrevisto)
+              : null,
+
+          criadaPor:
+            req.usuario?.id || null,
+
+          configuracoes:
+            configuracoes &&
+            typeof configuracoes ===
+              'object' &&
+            !Array.isArray(configuracoes)
+              ? configuracoes
+              : {},
+        });
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_SEASON_CREATED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          temporadaId: String(
+            temporada._id
+          ),
+          codigo: temporada.codigo,
+        },
+      });
+
+      return res.status(201).json({
+        ok: true,
+        temporada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao criar temporada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao criar temporada.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/temporadas',
+  async (req, res) => {
+    try {
+      const { status } =
+        req.query || {};
+
+      const filtro = {};
+
+      if (
+        status &&
+        [
+          'rascunho',
+          'ativa',
+          'encerrada',
+          'cancelada',
+        ].includes(String(status))
+      ) {
+        filtro.status =
+          String(status);
+      }
+
+      const temporadas =
+        await RankingSeason.find(
+          filtro
+        )
+          .sort({
+            createdAt: -1,
+          })
+          .lean();
+
+      return res.json({
+        ok: true,
+        total: temporadas.length,
+        temporadas,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao listar temporadas:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao listar temporadas.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/temporadas/ativa',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.buscarTemporadaAtiva();
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Nenhuma temporada ativa encontrada.',
+        });
+      }
+
+      const rodadaAberta =
+        await RankingRound.buscarRodadaAberta(
+          temporada._id
+        );
+
+      return res.json({
+        ok: true,
+        temporada,
+        rodadaAberta,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao buscar temporada ativa:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao buscar temporada ativa.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/temporadas/:id',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.id
+        ).lean();
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      const rodadas =
+        await RankingRound.find({
+          temporadaId:
+            temporada._id,
+        })
+          .sort({ numero: 1 })
+          .lean();
+
+      return res.json({
+        ok: true,
+        temporada,
+        rodadas,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao buscar temporada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao buscar temporada.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/temporadas/:id/iniciar',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.id
+        );
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      if (
+        temporada.status !==
+        'rascunho'
+      ) {
+        return res.status(409).json({
+          erro:
+            'Somente temporadas em rascunho podem ser iniciadas.',
+        });
+      }
+
+      const outraAtiva =
+        await RankingSeason.findOne({
+          _id: {
+            $ne: temporada._id,
+          },
+
+          status: 'ativa',
+        }).lean();
+
+      if (outraAtiva) {
+        return res.status(409).json({
+          erro:
+            'Já existe outra temporada ativa. Encerre-a antes de iniciar uma nova.',
+        });
+      }
+
+      temporada.status = 'ativa';
+
+      temporada.iniciadaEm =
+        new Date();
+
+      temporada.iniciadaPor =
+        req.usuario?.id || null;
+
+      await temporada.save();
+
+      /*
+       * No mercado unificado, a temporada somente fica pronta para negociar
+       * depois que todos os livros ativos recebem a liquidez institucional.
+       * A reconciliação na inicialização do servidor continua como proteção,
+       * mas não atende temporadas iniciadas com o processo já em execução.
+       */
+      let liquidezInstitucional = null;
+      if (isUnifiedLiquidity()) {
+        const clubes = await Club.find({});
+        let ordensPublicadas = 0;
+
+        for (const clube of clubes) {
+          const resultado = await publishOrdersForClub(clube);
+          ordensPublicadas += Number(resultado?.orders?.length || 0);
+        }
+
+        liquidezInstitucional = {
+          clubesReconciliados: clubes.length,
+          ordensPublicadas,
+          reconciliadaEm: new Date(),
+        };
+      }
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_SEASON_STARTED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          temporadaId: String(
+            temporada._id
+          ),
+          codigo: temporada.codigo,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        temporada,
+        liquidezInstitucional,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao iniciar temporada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao iniciar temporada.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/temporadas/:id/encerrar',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.id
+        );
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      if (
+        temporada.status !==
+        'ativa'
+      ) {
+        return res.status(409).json({
+          erro:
+            'Somente temporadas ativas podem ser encerradas.',
+        });
+      }
+
+      const rodadaAberta =
+        await RankingRound.findOne({
+          temporadaId:
+            temporada._id,
+          status: 'aberta',
+        }).lean();
+
+      if (rodadaAberta) {
+        return res.status(409).json({
+          erro:
+            'Encerre a rodada aberta antes de encerrar a temporada.',
+
+          rodadaAbertaId: String(
+            rodadaAberta._id
+          ),
+        });
+      }
+
+      const trofeusTemporada = await concederTrofeusPeriodo({
+        temporada,
+        periodoTipo: 'temporada',
+        periodoChave: temporada.codigo || String(temporada._id),
+        concedidoEm: new Date(),
+      });
+
+      temporada.status =
+        'encerrada';
+
+      temporada.encerradaEm =
+        new Date();
+
+      temporada.encerradaPor =
+        req.usuario?.id || null;
+
+      await temporada.save();
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_SEASON_CLOSED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          temporadaId: String(
+            temporada._id
+          ),
+          codigo: temporada.codigo,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        temporada,
+        trofeusTemporada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao encerrar temporada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao encerrar temporada.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/temporadas/:id/cancelar',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.id
+        );
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      if (
+        ![
+          'rascunho',
+          'ativa',
+        ].includes(temporada.status)
+      ) {
+        return res.status(409).json({
+          erro:
+            'A temporada não pode ser cancelada no estado atual.',
+        });
+      }
+
+      const rodadaAberta =
+        await RankingRound.findOne({
+          temporadaId:
+            temporada._id,
+          status: 'aberta',
+        }).lean();
+
+      if (rodadaAberta) {
+        return res.status(409).json({
+          erro:
+            'Encerre ou cancele a rodada aberta antes de cancelar a temporada.',
+
+          rodadaAbertaId: String(
+            rodadaAberta._id
+          ),
+        });
+      }
+
+      temporada.status =
+        'cancelada';
+
+      temporada.encerradaEm =
+        new Date();
+
+      temporada.encerradaPor =
+        req.usuario?.id || null;
+
+      await temporada.save();
+
+      await RankingRound.updateMany(
+        {
+          temporadaId:
+            temporada._id,
+          status: 'agendada',
+        },
+        {
+          $set: {
+            status: 'cancelada',
+            encerradaEm:
+              new Date(),
+            encerradaPor:
+              req.usuario?.id ||
+              null,
+          },
+        }
+      );
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_SEASON_CANCELLED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          temporadaId: String(
+            temporada._id
+          ),
+          codigo: temporada.codigo,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        temporada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN TEMPORADAS] Erro ao cancelar temporada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao cancelar temporada.',
+      });
+    }
+  }
+);
+
+// ==============================
+// RODADAS DO RANKING
+// ==============================
+
+router.post(
+  '/temporadas/:temporadaId/rodadas',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.temporadaId
+        );
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      if (
+        [
+          'encerrada',
+          'cancelada',
+        ].includes(temporada.status)
+      ) {
+        return res.status(409).json({
+          erro:
+            'Não é possível criar rodadas em uma temporada encerrada ou cancelada.',
+        });
+      }
+
+      const {
+        numero,
+        nome = '',
+        limiteOrdensLite = null,
+        inicioPrevisto = null,
+        fimPrevisto = null,
+        observacoes = '',
+        configuracoes = {},
+      } = req.body || {};
+
+      if (
+        !Number.isInteger(
+          Number(numero)
+        ) ||
+        Number(numero) < 1
+      ) {
+        return res.status(400).json({
+          erro:
+            'O número da rodada deve ser um inteiro maior que zero.',
+        });
+      }
+
+      const rodadaExistente =
+        await RankingRound.findOne({
+          temporadaId:
+            temporada._id,
+          numero:
+            Number(numero),
+        }).lean();
+
+      if (rodadaExistente) {
+        return res.status(409).json({
+          erro:
+            'Já existe uma rodada com este número nesta temporada.',
+        });
+      }
+
+      const rodada =
+        await RankingRound.create({
+          temporadaId:
+            temporada._id,
+
+          numero:
+            Number(numero),
+
+          nome: String(
+            nome || ''
+          ).trim(),
+
+          status: 'agendada',
+
+          limiteOrdensLite:
+            limiteOrdensLite != null
+              ? Number(
+                  limiteOrdensLite
+                )
+              : Number(
+                  temporada
+                    .limiteOrdensLitePorRodada
+                ),
+
+          inicioPrevisto:
+            inicioPrevisto
+              ? new Date(
+                  inicioPrevisto
+                )
+              : null,
+
+          fimPrevisto:
+            fimPrevisto
+              ? new Date(
+                  fimPrevisto
+                )
+              : null,
+
+          criadaPor:
+            req.usuario?.id || null,
+
+          observacoes: String(
+            observacoes || ''
+          ).trim(),
+
+          configuracoes:
+            configuracoes &&
+            typeof configuracoes ===
+              'object' &&
+            !Array.isArray(
+              configuracoes
+            )
+              ? configuracoes
+              : {},
+        });
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_ROUND_CREATED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          rodadaId: String(
+            rodada._id
+          ),
+
+          temporadaId: String(
+            temporada._id
+          ),
+
+          numero: rodada.numero,
+        },
+      });
+
+      return res.status(201).json({
+        ok: true,
+        rodada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN RODADAS] Erro ao criar rodada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao criar rodada.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/temporadas/:temporadaId/rodadas',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.temporadaId
+        ).lean();
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      const rodadas =
+        await RankingRound.find({
+          temporadaId:
+            temporada._id,
+        })
+          .sort({ numero: 1 })
+          .lean();
+
+      return res.json({
+        ok: true,
+
+        temporadaId: String(
+          temporada._id
+        ),
+
+        total: rodadas.length,
+        rodadas,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN RODADAS] Erro ao listar rodadas:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao listar rodadas.',
+      });
+    }
+  }
+);
+
+router.get(
+  '/temporadas/:temporadaId/rodadas/aberta',
+  async (req, res) => {
+    try {
+      const temporada =
+        await RankingSeason.findById(
+          req.params.temporadaId
+        ).lean();
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada não encontrada.',
+        });
+      }
+
+      const rodada =
+        await RankingRound.buscarRodadaAberta(
+          temporada._id
+        );
+
+      if (!rodada) {
+        return res.status(404).json({
+          erro:
+            'Nenhuma rodada aberta encontrada nesta temporada.',
+        });
+      }
+
+      return res.json({
+        ok: true,
+        rodada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN RODADAS] Erro ao buscar rodada aberta:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao buscar rodada aberta.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/rodadas/:id/abrir',
+  async (req, res) => {
+    try {
+      const rodada =
+        await RankingRound.findById(
+          req.params.id
+        );
+
+      if (!rodada) {
+        return res.status(404).json({
+          erro:
+            'Rodada não encontrada.',
+        });
+      }
+
+      if (
+        rodada.status !==
+        'agendada'
+      ) {
+        return res.status(409).json({
+          erro:
+            'Somente rodadas agendadas podem ser abertas.',
+        });
+      }
+
+      const temporada =
+        await RankingSeason.findById(
+          rodada.temporadaId
+        );
+
+      if (!temporada) {
+        return res.status(404).json({
+          erro:
+            'Temporada da rodada não encontrada.',
+        });
+      }
+
+      if (
+        temporada.status !==
+        'ativa'
+      ) {
+        return res.status(409).json({
+          erro:
+            'A temporada precisa estar ativa para abrir uma rodada.',
+        });
+      }
+
+      const outraAberta =
+        await RankingRound.findOne({
+          _id: {
+            $ne: rodada._id,
+          },
+
+          temporadaId:
+            temporada._id,
+
+          status: 'aberta',
+        }).lean();
+
+      if (outraAberta) {
+        return res.status(409).json({
+          erro:
+            'Já existe outra rodada aberta nesta temporada.',
+
+          rodadaAbertaId: String(
+            outraAberta._id
+          ),
+        });
+      }
+
+      rodada.status = 'aberta';
+
+      rodada.abertaEm =
+        new Date();
+
+      rodada.abertaPor =
+        req.usuario?.id || null;
+
+      await rodada.save();
+
+      if (isUnifiedLiquidity()) {
+        /*
+         * Abrir a rodada administrativa não pode esvaziar o livro durante
+         * todo o período da rodada. A suspensão deve ser aplicada somente
+         * por uma janela específica de bloqueio de negociação/jogo ao vivo.
+         */
+        await InstitutionalLiquidity.updateMany({}, {
+          $set: { institutionalSuspended: false, suspensionReason: null },
+        });
+        const clubs = await Club.find({}).sort({ legacyId: 1 });
+        for (const club of clubs) {
+          await publishOrdersForClub(club, { round: rodada.numero });
+        }
+      }
+
+      temporada.rodadaAtual =
+        rodada.numero;
+
+      await temporada.save();
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_ROUND_OPENED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          rodadaId: String(
+            rodada._id
+          ),
+
+          temporadaId: String(
+            temporada._id
+          ),
+
+          numero: rodada.numero,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        rodada,
+        temporada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN RODADAS] Erro ao abrir rodada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao abrir rodada.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/rodadas/:id/encerrar',
+  async (req, res) => {
+    try {
+      const rodada =
+        await RankingRound.findById(
+          req.params.id
+        );
+
+      if (!rodada) {
+        return res.status(404).json({
+          erro:
+            'Rodada não encontrada.',
+        });
+      }
+
+      if (
+        rodada.status !== 'aberta'
+      ) {
+        return res.status(409).json({
+          erro:
+            'Somente rodadas abertas podem ser encerradas.',
+        });
+      }
+
+      rodada.status =
+        'encerrada';
+
+      rodada.encerradaEm =
+        new Date();
+
+      rodada.encerradaPor =
+        req.usuario?.id || null;
+
+      await rodada.save();
+
+      if (isUnifiedLiquidity()) {
+        await InstitutionalLiquidity.updateMany({}, {
+          $set: { institutionalSuspended: false, suspensionReason: null },
+        });
+        const clubs = await Club.find({}).sort({ legacyId: 1 });
+        for (const club of clubs) {
+          await publishOrdersForClub(club, { round: rodada.numero });
+        }
+      }
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_ROUND_CLOSED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          rodadaId: String(
+            rodada._id
+          ),
+
+          temporadaId: String(
+            rodada.temporadaId
+          ),
+
+          numero: rodada.numero,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        rodada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN RODADAS] Erro ao encerrar rodada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao encerrar rodada.',
+      });
+    }
+  }
+);
+
+router.post(
+  '/rodadas/:id/cancelar',
+  async (req, res) => {
+    try {
+      const rodada =
+        await RankingRound.findById(
+          req.params.id
+        );
+
+      if (!rodada) {
+        return res.status(404).json({
+          erro:
+            'Rodada não encontrada.',
+        });
+      }
+
+      if (
+        ![
+          'agendada',
+          'aberta',
+        ].includes(rodada.status)
+      ) {
+        return res.status(409).json({
+          erro:
+            'A rodada não pode ser cancelada no estado atual.',
+        });
+      }
+
+      rodada.status =
+        'cancelada';
+
+      rodada.encerradaEm =
+        new Date();
+
+      rodada.encerradaPor =
+        req.usuario?.id || null;
+
+      await rodada.save();
+
+      await audit.logEvent({
+        kind: 'ADMIN',
+        action:
+          'RANKING_ROUND_CANCELLED',
+        userId:
+          req.usuario?.id || null,
+
+        meta: {
+          rodadaId: String(
+            rodada._id
+          ),
+
+          temporadaId: String(
+            rodada.temporadaId
+          ),
+
+          numero: rodada.numero,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        rodada,
+      });
+    } catch (err) {
+      console.error(
+        '[ADMIN RODADAS] Erro ao cancelar rodada:',
+        err
+      );
+
+      return res.status(500).json({
+        erro:
+          'Erro interno ao cancelar rodada.',
+      });
+    }
+  }
+);
+
+module.exports = router;
