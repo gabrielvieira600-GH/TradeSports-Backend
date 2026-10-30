@@ -1,80 +1,22 @@
-// Execute com Node.js na raiz do respectivo projeto: node aplicar_patch.js
-const fs = require('fs');
-const path = require('path');
-const root = process.cwd();
-const isBackend = fs.existsSync(path.join(root, 'routes', 'api', 'admin.js'));
-const isFrontend = fs.existsSync(path.join(root, 'pages', 'admin-painel.js'));
-if (isBackend === isFrontend) { console.error('Execute na raiz do backend OU do frontend (não na pasta que contém os dois).'); process.exit(1); }
-function modify(relative, fn) {
- const file = path.join(root, relative), original = fs.readFileSync(file, 'utf8'), next = fn(original);
- if (next === original) { console.log(`${relative}: já aplicado ou sem mudanças`); return; }
- const backup = `${file}.bak-initial-prices`; if (!fs.existsSync(backup)) fs.copyFileSync(file, backup);
- fs.writeFileSync(file, next, 'utf8'); console.log(`${relative}: atualizado (backup salvo)`);
-}
-if (isBackend) {
- const code = String.raw`
-// PREÇOS INICIAIS — administração antes da abertura do IPO
-router.get('/initial-prices/markets', async (_req, res) => {
-  try {
-    const controls = await MarketControl.find({}).lean();
-    const byId = new Map(controls.map(c => [c.ligaId, c]));
-    res.json({ ok: true, mercados: Object.values(sportsMarkets).map(m => ({ id: m.id, nome: m.nome, fechado: byId.get(m.id)?.fechado === true })) });
-  } catch (err) { res.status(500).json({ erro: 'Erro ao consultar mercados.' }); }
-});
-router.get('/initial-prices/:ligaId', async (req, res) => {
-  try {
-    const ligaId = req.params.ligaId;
-    if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga inválida.' });
-    const clubs = await Club.find({ 'metadata.ligaId': ligaId }).sort({ nome: 1 }).lean();
-    const ids = clubs.map(c => c._id);
-    const Order = require('../../models/Order');
-    const orders = await Order.distinct('clubeId', { clubeId: { $in: ids } });
-    const blocked = new Set(orders.map(String));
-    res.json({ ok: true, clubes: clubs.map(c => ({ id: c.legacyId, nome: c.nome, precoInicial: c.preco, precoAtual: c.precoAtual, cotasDisponiveis: c.cotasDisponiveis, editavel: c.cotasEmitidas === 0 && c.cotasDisponiveis === 1000 && !c.ipoEncerrado && !blocked.has(String(c._id)) })) });
-  } catch (err) { console.error('[INITIAL PRICES]', err); res.status(500).json({ erro: 'Erro ao consultar preços.' }); }
-});
-router.patch('/initial-prices/:ligaId', async (req, res) => {
-  try {
-    const ligaId = req.params.ligaId;
-    if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga inválida.' });
-    const control = await MarketControl.findOne({ ligaId }).lean();
-    if (control?.fechado !== true) return res.status(409).json({ erro: 'Feche a liga antes de alterar os preços.' });
-    const entries = req.body?.clubes;
-    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 50) return res.status(400).json({ erro: 'Informe de 1 a 50 clubes.' });
-    const ids = entries.map(e => Number(e.id));
-    if (new Set(ids).size !== ids.length || entries.some(e => !Number.isSafeInteger(Number(e.id)) || !Number.isFinite(Number(e.preco)) || Number(e.preco) <= 0 || Math.abs(Number(e.preco)*100 - Math.round(Number(e.preco)*100)) > 1e-7)) return res.status(400).json({ erro: 'IDs e preços inválidos (até duas casas decimais).' });
-    const clubs = await Club.find({ legacyId: { $in: ids }, 'metadata.ligaId': ligaId });
-    if (clubs.length !== entries.length) return res.status(404).json({ erro: 'Algum clube não pertence à liga.' });
-    const Order = require('../../models/Order');
-    const Investment = require('../../models/Investment');
-    for (const c of clubs) {
-      const [orders, investments] = await Promise.all([Order.exists({ clubeId: c._id }), Investment.exists({ clubeId: c._id })]);
-      if (orders || investments || c.cotasEmitidas !== 0 || c.cotasDisponiveis !== 1000 || c.ipoEncerrado || (c.splits || []).length) return res.status(409).json({ erro: 'O clube ' + c.nome + ' já possui operações, split ou IPO iniciado.' });
-    }
-    // Atualiza preço-base e preço atual, sem alterar a tabela de liquidação.
-    for (const c of clubs) {
-      const preco = Number(entries.find(e => Number(e.id) === c.legacyId).preco);
-      await Club.updateOne({ _id: c._id, cotasEmitidas: 0, cotasDisponiveis: 1000, ipoEncerrado: false }, { $set: { preco, precoAtual: preco, 'metadata.precoInicialDefinidoPorAdmin': true, 'metadata.precoInicialAtualizadoEm': new Date() } });
-    }
-    await audit.logEvent({ kind: 'ADMIN', action: 'INITIAL_PRICES_UPDATED', userId: req.usuario?.id, meta: { ligaId, quantidade: entries.length, clubes: entries } });
-    res.json({ ok: true, atualizados: entries.length });
-  } catch (err) { console.error('[INITIAL PRICES SAVE]', err); res.status(500).json({ erro: 'Não foi possível atualizar os preços.' }); }
-});
-`;
- modify('routes/api/admin.js', s => { if (s.includes("router.get('/initial-prices/markets'")) return s; const anchor="router.get('/market-controls'"; if (!s.includes(anchor)) throw new Error('Âncora de rotas não encontrada'); return s.replace(anchor, code+'\n'+anchor); });
-} else {
- const target = path.join(root, 'components', 'PrecificacaoInicialAdmin.js');
- const src = path.join(__dirname, 'PrecificacaoInicialAdmin.js');
- if (!fs.existsSync(src)) throw new Error('PrecificacaoInicialAdmin.js não está ao lado do aplicar_patch.js');
- if (!fs.existsSync(target)) fs.copyFileSync(src, target); else if (fs.readFileSync(target,'utf8') !== fs.readFileSync(src,'utf8')) { const backup=target+'.bak-initial-prices';if(!fs.existsSync(backup)) fs.copyFileSync(target,backup);fs.copyFileSync(src,target); }
- modify('pages/admin-painel.js', s => {
-   if (s.includes('<PrecificacaoInicialAdmin />')) return s;
-   const importAnchor='import AdminMarketControls from "../components/AdminMarketControls";';
-   if (!s.includes(importAnchor)) throw new Error('Import do painel não encontrado');
-   s=s.replace(importAnchor,importAnchor+'\nimport PrecificacaoInicialAdmin from "../components/PrecificacaoInicialAdmin";');
-   const anchor='<section style={{ ...styles.card, ...styles.maintenanceCard }}>';
-   if (!s.includes(anchor)) throw new Error('Seção de manutenção não encontrada');
-   return s.replace(anchor,'<PrecificacaoInicialAdmin />\n\n      '+anchor);
- });
-}
-console.log('Patch aplicado. Execute npm run build e teste em ambiente de homologação.');
+const fs=require('fs'),path=require('path');
+const root=process.cwd(),route=path.join(root,'routes','api','admin.js'),service=path.join(root,'services','leagueSettlement.js');
+if(!fs.existsSync(route))throw Error('Execute na raiz do backend (routes/api/admin.js não encontrado).');
+const original=fs.readFileSync(route,'utf8');const marker='// TRADE SPORTS LEAGUE SETTLEMENT V1';
+if(original.includes(marker)){console.log('Patch já aplicado.');process.exit(0)}
+const anchor='router.use(isAdmin);';if(!original.includes(anchor))throw Error('Ponto de inserção não encontrado; nada alterado.');
+const insert=`\n${marker}\nconst leagueSettlement = require('../../services/leagueSettlement');\nrouter.get('/league-settlement/markets', async (_req,res)=>{try{const controls=await MarketControl.find({}).lean();const byId=new Map(controls.map(c=>[c.ligaId,c]));res.json({mercados:Object.values(sportsMarkets).map(m=>({id:m.id,nome:m.nome,fechado:byId.get(m.id)?.fechado===true}))});}catch(e){res.status(500).json({erro:e.message})}});\nrouter.get('/league-settlement/preview/:ligaId',async(req,res)=>{try{res.json(await leagueSettlement.preview(req.params.ligaId,req.query.temporada))}catch(e){res.status(e.status||500).json({erro:e.message})}});\nrouter.post('/league-settlement/execute/:ligaId',async(req,res)=>{try{res.json(await leagueSettlement.execute(req.params.ligaId,Number(req.body?.temporada),req.body?.confirmation,req.usuario?.id))}catch(e){console.error('[LEAGUE SETTLEMENT]',e);res.status(e.status||500).json({erro:e.message})}});\n`;
+let next=original.replace(anchor,anchor+'\n'+insert);
+// A liquidação encerrada libera preços sem apagar histórico de ordens e investimentos.
+const oldEligibility="editavel: c.cotasEmitidas === 0 && c.cotasDisponiveis === 1000 && !c.ipoEncerrado && !blocked.has(String(c._id))";
+const newEligibility="editavel: c.cotasEmitidas === 0 && c.cotasDisponiveis === 1000 && !c.ipoEncerrado && (c.metadata?.precificacaoLiberadaEm ? !recentBlocked.has(String(c._id)) : !blocked.has(String(c._id)))";
+if(!next.includes(oldEligibility))throw Error('Validação de edição não encontrada; nada alterado.');
+next=next.replace(oldEligibility,newEligibility);
+const oldBlock="const blocked = new Set(orders.map(String));";
+const newBlock="const blocked = new Set(orders.map(String)); const recentOrders = await Order.find({ clubeId: { $in: ids } }, { clubeId: 1, criadoEm: 1 }).lean(); const recentInvestments = await Investment.find({ clubeId: { $in: ids } }, { clubeId: 1, data: 1 }).lean(); const recentBlocked = new Set(clubs.filter(c => c.metadata?.precificacaoLiberadaEm && (recentOrders.some(o => String(o.clubeId) === String(c._id) && new Date(o.criadoEm) > new Date(c.metadata.precificacaoLiberadaEm)) || recentInvestments.some(i => String(i.clubeId) === String(c._id) && new Date(i.data) > new Date(c.metadata.precificacaoLiberadaEm)))).map(c => String(c._id)));";
+if(!next.includes(oldBlock))throw Error('Bloco de ordens não encontrado.');
+next=next.replace(oldBlock,newBlock);
+const oldGuard="if (orders || investments || c.cotasEmitidas !== 0 || c.cotasDisponiveis !== 1000 || c.ipoEncerrado || (c.splits || []).length)";
+const newGuard="if ((c.metadata?.precificacaoLiberadaEm ? (await Order.exists({ clubeId: c._id, criadoEm: { $gt: new Date(c.metadata.precificacaoLiberadaEm) } }) || await Investment.exists({ clubeId: c._id, data: { $gt: new Date(c.metadata.precificacaoLiberadaEm) } })) : (orders || investments)) || c.cotasEmitidas !== 0 || c.cotasDisponiveis !== 1000 || c.ipoEncerrado || (c.splits || []).length)";
+if(!next.includes(oldGuard))throw Error('Validação de salvamento não encontrada; nada alterado.');
+next=next.replace(oldGuard,newGuard);const source=path.join(__dirname,'leagueSettlement.js');if(!fs.existsSync(source))throw Error('leagueSettlement.js não encontrado ao lado do script.');
+fs.copyFileSync(route,route+'.bak-league-settlement');fs.mkdirSync(path.dirname(service),{recursive:true});fs.copyFileSync(source,service);fs.writeFileSync(route,next);console.log('Backend atualizado. Backup:',route+'.bak-league-settlement');
