@@ -22,6 +22,7 @@ module.exports = async (req, res, next) => {
 
     const usuarioDB = await User.findById(decoded.id);
 
+    if (usuarioDB?.metadata?.contaExcluidaEm) return res.status(401).json({erro:'Conta excluída.'});
     if (!usuarioDB) {
       return res.status(401).json({ erro: 'Usuário do token não encontrado.' });
     }
