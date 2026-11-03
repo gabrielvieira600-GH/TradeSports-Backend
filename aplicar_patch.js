@@ -1,94 +1,29 @@
-'use strict';
-const fs=require('fs');const path=require('path');
-const file=path.join(process.cwd(),'routes','api','admin.js');
-if(!fs.existsSync(file)){console.error('Execute na raiz do BACKEND: routes/api/admin.js não encontrado.');process.exit(1)}
-let src=fs.readFileSync(file,'utf8');
-const marker='// TRADE SPORTS: PRECIFICACAO POS-LIQUIDACAO V3';
-if(src.includes(marker)){console.log('Patch já aplicado.');process.exit(0)}
-const helper=`${marker}
-// Operações históricas permanecem no banco. Uma liquidação concluída inicia
-// novo ciclo: somente negociações humanas posteriores à liquidação bloqueiam.
-async function clubeTemOperacaoDoCiclo(clube, OrderModel, InvestmentModel) {
-  const dataLiberacao = clube.metadata?.precificacaoLiberadaEm;
-  if (!dataLiberacao) {
-    const [ordem, investimento] = await Promise.all([
-      OrderModel.exists({ clubeId: clube._id, isInstitutional: { $ne: true } }),
-      InvestmentModel.exists({ clubeId: clube._id })
-    ]);
-    return Boolean(ordem || investimento);
-  }
-  const inicio = new Date(dataLiberacao);
-  if (Number.isNaN(inicio.getTime())) return true;
-  const [ordem, investimento] = await Promise.all([
-    OrderModel.exists({ clubeId: clube._id, isInstitutional: { $ne: true }, criadoEm: { $gt: inicio }, status: { $in: ['aberta', 'parcial', 'executada'] } }),
-    InvestmentModel.exists({ clubeId: clube._id, data: { $gt: inicio }, tipo: { $nin: ['LIQUIDACAO', 'DIVIDENDO'] } })
-  ]);
-  return Boolean(ordem || investimento);
-}
-function clubeProntoParaPrecificar(clube) {
-  return clube.cotasEmitidas === 0 && clube.cotasDisponiveis === 1000 &&
-    !clube.ipoEncerrado && !(clube.splits || []).length;
-}
-`;
-const begin=src.indexOf("router.get('/initial-prices/:ligaId'");
-const end=src.indexOf("router.get('/market-controls'",begin);
-if(begin<0||end<0){console.error('Estrutura da rota de precificação mudou; nenhum arquivo alterado.');process.exit(1)}
-const newRoutes=`router.get('/initial-prices/:ligaId', async (req, res) => {
-  try {
-    const ligaId = req.params.ligaId;
-    if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga inválida.' });
-    const clubs = await Club.find({ 'metadata.ligaId': ligaId }).sort({ nome: 1 }).lean();
-    const Order = require('../../models/Order');
-    const clubes = await Promise.all(clubs.map(async c => {
-      const operacoes = await clubeTemOperacaoDoCiclo(c, Order, Investment);
-      return { id: c.legacyId, nome: c.nome, precoInicial: c.preco,
-        precoAtual: c.precoAtual, cotasDisponiveis: c.cotasDisponiveis,
-        editavel: clubeProntoParaPrecificar(c) && !operacoes,
-        motivoBloqueio: !clubeProntoParaPrecificar(c) ? 'Existem cotas emitidas, IPO encerrado ou split pendente.' :
-          operacoes ? 'Existem operações de usuários no ciclo atual.' : null };
-    }));
-    res.json({ ok: true, clubes });
-  } catch (err) { console.error('[INITIAL PRICES]', err); res.status(500).json({ erro: 'Erro ao consultar preços.' }); }
+const fs=require('fs');
+function edit(p,fn){if(!fs.existsSync(p))throw Error('Não encontrado: '+p);const s=fs.readFileSync(p,'utf8');const t=fn(s);if(s===t)throw Error('Âncora não encontrada: '+p);fs.copyFileSync(p,p+'.bak-exclusao');fs.writeFileSync(p,t);console.log('Atualizado '+p)}
+edit('middleware/auth.js',s=>s.replace('    if (!usuarioDB) {',`    if (usuarioDB?.metadata?.contaExcluidaEm) return res.status(401).json({erro:'Conta excluída.'});
+    if (!usuarioDB) {`));
+edit('routes/usuario.js',s=>s.replace('module.exports = router;',`
+router.delete('/conta',auth,async(req,res)=>{
+ try{
+  const bcrypt=require('bcrypt');
+  const u=await User.findById(req.usuario.id);
+  if(!u)return res.status(404).json({erro:'Conta não encontrada.'});
+  if(u.admin||u.role==='admin'||u.metadata?.accountType==='INSTITUTIONAL')return res.status(403).json({erro:'Conta administrativa ou institucional.'});
+  if(req.body?.confirmacao!=='EXCLUIR MINHA CONTA'||!await bcrypt.compare(String(req.body?.senha||''),u.senha))return res.status(403).json({erro:'Senha ou confirmação inválida.'});
+  if(await Order.exists({usuarioId:u._id,status:{$in:['aberta','parcial']}})||(u.carteira||[]).some(c=>Number(c.quantidade)>0))return res.status(409).json({erro:'Cancele suas ordens e venda ou liquide suas cotas antes da exclusão.'});
+  if(u.premiumAtivo||u.plano==='premium')return res.status(409).json({erro:'Resolva sua assinatura Premium antes da exclusão. Contate o suporte se necessário.'});
+  const mongoose=require('mongoose');
+  const subs=await mongoose.connection.db.collection('asaas_premium_subscriptions').find({userId:u._id}).limit(20).toArray();
+  if(subs.some(x=>!x.cancelledAt&&!['CANCELLED','EXPIRED','INACTIVE'].includes(String(x.status||'').toUpperCase())))return res.status(409).json({erro:'Há assinatura ou pagamento pendente. Contate o suporte.'});
+  const id=String(u._id);
+  u.nome='Conta excluída';u.sobrenome='';u.nomeUsuario='excluido_'+id;u.email='excluido_'+id+'@invalid.local';
+  u.bio='';u.fotoPerfilUrl='';u.fotoPerfilPublicId='';u.cpf=undefined;u.dataNascimento=null;u.genero=null;
+  u.senha=await bcrypt.hash(require('crypto').randomBytes(48).toString('hex'),10);
+  u.dadosBancarios=null;u.watchlist={clubes:[],ligas:[]};u.notificacoes=[];u.alertState={};
+  u.tokenVerificacao=null;u.tokenVerificacaoHash=null;u.resetSenhaTokenHash=null;u.rankingAtivo=false;
+  u.metadata={...(u.metadata||{}),contaExcluidaEm:new Date(),exclusaoSolicitadaPeloUsuario:true};
+  await u.save();
+  return res.json({ok:true});
+ }catch(e){console.error('[EXCLUSAO CONTA]',e);return res.status(500).json({erro:'Falha na exclusão. Contate o suporte.'})}
 });
-router.patch('/initial-prices/:ligaId', async (req, res) => {
-  try {
-    const ligaId = req.params.ligaId;
-    if (!sportsMarkets[ligaId]) return res.status(404).json({ erro: 'Liga inválida.' });
-    const control = await MarketControl.findOne({ ligaId }).lean();
-    if (control?.fechado !== true) return res.status(409).json({ erro: 'Feche a liga antes de alterar os preços.' });
-    const entries = req.body?.clubes;
-    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 50)
-      return res.status(400).json({ erro: 'Informe de 1 a 50 clubes.' });
-    const ids = entries.map(e => Number(e.id));
-    if (new Set(ids).size !== ids.length || entries.some(e =>
-      !Number.isSafeInteger(Number(e.id)) || !Number.isFinite(Number(e.preco)) ||
-      Number(e.preco) <= 0 || Math.abs(Number(e.preco)*100-Math.round(Number(e.preco)*100)) > 1e-7))
-      return res.status(400).json({ erro: 'IDs e preços inválidos (até duas casas decimais).' });
-    const clubs = await Club.find({ legacyId: { $in: ids }, 'metadata.ligaId': ligaId });
-    if (clubs.length !== entries.length) return res.status(404).json({ erro: 'Algum clube não pertence à liga.' });
-    const Order = require('../../models/Order');
-    for (const c of clubs) {
-      if (!clubeProntoParaPrecificar(c) || await clubeTemOperacaoDoCiclo(c, Order, Investment))
-        return res.status(409).json({ erro: 'O clube ' + c.nome + ' possui cotas, split ou operações do ciclo atual.' });
-    }
-    for (const c of clubs) {
-      const preco = Number(entries.find(e => Number(e.id) === c.legacyId).preco);
-      const result = await Club.updateOne({ _id: c._id, cotasEmitidas: 0,
-        cotasDisponiveis: 1000, ipoEncerrado: false },
-        { $set: { preco, precoAtual: preco,
-          'metadata.precoInicialDefinidoPorAdmin': true,
-          'metadata.precoInicialAtualizadoEm': new Date() } });
-      if (result.matchedCount !== 1) return res.status(409).json({ erro: 'Estado do clube mudou durante a atualização. Atualize a página.' });
-    }
-    await audit.logEvent({ kind: 'ADMIN', action: 'INITIAL_PRICES_UPDATED', userId: req.usuario?.id,
-      meta: { ligaId, quantidade: entries.length, clubes: entries } });
-    res.json({ ok: true, atualizados: entries.length });
-  } catch (err) { console.error('[INITIAL PRICES SAVE]', err); res.status(500).json({ erro: 'Não foi possível atualizar os preços.' }); }
-});
-
-`;
-const out=src.slice(0,begin)+helper+'\n'+newRoutes+src.slice(end);
-const backup=file+'.bak-precificacao-'+new Date().toISOString().replace(/[:.]/g,'-');
-fs.copyFileSync(file,backup);fs.writeFileSync(file,out);
-console.log('Correção aplicada ao backend. Backup:',backup);
-console.log('Valide com: node --check routes/api/admin.js');
+module.exports = router;`));
