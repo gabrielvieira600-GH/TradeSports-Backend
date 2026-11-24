@@ -1,0 +1,541 @@
+{
+  "source": "Original apply.py parsed into literal operations, no Python runtime needed",
+  "operations": [
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "controllers/InvestimentoController.js"
+    },
+    {
+      "op": "replace",
+      "old": "const { mercadoFechadoParaClube } = require('../services/marketAccess');",
+      "new": "const { mercadoFechadoParaClube } = require('../services/marketAccess');\nconst { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');\nconst { getMarketMode } = require('../config/marketMode');\nconst { ensureLiquidityState } = require('../services/institutionalLiquidity');\nconst Order = require('../models/Order');",
+      "label": "imports ipo",
+      "count": 1
+    },
+    {
+      "op": "between",
+      "start": "function getPrecoClube(clube) {",
+      "end": "\nfunction normalizarQuantidade",
+      "content": "function getPrecoClube(clube) {\n  // IPO: preço único de compra e recompra, obtido da posição ESPORTIVA atual.\n  // Nunca aceitar preço enviado pelo navegador ou usar último trade do secundário.\n  const posicao = Number(clube.posicao);\n  const total = Number(clube.metadata?.totalParticipantes || 20);\n  if (!Number.isInteger(total) || total < 2 || !Number.isInteger(posicao) || posicao < 1 || posicao > total) {\n    throw new Error('PRECO_INVALIDO'); // falha fechada se a classificação estiver indisponível\n  }\n  return calcularPrecoPorPosicao(posicao, total);\n}\n\nfunction validarEstadoIpo(clube, state) {\n  // A migração das carteiras legadas e da instituição deve ocorrer ANTES da ativação.\n  if (Number(state.institutionHeldIssuedShares || 0) !== 0 ||\n      Number(state.issuedShares || 0) !== Number(clube.cotasEmitidas || 0)) {\n    throw new Error('IPO_ESTOQUE_INCONSISTENTE');\n  }\n  if (Number(clube.cotasDisponiveis || 0) + Number(clube.cotasEmitidas || 0) !== Number(state.maxShares || 1000)) {\n    throw new Error('IPO_ESTOQUE_INCONSISTENTE');\n  }\n}\n"
+    },
+    {
+      "op": "replace",
+      "old": "      const precoUnitario = getPrecoClube(clube);",
+      "new": "      const liquidityState = await ensureLiquidityState(clube, session);\n      validarEstadoIpo(clube, liquidityState);\n\n      const precoUnitario = getPrecoClube(clube);",
+      "label": "state nas duas operações",
+      "count": 2
+    },
+    {
+      "op": "replace",
+      "old": "    const quantidade = normalizarQuantidade(req.body.quantidade);",
+      "new": "    const quantidade = normalizarQuantidade(req.body.quantidade);\n\n    if (getMarketMode() !== 'IPO') {\n      return res.status(409).json({ erro: 'Operação IPO indisponível no modo atual.' });\n    }",
+      "label": "bloquear IPO fora do modo",
+      "count": 2
+    },
+    {
+      "op": "replace",
+      "old": "      ligaId: 'brasileirao-a',\n      ligaNome: 'Brasileirão Série A',",
+      "new": "      ligaId: clube.metadata?.ligaId || 'brasileirao-a',\n      ligaNome: clube.metadata?.ligaNome || 'Brasileirão Série A',",
+      "label": "watchlist da liga",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      await usuario.save({ session });\n      await clube.save({ session });",
+      "new": "      liquidityState.issuedShares = Number(clube.cotasEmitidas);\n      liquidityState.basePositionValue = precoUnitario;\n      liquidityState.lastRepricedAt = new Date();\n      await liquidityState.save({ session });\n      await usuario.save({ session });\n      await clube.save({ session });",
+      "label": "persistir state IPO",
+      "count": 2
+    },
+    {
+      "op": "replace",
+      "old": "      usuario.saldo = round2(saldoAtual - total);",
+      "new": "      usuario.saldo = round2(saldoAtual - total);\n      liquidityState.distributionGross = round2(Number(liquidityState.distributionGross || 0) + total);\n      liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund || 0) + total);",
+      "label": "contabilidade compra",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      usuario.saldo = round2(Number(usuario.saldo || 0) + total);",
+      "new": "      usuario.saldo = round2(Number(usuario.saldo || 0) + total);\n      liquidityState.buybackGross = round2(Number(liquidityState.buybackGross || 0) + total);\n      liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund || 0) - total);",
+      "label": "contabilidade recompra",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      if (Number(clube.cotasEmitidas || 0) < quantidade) {",
+      "new": "      // Ordens secundárias antigas abertas precisam ser canceladas antes da recompra IPO.\n      const existemOrdensAbertas = await Order.exists({\n        usuarioId: usuario._id, clubeId: clube._id,\n        tipo: 'venda', status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },\n      }).session(session);\n      if (existemOrdensAbertas) throw new Error('ORDENS_ABERTAS_CONFLITANTES');\n\n      if (Number(clube.cotasEmitidas || 0) < quantidade) {",
+      "label": "reservas recompra",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      PRECO_INVALIDO: [400, 'Preço inválido.'],",
+      "new": "      PRECO_INVALIDO: [400, 'Preço inválido ou classificação indisponível.'],\n      IPO_ESTOQUE_INCONSISTENTE: [409, 'Estoque IPO não reconciliado. Contate o suporte.'],",
+      "label": "erros compra",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      PRECO_INVALIDO: [400, 'Preço oficial do IPO inválido.'],",
+      "new": "      PRECO_INVALIDO: [400, 'Preço oficial indisponível: classificação inválida.'],\n      IPO_ESTOQUE_INCONSISTENTE: [409, 'Estoque IPO não reconciliado. Contate o suporte.'],\n      ORDENS_ABERTAS_CONFLITANTES: [409, 'Cancele suas ordens de venda abertas antes de devolver cotas ao IPO.'],",
+      "label": "erros recompra",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        'Você não possui cotas suficientes para devolver ao IPO.',",
+      "new": "        'Você não possui cotas suficientes para vender ao sistema.',",
+      "label": "mensagem venda",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        mensagem: 'Cotas devolvidas ao IPO com sucesso.',",
+      "new": "        mensagem: 'Venda ao sistema executada pelo preço atual da classificação.',",
+      "label": "resp venda",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        mensagem: 'Compra de IPO realizada com sucesso.',",
+      "new": "        mensagem: 'Compra de IPO executada pelo preço atual da classificação.',",
+      "label": "resp compra",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/clube.js"
+    },
+    {
+      "op": "replace",
+      "old": "const InvestimentoController = require('../controllers/InvestimentoController');",
+      "new": "const InvestimentoController = require('../controllers/InvestimentoController');\nconst { getMarketMode } = require('../config/marketMode');\nconst { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');",
+      "label": "imports club",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "function toClubResponse(clube, liquidityState = null) {",
+      "new": "function toClubResponse(clube, liquidityState = null) {\n  const total = Number(clube.metadata?.totalParticipantes || 20);\n  const pos = Number(clube.posicao);\n  const precoIPO = Number.isInteger(pos) && pos >= 1 && pos <= total\n    ? calcularPrecoPorPosicao(pos, total) : null;\n  const ipoAtivo = getMarketMode() === 'IPO' && !Boolean(clube.ipoEncerrado);",
+      "label": "toClubResponse",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    preco: Number(clube.preco || 0),",
+      "new": "    preco: Number(clube.preco || 0),\n    precoIPO,",
+      "label": "precoIPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      clube.precoAtual != null ? Number(clube.precoAtual) : Number(clube.preco || 0),",
+      "new": "      ipoAtivo ? precoIPO : (clube.precoAtual != null ? Number(clube.precoAtual) : Number(clube.preco || 0)),",
+      "label": "preco atual visual",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    cotasDisponiveis: liquidityState\n      ? Math.max(0, Number(liquidityState.maxShares || 0) - Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0)))",
+      "new": "    cotasDisponiveis: liquidityState && !ipoAtivo\n      ? Math.max(0, Number(liquidityState.maxShares || 0) - Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0)))",
+      "label": "inventario IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    cotasEmitidas: liquidityState\n      ? Math.max",
+      "new": "    cotasEmitidas: liquidityState && !ipoAtivo\n      ? Math.max",
+      "label": "emitidas IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    cotasEmCirculacao: liquidityState\n      ? Math.max",
+      "new": "    cotasEmCirculacao: liquidityState && !ipoAtivo\n      ? Math.max",
+      "label": "circulacao IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      tipo: { $in: ['COMPRA', 'COMPRA_SECUNDARIO'] },",
+      "new": "      tipo: { $in: ['COMPRA', 'COMPRA_SECUNDARIO', 'IPO', 'IPO_RETURN'] },",
+      "label": "historico trades IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      precoMercado: round2(clube.precoAtual ?? clube.preco),",
+      "new": "      precoMercado: getMarketMode() === 'IPO' && !clube.ipoEncerrado && Number.isInteger(Number(clube.posicao))\n        ? calcularPrecoPorPosicao(clube.posicao, clube.metadata?.totalParticipantes || 20)\n        : round2(clube.precoAtual ?? clube.preco),",
+      "label": "historico cotacao",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "utils/portfolioValuation.js"
+    },
+    {
+      "op": "replace",
+      "old": "const { round2 } = require('./rankingPerformance');",
+      "new": "const { round2 } = require('./rankingPerformance');\nconst { getMarketMode } = require('../config/marketMode');\nconst { calcularPrecoPorPosicao } = require('./liquidationPrice');",
+      "label": "valuation imports",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      Number(club.precoAtual ?? club.preco ?? 0),",
+      "new": "      getMarketMode() === 'IPO' && !club.ipoEncerrado && Number.isInteger(Number(club.posicao)) && Number(club.posicao) >= 1 && Number(club.posicao) <= Number(club.metadata?.totalParticipantes || 20)\n        ? calcularPrecoPorPosicao(club.posicao, club.metadata?.totalParticipantes || 20)\n        : Number(club.precoAtual ?? club.preco ?? 0),",
+      "label": "valuation price",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": ".select('legacyId precoAtual preco')",
+      "new": ".select('legacyId precoAtual preco posicao ipoEncerrado metadata.totalParticipantes')",
+      "label": "valuation select",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/dashboard.js"
+    },
+    {
+      "op": "replace",
+      "old": "const { performanceForPatrimony } = require('../utils/rankingPerformance');",
+      "new": "const { performanceForPatrimony } = require('../utils/rankingPerformance');\nconst { getMarketMode } = require('../config/marketMode');\nconst { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');",
+      "label": "dashboard imports",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    const precoAtualClube = Number(\n      clube?.precoAtual ??\n        clube?.preco\n    );",
+      "new": "    const precoAtualClube = Number(\n      getMarketMode() === 'IPO' && clube && !clube.ipoEncerrado &&\n      Number.isInteger(Number(clube.posicao)) && Number(clube.posicao) >= 1 &&\n      Number(clube.posicao) <= Number(clube.metadata?.totalParticipantes || 20)\n        ? calcularPrecoPorPosicao(clube.posicao, clube.metadata?.totalParticipantes || 20)\n        : (clube?.precoAtual ?? clube?.preco)\n    );",
+      "label": "dashboard price",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "'_id legacyId nome escudo preco precoAtual'",
+      "new": "'_id legacyId nome escudo preco precoAtual posicao ipoEncerrado metadata.totalParticipantes'",
+      "label": "dashboard select",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "services/sportsTableCache.js"
+    },
+    {
+      "op": "replace",
+      "old": "function text(value) {",
+      "new": "const { getMarketMode } = require('../config/marketMode');\nconst { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');\n\nfunction text(value) {",
+      "label": "cache imports",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    precoAtual: club.precoAtual == null\n      ? number(club.preco)\n      : number(club.precoAtual),",
+      "new": "    precoAtual: getMarketMode() === 'IPO' && !club.ipoEncerrado && Number.isInteger(Number(club.posicao)) && Number(club.posicao) >= 1 && Number(club.posicao) <= Number(club.metadata?.totalParticipantes || 20)\n      ? calcularPrecoPorPosicao(club.posicao, club.metadata?.totalParticipantes || 20)\n      : (club.precoAtual == null ? number(club.preco) : number(club.precoAtual)),",
+      "label": "cache price",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/sportsStandings.js"
+    },
+    {
+      "op": "replace",
+      "old": "const MarketControl = require('../models/MarketControl');",
+      "new": "const MarketControl = require('../models/MarketControl');\nconst { getMarketMode } = require('../config/marketMode');",
+      "label": "standings imports",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "preco: Number(clube.preco || 0), precoAtual: clube.precoAtual == null ? Number(clube.preco || 0) : Number(clube.precoAtual),",
+      "new": "preco: Number(clube.preco || 0), precoAtual: getMarketMode() === 'IPO' && !clube.ipoEncerrado ? calcularPrecoPorPosicao(item.posicao, config.participantes) : (clube.precoAtual == null ? Number(clube.preco || 0) : Number(clube.precoAtual)),",
+      "label": "standings price",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/classificacao.js"
+    },
+    {
+      "op": "replace",
+      "old": "const { loadCachedTable } = require('../services/sportsTableCache');",
+      "new": "const { loadCachedTable } = require('../services/sportsTableCache');\nconst { getMarketMode } = require('../config/marketMode');",
+      "label": "classificacao imports",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "          precoAtual:\n\n            clubeLocal.precoAtual != null\n\n              ? Number(clubeLocal.precoAtual)\n\n              : Number(clubeLocal.preco || 0),",
+      "new": "          precoAtual:\n            getMarketMode() === 'IPO' && !clubeLocal.ipoEncerrado\n              ? calcularPrecoPorPosicao(Number(item?.rank || clubeLocal.posicao))\n              : (clubeLocal.precoAtual != null ? Number(clubeLocal.precoAtual) : Number(clubeLocal.preco || 0)),",
+      "label": "brasileirao price",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/performance.js"
+    },
+    {
+      "op": "replace",
+      "old": "const { performanceForPatrimony } = require('../utils/rankingPerformance');",
+      "new": "const { performanceForPatrimony } = require('../utils/rankingPerformance');\nconst { getMarketMode } = require('../config/marketMode');\nconst { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');",
+      "label": "performance imports",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "const router = express.Router();",
+      "new": "const router = express.Router();\n\nfunction precoExibicao(clube, fallback = 0) {\n  const pos = Number(clube?.posicao);\n  const total = Number(clube?.metadata?.totalParticipantes || 20);\n  if (getMarketMode() === 'IPO' && clube && !clube.ipoEncerrado && Number.isInteger(pos) && pos >= 1 && pos <= total) {\n    return calcularPrecoPorPosicao(pos, total);\n  }\n  return Number(clube?.precoAtual ?? clube?.preco ?? fallback);\n}",
+      "label": "performance helper",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "  const precoAtual = Number(clube?.precoAtual ?? clube?.preco ?? precoMedio);",
+      "new": "  const precoAtual = precoExibicao(clube, precoMedio);",
+      "label": "performance cotacao",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        const preco = Number(clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0);",
+      "new": "        const preco = precoExibicao(clube, ativo.precoMedio ?? 0);",
+      "label": "performance ranking",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/usuario.js"
+    },
+    {
+      "op": "replace",
+      "old": "const express = require(\"express\");",
+      "new": "const express = require(\"express\");\nconst { getMarketMode } = require('../config/marketMode');\nconst { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');\nfunction precoClubeExibicao(clube, fallback = 0) {\n  const pos = Number(clube?.posicao);\n  const total = Number(clube?.metadata?.totalParticipantes || 20);\n  return getMarketMode() === 'IPO' && clube && !clube.ipoEncerrado && Number.isInteger(pos) && pos >= 1 && pos <= total\n    ? calcularPrecoPorPosicao(pos, total) : Number(clube?.precoAtual ?? clube?.preco ?? fallback);\n}",
+      "label": "usuario helper",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "Club.find({}).select(\"legacyId precoAtual preco\").lean()",
+      "new": "Club.find({}).select(\"legacyId precoAtual preco posicao ipoEncerrado metadata.totalParticipantes\").lean()",
+      "label": "ranking select",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        Number(clube.precoAtual ?? clube.preco ?? 0),",
+      "new": "        precoClubeExibicao(clube),",
+      "label": "ranking valuation",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "          clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0,",
+      "new": "          precoClubeExibicao(clube, ativo.precoMedio ?? 0),",
+      "label": "carteira valuation",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "routes/mercado.js"
+    },
+    {
+      "op": "replace",
+      "old": "  if (!isUnifiedLiquidity()) return orders;",
+      "new": "  // Book institucional também é usado no secundário após o IPO.\n  if (!isUnifiedLiquidity() && getMarketMode() !== 'IPO') return orders;",
+      "label": "visibilidade institucional",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    if (isUnifiedLiquidity()) {\n      await ensureOrdersForClub(clubeDocumento);",
+      "new": "    if (isUnifiedLiquidity() || Boolean(clubeDocumento.ipoEncerrado)) {\n      await ensureOrdersForClub(clubeDocumento);",
+      "label": "book institucional",
+      "count": 2
+    },
+    {
+      "op": "replace",
+      "old": "      if (isUnifiedLiquidity()) {\n        const liquidity = await ensureOrdersForClub(clube, { session });",
+      "new": "      if (isUnifiedLiquidity() || Boolean(clube.ipoEncerrado)) {\n        const liquidity = await ensureOrdersForClub(clube, { session });",
+      "label": "reprecificacao ordem",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      if (isUnifiedLiquidity()) {\n        const counterpartType",
+      "new": "      if (isUnifiedLiquidity() || Boolean(clube.ipoEncerrado)) {\n        const counterpartType",
+      "label": "matching institucional",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "      if (isUnifiedLiquidity() && !ordem.isInstitutional) {",
+      "new": "      if ((isUnifiedLiquidity() || Boolean(clube.ipoEncerrado)) && !ordem.isInstitutional) {",
+      "label": "reconciliar apos ordem",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    if (isUnifiedLiquidity()) {\n      await enforceSolvency()",
+      "new": "    if (isUnifiedLiquidity() || getMarketMode() === 'IPO') {\n      await enforceSolvency()",
+      "label": "solvencia",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    if (isUnifiedLiquidity() && !ordem.isInstitutional) {\n      const clube = await Club.findById(ordem.clubeId);\n      if (clube) await ensureOrdersForClub(clube);",
+      "new": "    if (!ordem.isInstitutional) {\n      const clube = await Club.findById(ordem.clubeId);\n      if (clube && (isUnifiedLiquidity() || clube.ipoEncerrado)) await ensureOrdersForClub(clube);",
+      "label": "cancelamento reprecificacao",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "backend",
+      "path": "server.js"
+    },
+    {
+      "op": "replace",
+      "old": "const { isUnifiedLiquidity } = require('./config/marketMode');",
+      "new": "const { isUnifiedLiquidity, getMarketMode } = require('./config/marketMode');",
+      "label": "modo startup",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "    if (isUnifiedLiquidity()) {\n      try {\n        const clubes = await Club.find({});\n        for (const clube of clubes) await publishOrdersForClub(clube);",
+      "new": "    if (isUnifiedLiquidity() || getMarketMode() === 'IPO') {\n      try {\n        const clubes = await Club.find({});\n        for (const clube of clubes) {\n          if (isUnifiedLiquidity() || clube.ipoEncerrado) await publishOrdersForClub(clube);\n        }",
+      "label": "startup livro secundário",
+      "count": 1
+    },
+    {
+      "op": "end"
+    },
+    {
+      "op": "file",
+      "root": "frontend",
+      "path": "components/NegociacaoModal.js"
+    },
+    {
+      "op": "replace",
+      "old": "        precoBase = Number(clubeInfo.preco ?? clubeInfo.precoAtual ?? 0);",
+      "new": "        precoBase = Number(clubeInfo.precoIPO ?? clubeInfo.precoAtual ?? clubeInfo.preco ?? 0);",
+      "label": "cotacao IPO modal",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "  const precoTotal = (",
+      "new": "  // Atualiza o preço oficial enquanto o IPO está aberto e o modal visível.\n  useEffect(() => {\n    if (!isOpen || !clubeId || ipoEncerrado) return undefined;\n    const timer = window.setInterval(() => verificarIPO(), 15000);\n    return () => window.clearInterval(timer);\n  }, [isOpen, clubeId, ipoEncerrado]);\n\n  const precoTotal = (",
+      "label": "cotacao IPO atualizada",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "                  ? 'Durante o IPO, suas cotas podem ser devolvidas imediatamente pelo preço de aquisição, sem cobrança de taxas.'\n                  : 'O preço é fixado pela TradeSports. Não há tick, livro de ofertas ou cobrança de taxas nesta fase.'",
+      "new": "                  ? 'Durante o IPO, você vende imediatamente ao sistema pelo preço atual da posição do clube, sem taxas. O resultado pode ser lucro ou prejuízo.'\n                  : 'No IPO, compra e venda seguem o preço atual da posição do clube na tabela. Sem taxas e sem livro de ofertas nesta fase.'",
+      "label": "copy IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "            <label>{ipoEncerrado ? 'Preço da ordem (T$)' : 'Preço fixo do IPO (T$)'}</label>",
+      "new": "            <label>{ipoEncerrado ? 'Preço da ordem (T$)' : 'Preço atual da classificação (T$)'}</label>",
+      "label": "label IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "                    ? 'Valor da compra'\n                    : 'Valor líquido da devolução'",
+      "new": "                    ? 'Valor da compra'\n                    : 'Valor da venda ao sistema'",
+      "label": "valor venda",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "              <span>{ipoEncerrado ? 'Preço de mercado' : 'Preço oficial do IPO'}</span>",
+      "new": "              <span>{ipoEncerrado ? 'Preço de mercado' : 'Preço atual da tabela'}</span>",
+      "label": "preco label",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "          titulo: 'Cotas devolvidas ao IPO',",
+      "new": "          titulo: 'Venda ao sistema executada',",
+      "label": "recibo venda",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        setMensagem('Devolução realizada imediatamente, sem cobrança de taxas.');",
+      "new": "        setMensagem('Venda executada pelo preço atual da classificação, sem taxas.');",
+      "label": "msg venda",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "        adicionarToast('Cotas devolvidas ao IPO sem taxas.', 'sucesso');",
+      "new": "        adicionarToast('Venda ao sistema realizada sem taxas.', 'sucesso');",
+      "label": "toast venda",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "                  Execução imediata pela oferta inicial",
+      "new": "                  Execução imediata pelo sistema",
+      "label": "execucao IPO",
+      "count": 1
+    },
+    {
+      "op": "replace",
+      "old": "  ? 'Devolver cotas'",
+      "new": "  ? 'Vender ao sistema'",
+      "label": "botão IPO",
+      "count": 1
+    },
+    {
+      "op": "end"
+    }
+  ]
+}
