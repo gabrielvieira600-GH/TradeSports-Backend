@@ -38,5 +38,5 @@ assert.equal(calcularPrecoPorPosicao(4),10.90);
 for(let position=1;position<20;position++) {
   assert(calcularPrecoPorPosicao(position)>calcularPrecoPorPosicao(position+1));
 }
-console.log('PASS: sintaxe de 11 arquivos backend + âncoras do frontend + tabela de preços.');
-console.log('ATENÇÃO: isso não substitui integração com MongoDB/ledger, teste de build Next.js e fluxos ponta a ponta.');
+console.log('PASS: sintaxe de 11 arquivos backend + Ã¢ncoras do frontend + tabela de preÃ§os.');
+console.log('ATENÃÃO: isso nÃ£o substitui integraÃ§Ã£o com MongoDB/ledger, teste de build Next.js e fluxos ponta a ponta.');
