@@ -1,5 +1,6 @@
 const UserTradingQuota = require('../models/UserTradingQuota');
 const Order = require('../models/Order');
+const Investment = require('../models/Investment');
 
 const TIMEZONE_TRADESPORTS = 'America/Sao_Paulo';
 const LIMITE_SEMANAL_LITE_PADRAO = 15;
@@ -384,9 +385,19 @@ async function reconciliarQuotaComOrdensExecutadas({
   });
 
   if (session) consulta = consulta.session(session);
-  const executadas = await consulta;
+  const ordensSecundario = await consulta;
 
-  quota.ordensUtilizadas = Math.max(0, Number(executadas || 0));
+  // Cada compra IPO já concluída conta uma ordem; devolução IPO não consome.
+  let consultaIPO = Investment.countDocuments({
+    usuarioId: usuario._id,
+    tipo: 'IPO',
+    data: { $gte: janela.periodoInicio, $lt: janela.periodoFim },
+  });
+  if (session) consultaIPO = consultaIPO.session(session);
+  const comprasIPO = await consultaIPO;
+  const executadas = Number(ordensSecundario || 0) + Number(comprasIPO || 0);
+
+  quota.ordensUtilizadas = Math.max(0, executadas);
 
   const resumoRewarded = sincronizarCamposRewardedQuota(
     quota,

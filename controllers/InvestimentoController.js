@@ -11,6 +11,13 @@ const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 const { getMarketMode } = require('../config/marketMode');
 const { ensureLiquidityState } = require('../services/institutionalLiquidity');
 const Order = require('../models/Order');
+const RankingSeason = require('../models/RankingSeason');
+const { obterPlanoEfetivo } = require('../utils/planFeatures');
+const {
+  LIMITE_SEMANAL_LITE_PADRAO,
+  reconciliarQuotaComOrdensExecutadas,
+  consumirOrdemQuotaSemanal,
+} = require('../utils/tradingQuota');
 
 function round2(n) {
   return Number(Number(n || 0).toFixed(2));
@@ -193,6 +200,38 @@ async function comprarCota(req, res) {
         throw new Error('SALDO_INSUFICIENTE');
       }
 
+      // Mesmo limite semanal do secundário: uma COMPRA IPO executada = 1 ordem.
+      // Em transação: se qualquer lançamento falhar, a quota volta atrás.
+      const temporada = await RankingSeason.findOne({ status: 'ativa' })
+        .sort({ iniciadaEm: -1, createdAt: -1 }).session(session);
+      if (!temporada) throw new Error('TEMPORADA_NAO_ATIVA');
+      if (temporada.mercadoAberto === false) throw new Error('MERCADO_FECHADO');
+
+      const planoIPO = obterPlanoEfetivo(usuario);
+      let quotaIPO = null;
+      let periodoQuotaIPO = null;
+      if (planoIPO === 'lite') {
+        const limiteLite = Number(
+          temporada.limiteOrdensLiteSemanal ??
+          temporada.limiteOrdensLitePorRodada ??
+          LIMITE_SEMANAL_LITE_PADRAO
+        );
+        // Reconcilia execução do secundário + compras anteriores no IPO.
+        await reconciliarQuotaComOrdensExecutadas({
+          usuario, temporada, session, limiteLite,
+        });
+        const consumida = await consumirOrdemQuotaSemanal({
+          usuario, temporada, session, limiteLite,
+        });
+        quotaIPO = {
+          limite: consumida.limite,
+          utilizadas: consumida.utilizadas,
+          restantes: consumida.restantes,
+          limiteAtingido: consumida.limiteAtingido,
+        };
+        periodoQuotaIPO = consumida.janela.periodoChave;
+      }
+
       usuario.saldo = round2(saldoAtual - total);
       liquidityState.distributionGross = round2(Number(liquidityState.distributionGross || 0) + total);
       liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund || 0) + total);
@@ -240,6 +279,8 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
             metadata: {
               modo: 'mongo',
               rota: '/clube/:id/comprar',
+              quotaLiteContabilizada: planoIPO === 'lite',
+              quotaLitePeriodo: periodoQuotaIPO,
             },
           },
         ],
@@ -268,6 +309,8 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
 
       resposta = {
         mensagem: 'Compra de IPO executada pelo preço atual da classificação.',
+        plano: { tipo: planoIPO, ordensIlimitadas: planoIPO === 'premium' },
+        franquiaOrdens: quotaIPO,
         investimento,
         usuario: {
           id: String(usuario._id),
@@ -291,7 +334,19 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
   } catch (err) {
     console.error('Erro ao comprar cota IPO:', err);
 
+    if (err?.message === 'LIMITE_SEMANAL_ORDENS_ATINGIDO') {
+      return res.status(403).json({
+        codigo: 'LIMITE_ORDENS_ATINGIDO',
+        erro: 'Você atingiu o limite semanal de ordens do Plano Lite.',
+        limite: err.limite,
+        utilizadas: err.utilizadas,
+        restantes: 0,
+        renovaEm: err.renovaEm,
+      });
+    }
+
     const mapa = {
+      TEMPORADA_NAO_ATIVA: [409, 'Nenhuma temporada ativa para realizar compras IPO.'],
       USUARIO_NAO_ENCONTRADO: [404, 'Usuário não encontrado.'],
       CLUBE_NAO_ENCONTRADO: [404, 'Clube não encontrado.'],
       MERCADO_FECHADO: [409, 'Mercado fechado para esta liga.'],
