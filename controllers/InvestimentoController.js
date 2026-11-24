@@ -7,6 +7,10 @@ const Investment = require('../models/Investment');
 const { autoFavoritarClubeAoComprar } = require('../utils/watchlistAuto');
 const ledger = require('../utils/ledger');
 const { mercadoFechadoParaClube } = require('../services/marketAccess');
+const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
+const { getMarketMode } = require('../config/marketMode');
+const { ensureLiquidityState } = require('../services/institutionalLiquidity');
+const Order = require('../models/Order');
 
 function round2(n) {
   return Number(Number(n || 0).toFixed(2));
@@ -19,10 +23,25 @@ function criarLegacyId(prefix, usuario, clube) {
 }
 
 function getPrecoClube(clube) {
-  // Durante o IPO, o preço oficial é exclusivamente o preço-base do clube.
-  // O cliente não pode substituí-lo e o preço de mercado só passa a valer
-  // depois do encerramento da oferta inicial.
-  return round2(clube.preco || 0);
+  // IPO: preço único de compra e recompra, obtido da posição ESPORTIVA atual.
+  // Nunca aceitar preço enviado pelo navegador ou usar último trade do secundário.
+  const posicao = Number(clube.posicao);
+  const total = Number(clube.metadata?.totalParticipantes || 20);
+  if (!Number.isInteger(total) || total < 2 || !Number.isInteger(posicao) || posicao < 1 || posicao > total) {
+    throw new Error('PRECO_INVALIDO'); // falha fechada se a classificação estiver indisponível
+  }
+  return calcularPrecoPorPosicao(posicao, total);
+}
+
+function validarEstadoIpo(clube, state) {
+  // A migração das carteiras legadas e da instituição deve ocorrer ANTES da ativação.
+  if (Number(state.institutionHeldIssuedShares || 0) !== 0 ||
+      Number(state.issuedShares || 0) !== Number(clube.cotasEmitidas || 0)) {
+    throw new Error('IPO_ESTOQUE_INCONSISTENTE');
+  }
+  if (Number(clube.cotasDisponiveis || 0) + Number(clube.cotasEmitidas || 0) !== Number(state.maxShares || 1000)) {
+    throw new Error('IPO_ESTOQUE_INCONSISTENTE');
+  }
 }
 
 function normalizarQuantidade(qtd) {
@@ -113,6 +132,10 @@ async function comprarCota(req, res) {
     const legacyClubeId = Number(req.body.clubeId || req.params.id);
     const quantidade = normalizarQuantidade(req.body.quantidade);
 
+    if (getMarketMode() !== 'IPO') {
+      return res.status(409).json({ erro: 'Operação IPO indisponível no modo atual.' });
+    }
+
     if (!userId) {
       return res.status(401).json({ erro: 'Usuário não autenticado.' });
     }
@@ -154,6 +177,9 @@ async function comprarCota(req, res) {
         throw new Error('COTAS_INSUFICIENTES');
       }
 
+      const liquidityState = await ensureLiquidityState(clube, session);
+      validarEstadoIpo(clube, liquidityState);
+
       const precoUnitario = getPrecoClube(clube);
 
       if (!Number.isFinite(precoUnitario) || precoUnitario <= 0) {
@@ -168,12 +194,14 @@ async function comprarCota(req, res) {
       }
 
       usuario.saldo = round2(saldoAtual - total);
+      liquidityState.distributionGross = round2(Number(liquidityState.distributionGross || 0) + total);
+      liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund || 0) + total);
 
       atualizarCarteiraCompra(usuario, clube, quantidade, precoUnitario);
 
       autoFavoritarClubeAoComprar(usuario, clube, {
-      ligaId: 'brasileirao-a',
-      ligaNome: 'Brasileirão Série A',
+      ligaId: clube.metadata?.ligaId || 'brasileirao-a',
+      ligaNome: clube.metadata?.ligaNome || 'Brasileirão Série A',
       criarNotificacao: true,
       });
 
@@ -186,6 +214,10 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
         clube.ipoEncerrado = true;
       }
 
+      liquidityState.issuedShares = Number(clube.cotasEmitidas);
+      liquidityState.basePositionValue = precoUnitario;
+      liquidityState.lastRepricedAt = new Date();
+      await liquidityState.save({ session });
       await usuario.save({ session });
       await clube.save({ session });
 
@@ -235,7 +267,7 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
       await investimento.save({ session });
 
       resposta = {
-        mensagem: 'Compra de IPO realizada com sucesso.',
+        mensagem: 'Compra de IPO executada pelo preço atual da classificação.',
         investimento,
         usuario: {
           id: String(usuario._id),
@@ -266,7 +298,8 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
       IPO_ENCERRADO: [400, 'IPO encerrado para este clube.'],
       COTAS_INSUFICIENTES: [400, 'Quantidade acima das cotas disponíveis.'],
       SALDO_INSUFICIENTE: [400, 'Saldo insuficiente.'],
-      PRECO_INVALIDO: [400, 'Preço inválido.'],
+      PRECO_INVALIDO: [400, 'Preço inválido ou classificação indisponível.'],
+      IPO_ESTOQUE_INCONSISTENTE: [409, 'Estoque IPO não reconciliado. Contate o suporte.'],
     };
 
     if (mapa[err.message]) {
@@ -290,6 +323,10 @@ async function devolverCotaIPO(req, res) {
     const userId = req.usuario?.id;
     const legacyClubeId = Number(req.body.clubeId || req.params.id);
     const quantidade = normalizarQuantidade(req.body.quantidade);
+
+    if (getMarketMode() !== 'IPO') {
+      return res.status(409).json({ erro: 'Operação IPO indisponível no modo atual.' });
+    }
 
     if (!userId) {
       return res.status(401).json({ erro: 'Usuário não autenticado.' });
@@ -322,9 +359,19 @@ async function devolverCotaIPO(req, res) {
         throw new Error('IPO_ENCERRADO');
       }
 
+      // Ordens secundárias antigas abertas precisam ser canceladas antes da recompra IPO.
+      const existemOrdensAbertas = await Order.exists({
+        usuarioId: usuario._id, clubeId: clube._id,
+        tipo: 'venda', status: { $in: ['aberta', 'parcial'] }, restante: { $gt: 0 },
+      }).session(session);
+      if (existemOrdensAbertas) throw new Error('ORDENS_ABERTAS_CONFLITANTES');
+
       if (Number(clube.cotasEmitidas || 0) < quantidade) {
         throw new Error('COTAS_INSUFICIENTES_DEVOLUCAO');
       }
+
+      const liquidityState = await ensureLiquidityState(clube, session);
+      validarEstadoIpo(clube, liquidityState);
 
       const precoUnitario = getPrecoClube(clube);
 
@@ -336,11 +383,17 @@ async function devolverCotaIPO(req, res) {
 
       const total = round2(precoUnitario * quantidade);
       usuario.saldo = round2(Number(usuario.saldo || 0) + total);
+      liquidityState.buybackGross = round2(Number(liquidityState.buybackGross || 0) + total);
+      liquidityState.liquidationFund = round2(Number(liquidityState.liquidationFund || 0) - total);
 
       clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) + quantidade;
       clube.cotasEmitidas = Number(clube.cotasEmitidas || 0) - quantidade;
       clube.precoAtual = precoUnitario;
 
+      liquidityState.issuedShares = Number(clube.cotasEmitidas);
+      liquidityState.basePositionValue = precoUnitario;
+      liquidityState.lastRepricedAt = new Date();
+      await liquidityState.save({ session });
       await usuario.save({ session });
       await clube.save({ session });
 
@@ -393,7 +446,7 @@ async function devolverCotaIPO(req, res) {
       await investimento.save({ session });
 
       resposta = {
-        mensagem: 'Cotas devolvidas ao IPO com sucesso.',
+        mensagem: 'Venda ao sistema executada pelo preço atual da classificação.',
         tipo: 'IPO_RETURN',
         taxa: 0,
         valorBruto: total,
@@ -428,9 +481,11 @@ async function devolverCotaIPO(req, res) {
       IPO_ENCERRADO: [400, 'O IPO deste clube já foi encerrado.'],
       COTAS_INSUFICIENTES_DEVOLUCAO: [
         400,
-        'Você não possui cotas suficientes para devolver ao IPO.',
+        'Você não possui cotas suficientes para vender ao sistema.',
       ],
-      PRECO_INVALIDO: [400, 'Preço oficial do IPO inválido.'],
+      PRECO_INVALIDO: [400, 'Preço oficial indisponível: classificação inválida.'],
+      IPO_ESTOQUE_INCONSISTENTE: [409, 'Estoque IPO não reconciliado. Contate o suporte.'],
+      ORDENS_ABERTAS_CONFLITANTES: [409, 'Cancele suas ordens de venda abertas antes de devolver cotas ao IPO.'],
     };
 
     if (mapa[err.message]) {

@@ -1,4 +1,12 @@
 const express = require("express");
+const { getMarketMode } = require('../config/marketMode');
+const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
+function precoClubeExibicao(clube, fallback = 0) {
+  const pos = Number(clube?.posicao);
+  const total = Number(clube?.metadata?.totalParticipantes || 20);
+  return getMarketMode() === 'IPO' && clube && !clube.ipoEncerrado && Number.isInteger(pos) && pos >= 1 && pos <= total
+    ? calcularPrecoPorPosicao(pos, total) : Number(clube?.precoAtual ?? clube?.preco ?? fallback);
+}
 const router = express.Router();
 const auth = require("../middleware/auth");
 const Dividendo = require("../models/dividendos");
@@ -334,13 +342,13 @@ router.get("/ranking", auth, async (req, res) => {
         )
         .lean(),
 
-      Club.find({}).select("legacyId precoAtual preco").lean(),
+      Club.find({}).select("legacyId precoAtual preco posicao ipoEncerrado metadata.totalParticipantes").lean(),
     ]);
 
     const precosPorClube = new Map(
       clubes.map((clube) => [
         String(clube.legacyId),
-        Number(clube.precoAtual ?? clube.preco ?? 0),
+        precoClubeExibicao(clube),
       ]),
     );
 
@@ -736,7 +744,7 @@ router.get("/carteira", auth, async (req, res) => {
         const clube = clubesPorLegacyId.get(String(ativo.clubeId));
 
         const precoAtual = Number(
-          clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0,
+          precoClubeExibicao(clube, ativo.precoMedio ?? 0),
         );
 
         const valorAtual = Number(

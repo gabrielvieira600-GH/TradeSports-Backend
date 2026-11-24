@@ -21,6 +21,8 @@ const {
   obterPlanoEfetivo,
 } = require('../utils/planFeatures');
 const { performanceForPatrimony } = require('../utils/rankingPerformance');
+const { getMarketMode } = require('../config/marketMode');
+const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 
 function round2(valor) {
   return Number(Number(valor || 0).toFixed(2));
@@ -84,8 +86,11 @@ function calcularPatrimonioUsuario(
     );
 
     const precoAtualClube = Number(
-      clube?.precoAtual ??
-        clube?.preco
+      getMarketMode() === 'IPO' && clube && !clube.ipoEncerrado &&
+      Number.isInteger(Number(clube.posicao)) && Number(clube.posicao) >= 1 &&
+      Number(clube.posicao) <= Number(clube.metadata?.totalParticipantes || 20)
+        ? calcularPrecoPorPosicao(clube.posicao, clube.metadata?.totalParticipantes || 20)
+        : (clube?.precoAtual ?? clube?.preco)
     );
 
     const precoAtual = Number.isFinite(
@@ -484,7 +489,7 @@ router.get('/', auth, async (req, res) => {
     ] = await Promise.all([
       Club.find({})
         .select(
-          '_id legacyId nome escudo preco precoAtual'
+          '_id legacyId nome escudo preco precoAtual posicao ipoEncerrado metadata.totalParticipantes'
         )
         .lean(),
 

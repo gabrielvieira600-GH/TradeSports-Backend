@@ -25,6 +25,7 @@ const audit = require('../utils/audit');
 const ledger = require('../utils/ledger');
 
 const { loadCachedTable } = require('../services/sportsTableCache');
+const { getMarketMode } = require('../config/marketMode');
 
 function normalizarNome(str) {
 
@@ -684,12 +685,9 @@ router.get('/tabela-brasileirao', async (req, res) => {
           preco: Number(clubeLocal.preco || 0),
 
           precoAtual:
-
-            clubeLocal.precoAtual != null
-
-              ? Number(clubeLocal.precoAtual)
-
-              : Number(clubeLocal.preco || 0),
+            getMarketMode() === 'IPO' && !clubeLocal.ipoEncerrado
+              ? calcularPrecoPorPosicao(Number(item?.rank || clubeLocal.posicao))
+              : (clubeLocal.precoAtual != null ? Number(clubeLocal.precoAtual) : Number(clubeLocal.preco || 0)),
 
           cotasDisponiveis: Number(clubeLocal.cotasDisponiveis || 0),
 

@@ -12,8 +12,15 @@ const InstitutionalLiquidity = require('../models/InstitutionalLiquidity');
 const auth = require('../middleware/auth');
 
 const InvestimentoController = require('../controllers/InvestimentoController');
+const { getMarketMode } = require('../config/marketMode');
+const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 
 function toClubResponse(clube, liquidityState = null) {
+  const total = Number(clube.metadata?.totalParticipantes || 20);
+  const pos = Number(clube.posicao);
+  const precoIPO = Number.isInteger(pos) && pos >= 1 && pos <= total
+    ? calcularPrecoPorPosicao(pos, total) : null;
+  const ipoAtivo = getMarketMode() === 'IPO' && !Boolean(clube.ipoEncerrado);
 
   return {
 
@@ -26,20 +33,21 @@ function toClubResponse(clube, liquidityState = null) {
     posicao: clube.posicao ?? null,
 
     preco: Number(clube.preco || 0),
+    precoIPO,
 
     precoAtual:
 
-      clube.precoAtual != null ? Number(clube.precoAtual) : Number(clube.preco || 0),
+      ipoAtivo ? precoIPO : (clube.precoAtual != null ? Number(clube.precoAtual) : Number(clube.preco || 0)),
 
-    cotasDisponiveis: liquidityState
+    cotasDisponiveis: liquidityState && !ipoAtivo
       ? Math.max(0, Number(liquidityState.maxShares || 0) - Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0)))
       : Number(clube.cotasDisponiveis || 0),
 
-    cotasEmitidas: liquidityState
+    cotasEmitidas: liquidityState && !ipoAtivo
       ? Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0))
       : Number(clube.cotasEmitidas || 0),
 
-    cotasEmCirculacao: liquidityState
+    cotasEmCirculacao: liquidityState && !ipoAtivo
       ? Math.max(0, Number(liquidityState.issuedShares || 0) - Number(liquidityState.institutionHeldIssuedShares || 0))
       : Number(clube.cotasEmitidas || 0),
 
@@ -162,7 +170,7 @@ router.get('/:id/historico-precos', async (req, res) => {
      */
     const operacoes = await Investment.find({
       clubeLegacyId: legacyId,
-      tipo: { $in: ['COMPRA', 'COMPRA_SECUNDARIO'] },
+      tipo: { $in: ['COMPRA', 'COMPRA_SECUNDARIO', 'IPO', 'IPO_RETURN'] },
       ...filtroData,
     })
       .sort({ data: -1, createdAt: -1 })
@@ -219,7 +227,9 @@ router.get('/:id/historico-precos', async (req, res) => {
         volume: pontosCompletos.reduce((total, ponto) => total + ponto.volume, 0),
       },
       ipoLiquidacao: round2(clube.preco),
-      precoMercado: round2(clube.precoAtual ?? clube.preco),
+      precoMercado: getMarketMode() === 'IPO' && !clube.ipoEncerrado && Number.isInteger(Number(clube.posicao))
+        ? calcularPrecoPorPosicao(clube.posicao, clube.metadata?.totalParticipantes || 20)
+        : round2(clube.precoAtual ?? clube.preco),
     });
   } catch (err) {
     console.error('Erro ao carregar histÃ³rico de preÃ§os:', err);

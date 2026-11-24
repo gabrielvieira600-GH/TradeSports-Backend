@@ -5,6 +5,7 @@ const mercados = require('../config/sportsMarkets');
 const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 const { loadCachedTable } = require('../services/sportsTableCache');
 const MarketControl = require('../models/MarketControl');
+const { getMarketMode } = require('../config/marketMode');
 
 const router = express.Router();
 
@@ -176,7 +177,7 @@ async function sincronizar(config, classificacao) {
       id: clube.legacyId, legacyId: clube.legacyId, nome: clube.nome, escudo: clube.escudo,
       posicao: item.posicao, pontos: item.pontos, jogos: item.jogos, vitorias: item.vitorias,
       empates: item.empates, derrotas: item.derrotas, saldo: item.saldo, grupo: item.grupo,
-      preco: Number(clube.preco || 0), precoAtual: clube.precoAtual == null ? Number(clube.preco || 0) : Number(clube.precoAtual),
+      preco: Number(clube.preco || 0), precoAtual: getMarketMode() === 'IPO' && !clube.ipoEncerrado ? calcularPrecoPorPosicao(item.posicao, config.participantes) : (clube.precoAtual == null ? Number(clube.preco || 0) : Number(clube.precoAtual)),
       cotasDisponiveis: Number(clube.cotasDisponiveis || 0), cotasEmitidas: Number(clube.cotasEmitidas || 0),
       ipoEncerrado: Boolean(clube.ipoEncerrado),
     });

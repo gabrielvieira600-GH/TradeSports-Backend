@@ -162,7 +162,8 @@ function normalizeBookView(value) {
 }
 
 function visibleOrdersForBook(orders = [], view = null) {
-  if (!isUnifiedLiquidity()) return orders;
+  // Book institucional também é usado no secundário após o IPO.
+  if (!isUnifiedLiquidity() && getMarketMode() !== 'IPO') return orders;
 
   const hasUserOrder = {
     compra: orders.some(
@@ -443,7 +444,7 @@ router.get('/livro', async (req, res) => {
       return res.status(404).json({ erro: 'Clube nÃ£o encontrado.' });
     }
 
-    if (isUnifiedLiquidity()) {
+    if (isUnifiedLiquidity() || Boolean(clubeDocumento.ipoEncerrado)) {
       await ensureOrdersForClub(clubeDocumento);
     }
 
@@ -524,7 +525,7 @@ router.get('/livro/:clubeId', authOpcional, async (req, res) => {
     // O book nunca depende da primeira ordem do usuário para receber liquidez.
     // Se uma reinicialização ou transição administrativa deixou a oferta
     // institucional ausente, ela é reconciliada antes da leitura do livro.
-    if (isUnifiedLiquidity()) {
+    if (isUnifiedLiquidity() || Boolean(clubeDocumento.ipoEncerrado)) {
       await ensureOrdersForClub(clubeDocumento);
     }
 
@@ -1464,7 +1465,7 @@ router.post('/ordem', auth, async (req, res) => {
        * posição esportiva mudou, a cotação institucional antiga precisa ser
        * substituída antes do matching para nunca executar pelo preço defasado.
        */
-      if (isUnifiedLiquidity()) {
+      if (isUnifiedLiquidity() || Boolean(clube.ipoEncerrado)) {
         const liquidity = await ensureOrdersForClub(clube, { session });
         liquidityStateForOrder = liquidity.state;
 
@@ -1606,7 +1607,7 @@ router.post('/ordem', auth, async (req, res) => {
       let contrapartes;
       let priorityUserCounterparts = [];
 
-      if (isUnifiedLiquidity()) {
+      if (isUnifiedLiquidity() || Boolean(clube.ipoEncerrado)) {
         const counterpartType = tipo === 'compra' ? 'venda' : 'compra';
         const userCounterpartSort = tipo === 'compra'
           ? { preco: 1, criadoEm: 1 }
@@ -2074,7 +2075,7 @@ router.post('/ordem', auth, async (req, res) => {
         session,
       });
 
-      if (isUnifiedLiquidity() && !ordem.isInstitutional) {
+      if ((isUnifiedLiquidity() || Boolean(clube.ipoEncerrado)) && !ordem.isInstitutional) {
         /*
          * Mantém as cotações automáticas alinhadas à posição esportiva. Elas
          * podem continuar persistidas como reserva, mas o book e o matching
@@ -2243,7 +2244,7 @@ router.post('/ordem', auth, async (req, res) => {
       );
     }
 
-    if (isUnifiedLiquidity()) {
+    if (isUnifiedLiquidity() || getMarketMode() === 'IPO') {
       await enforceSolvency().catch((error) =>
         console.error('Falha ao recalcular solvência institucional:', error)
       );
@@ -2460,9 +2461,9 @@ router.post('/ordem/cancelar/:id', auth, async (req, res) => {
 
     await ordem.save();
 
-    if (isUnifiedLiquidity() && !ordem.isInstitutional) {
+    if (!ordem.isInstitutional) {
       const clube = await Club.findById(ordem.clubeId);
-      if (clube) await ensureOrdersForClub(clube);
+      if (clube && (isUnifiedLiquidity() || clube.ipoEncerrado)) await ensureOrdersForClub(clube);
     }
 
     const usuario = await User.findById(req.usuario.id);

@@ -1,3 +1,6 @@
+const { getMarketMode } = require('../config/marketMode');
+const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
+
 function text(value) {
   return String(value || '').trim();
 }
@@ -25,9 +28,9 @@ function toCachedTableItem(club) {
     saldoGols: number(stats.saldoGols ?? stats.saldo),
     grupo: text(stats.grupo),
     preco: number(club.preco),
-    precoAtual: club.precoAtual == null
-      ? number(club.preco)
-      : number(club.precoAtual),
+    precoAtual: getMarketMode() === 'IPO' && !club.ipoEncerrado && Number.isInteger(Number(club.posicao)) && Number(club.posicao) >= 1 && Number(club.posicao) <= Number(club.metadata?.totalParticipantes || 20)
+      ? calcularPrecoPorPosicao(club.posicao, club.metadata?.totalParticipantes || 20)
+      : (club.precoAtual == null ? number(club.preco) : number(club.precoAtual)),
     cotasDisponiveis: number(club.cotasDisponiveis),
     cotasEmitidas: number(club.cotasEmitidas),
     ipoEncerrado: Boolean(club.ipoEncerrado),

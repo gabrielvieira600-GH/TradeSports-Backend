@@ -1,12 +1,16 @@
 const Club = require('../models/Club');
 const Order = require('../models/Order');
 const { round2 } = require('./rankingPerformance');
+const { getMarketMode } = require('../config/marketMode');
+const { calcularPrecoPorPosicao } = require('./liquidationPrice');
 
 function clubPriceMap(clubs = []) {
   return new Map(
     clubs.map((club) => [
       String(club.legacyId),
-      Number(club.precoAtual ?? club.preco ?? 0),
+      getMarketMode() === 'IPO' && !club.ipoEncerrado && Number.isInteger(Number(club.posicao)) && Number(club.posicao) >= 1 && Number(club.posicao) <= Number(club.metadata?.totalParticipantes || 20)
+        ? calcularPrecoPorPosicao(club.posicao, club.metadata?.totalParticipantes || 20)
+        : Number(club.precoAtual ?? club.preco ?? 0),
     ])
   );
 }
@@ -24,7 +28,7 @@ function positionsValue(user, prices) {
 }
 
 async function valueUserPortfolio(user, { session = null, includeOrders = false } = {}) {
-  const clubQuery = Club.find({}).select('legacyId precoAtual preco').lean();
+  const clubQuery = Club.find({}).select('legacyId precoAtual preco posicao ipoEncerrado metadata.totalParticipantes').lean();
   if (session) clubQuery.session(session);
   const clubs = await clubQuery;
   const prices = clubPriceMap(clubs);

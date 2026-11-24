@@ -9,8 +9,19 @@ const Dividendo = require('../models/dividendos');
 const PerformanceSnapshot = require('../models/PerformanceSnapshot');
 const { obterPlanoEfetivo } = require('../utils/planFeatures');
 const { performanceForPatrimony } = require('../utils/rankingPerformance');
+const { getMarketMode } = require('../config/marketMode');
+const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 
 const router = express.Router();
+
+function precoExibicao(clube, fallback = 0) {
+  const pos = Number(clube?.posicao);
+  const total = Number(clube?.metadata?.totalParticipantes || 20);
+  if (getMarketMode() === 'IPO' && clube && !clube.ipoEncerrado && Number.isInteger(pos) && pos >= 1 && pos <= total) {
+    return calcularPrecoPorPosicao(pos, total);
+  }
+  return Number(clube?.precoAtual ?? clube?.preco ?? fallback);
+}
 
 const PERIODOS = new Set(['7d', '30d', 'temporada', 'personalizado']);
 
@@ -70,7 +81,7 @@ function resolverPeriodo(req, usuario) {
 
 function dadosClube(clube, ativo) {
   const precoMedio = Number(ativo.precoMedio || 0);
-  const precoAtual = Number(clube?.precoAtual ?? clube?.preco ?? precoMedio);
+  const precoAtual = precoExibicao(clube, precoMedio);
   const quantidade = Number(ativo.quantidade || 0);
   const investido = round2(
     Number.isFinite(Number(ativo.totalInvestido))
@@ -237,7 +248,7 @@ async function calcularRanking(usuarioId, clubes) {
     .map((usuario) => {
       const valorPosicoes = (usuario.carteira || []).reduce((soma, ativo) => {
         const clube = mapa.get(Number(ativo.clubeId));
-        const preco = Number(clube?.precoAtual ?? clube?.preco ?? ativo.precoMedio ?? 0);
+        const preco = precoExibicao(clube, ativo.precoMedio ?? 0);
         return soma + Number(ativo.quantidade || 0) * preco;
       }, 0);
       const patrimonio = round2(Number(usuario.saldo || 0) + valorPosicoes);

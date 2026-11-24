@@ -24,7 +24,7 @@ const auth = require("./middleware/auth");
 const User = require("./models/User");
 const LegalAcceptance = require("./models/LegalAcceptance");
 const Club = require("./models/Club");
-const { isUnifiedLiquidity } = require('./config/marketMode');
+const { isUnifiedLiquidity, getMarketMode } = require('./config/marketMode');
 const { publishOrdersForClub } = require('./services/institutionalLiquidity');
 const {
   LEGAL_DOCUMENTS,
@@ -148,10 +148,12 @@ connectDB()
     iniciarAgendadorTrofeus();
     iniciarAgendadorNotificacoesPush();
     startPremiumExpiryJob();
-    if (isUnifiedLiquidity()) {
+    if (isUnifiedLiquidity() || getMarketMode() === 'IPO') {
       try {
         const clubes = await Club.find({});
-        for (const clube of clubes) await publishOrdersForClub(clube);
+        for (const clube of clubes) {
+          if (isUnifiedLiquidity() || clube.ipoEncerrado) await publishOrdersForClub(clube);
+        }
         console.log(`[LIQUIDEZ] Livro reconciliado para ${clubes.length} clube(s).`);
       } catch (erro) {
         console.error('[LIQUIDEZ] Falha na reconciliação inicial:', erro);
