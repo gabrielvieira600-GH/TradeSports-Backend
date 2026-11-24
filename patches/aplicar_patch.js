@@ -36,7 +36,12 @@ function main() {
       if (!file.startsWith(root + path.sep)) throw new Error(`Caminho inválido: ${step.path}`);
       if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${file}`);
       const original = fs.readFileSync(file, 'utf8');
-      current = { root, repo: step.root, relative: step.path, file, original, updated: original };
+      // Âncoras do manifesto foram produzidas com LF. Em Windows, arquivos
+      // existentes podem usar CRLF; normalizamos somente para comparar.
+      const newline = (original.match(/\r\n/g) || []).length >
+        (original.match(/(?<!\r)\n/g) || []).length ? '\r\n' : '\n';
+      const normalized = original.replace(/\r\n?/g, '\n');
+      current = { root, repo: step.root, relative: step.path, file, original, newline, updated: normalized };
       continue;
     }
     if (!current) throw new Error('Manifesto inválido: operação sem arquivo.');
@@ -44,7 +49,10 @@ function main() {
       if (!step.old) throw new Error(`Âncora vazia em ${step.label}`);
       const found = current.updated.split(step.old).length - 1;
       if (found !== step.count) {
-        throw new Error(`${current.repo}/${current.relative} [${step.label}]: âncora encontrada ${found} vez(es), esperado ${step.count}. Nenhuma alteração aplicada.`);
+        const localNotice = current.relative === 'server.js'
+          ? ' O server.js local pode ter diferenças em relação à branch main; se persistir, envie o trecho entre connectDB() e a reconciliação institucional.'
+          : ' O arquivo local pode ter diferenças em relação à branch main.';
+        throw new Error(`${current.repo}/${current.relative} [${step.label}]: âncora encontrada ${found} vez(es), esperado ${step.count}. Nenhuma alteração aplicada.${localNotice}`);
       }
       current.updated = current.updated.split(step.old).join(step.new);
       continue;
@@ -62,7 +70,13 @@ function main() {
       continue;
     }
     if (step.op === 'end') {
-      if (current.original === current.updated) throw new Error(`Nenhuma alteração em ${current.relative}`);
+      if (current.original.replace(/\r\n?/g, '\n') === current.updated) {
+        throw new Error(`Nenhuma alteração em ${current.relative}`);
+      }
+      // Preserva o padrão de final de linha do arquivo original.
+      current.updated = current.newline === '\r\n'
+        ? current.updated.replace(/\n/g, '\r\n')
+        : current.updated;
       plan.push(current);
       current = null;
       continue;
