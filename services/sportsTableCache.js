@@ -1,5 +1,7 @@
 const { getMarketMode } = require('../config/marketMode');
 const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
+const markets = require('../config/sportsMarkets');
+const {currentSeasonFilter,assertCurrentRoster} = require('../utils/currentSeasonScope');
 
 function text(value) {
   return String(value || '').trim();
@@ -57,9 +59,13 @@ function marketFilter(marketId) {
 }
 
 async function loadCachedTable(ClubModel, marketId) {
-  const clubs = await ClubModel.find(marketFilter(marketId))
+  const market = markets[marketId];
+  if (!market) throw new Error('MERCADO_DESCONHECIDO');
+  // Não incluir clubes de 2023/2024 que ainda possuem histórico no banco.
+  const clubs = await ClubModel.find({$and:[marketFilter(marketId),currentSeasonFilter(market)]})
     .sort({ posicao: 1, nome: 1 })
     .lean();
+  assertCurrentRoster(clubs,market);
 
   const table = clubs
     .map(toCachedTableItem)

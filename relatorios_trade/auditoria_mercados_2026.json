@@ -1,0 +1,1719 @@
+{
+  "generatedAt": "2026-11-24T20:42:45.866Z",
+  "mode": "READ_ONLY",
+  "markets": [
+    {
+      "id": "brasileirao-a",
+      "name": "Brasileirão Série A",
+      "sport": "football",
+      "season": "2026",
+      "expected": 20,
+      "records": 20,
+      "current": 20,
+      "stale": 0,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "OK",
+      "staleRecords": []
+    },
+    {
+      "id": "brasileirao-b",
+      "name": "Brasileirão Série B",
+      "sport": "football",
+      "season": "2026",
+      "expected": 20,
+      "records": 25,
+      "current": 20,
+      "stale": 5,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "Amazonas",
+          "_id": "6a7b75a053baf188f386785d",
+          "legacyId": 7210862,
+          "season": "2024",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Paysandu",
+          "_id": "6a7b75a053baf188f386785f",
+          "legacyId": 7200149,
+          "season": "2024",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Ituano",
+          "_id": "6a7b75a253baf188f3867864",
+          "legacyId": 7207779,
+          "season": "2024",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Brusque",
+          "_id": "6a7b75a253baf188f3867865",
+          "legacyId": 7201211,
+          "season": "2024",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Guarani Campinas",
+          "_id": "6a7b75a253baf188f3867866",
+          "legacyId": 7200138,
+          "season": "2024",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "premier-league",
+      "name": "Premier League",
+      "sport": "football",
+      "season": "2026",
+      "expected": 20,
+      "records": 25,
+      "current": 20,
+      "stale": 5,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "West Ham",
+          "_id": "6a7b7ef653baf188f3867b4d",
+          "legacyId": 3900048,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Wolves",
+          "_id": "6a7b7ef853baf188f3867b52",
+          "legacyId": 3900039,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Luton",
+          "_id": "6a7b7ef953baf188f3867b56",
+          "legacyId": 3901359,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Burnley",
+          "_id": "6a7b7ef953baf188f3867b57",
+          "legacyId": 3900044,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Sheffield Utd",
+          "_id": "6a7b7ef953baf188f3867b58",
+          "legacyId": 3900062,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "champions-league",
+      "name": "UEFA Champions League — Fase de Liga",
+      "sport": "football",
+      "season": "2026",
+      "expected": 36,
+      "records": 36,
+      "current": 36,
+      "stale": 0,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "OK",
+      "staleRecords": []
+    },
+    {
+      "id": "la-liga",
+      "name": "La Liga",
+      "sport": "football",
+      "season": "2026",
+      "expected": 20,
+      "records": 26,
+      "current": 20,
+      "stale": 6,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "Girona",
+          "_id": "6a7b766153baf188f38678b2",
+          "legacyId": 14000547,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Mallorca",
+          "_id": "6a7b766453baf188f38678be",
+          "legacyId": 14000798,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Las Palmas",
+          "_id": "6a7b766553baf188f38678bf",
+          "legacyId": 14000534,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Cadiz",
+          "_id": "6a7b766553baf188f38678c1",
+          "legacyId": 14000724,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Almeria",
+          "_id": "6a7b766553baf188f38678c2",
+          "legacyId": 14000723,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Granada CF",
+          "_id": "6a7b766553baf188f38678c3",
+          "legacyId": 14000715,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "bundesliga",
+      "name": "Bundesliga",
+      "sport": "football",
+      "season": "2026",
+      "expected": 18,
+      "records": 22,
+      "current": 18,
+      "stale": 4,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "FC Heidenheim",
+          "_id": "6ae3ad9f8dbfe4b2cc17cf2d",
+          "legacyId": 7800180,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "VfL Wolfsburg",
+          "_id": "6ae3ada08dbfe4b2cc17cf31",
+          "legacyId": 7800161,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 2,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Vfl Bochum",
+          "_id": "6ae3ada18dbfe4b2cc17cf35",
+          "legacyId": 7800176,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "SV Darmstadt 98",
+          "_id": "6ae3ada18dbfe4b2cc17cf37",
+          "legacyId": 7800181,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "ligue-1",
+      "name": "Ligue 1",
+      "sport": "football",
+      "season": "2026",
+      "expected": 18,
+      "records": 23,
+      "current": 18,
+      "stale": 5,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "Reims",
+          "_id": "6a7b76a053baf188f38678e2",
+          "legacyId": 6100093,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Montpellier",
+          "_id": "6a7b76a053baf188f38678e5",
+          "legacyId": 6100082,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Nantes",
+          "_id": "6a7b76a153baf188f38678e7",
+          "legacyId": 6100083,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Metz",
+          "_id": "6a7b76a153baf188f38678e9",
+          "legacyId": 6100112,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Clermont Foot",
+          "_id": "6a7b76a253baf188f38678eb",
+          "legacyId": 6100099,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "serie-a",
+      "name": "Serie A",
+      "sport": "football",
+      "season": "2026",
+      "expected": 20,
+      "records": 60,
+      "current": 20,
+      "stale": 40,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "Inter",
+          "_id": "6a7b9cd553baf188f38683e6",
+          "legacyId": 6100505,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "AC Milan",
+          "_id": "6a7b9cd553baf188f38683e7",
+          "legacyId": 6100489,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Juventus",
+          "_id": "6a7b9cd553baf188f38683e9",
+          "legacyId": 6100496,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Atalanta",
+          "_id": "6a7b9cd653baf188f38683ea",
+          "legacyId": 6100499,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Bologna",
+          "_id": "6a7b9cd653baf188f38683eb",
+          "legacyId": 6100500,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "AS Roma",
+          "_id": "6a7b9cd653baf188f38683ec",
+          "legacyId": 6100497,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Lazio",
+          "_id": "6a7b9cd653baf188f38683ed",
+          "legacyId": 6100487,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Fiorentina",
+          "_id": "6a7b9cd753baf188f38683ee",
+          "legacyId": 6100502,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Torino",
+          "_id": "6a7b9cd753baf188f38683ef",
+          "legacyId": 6100503,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Napoli",
+          "_id": "6a7b9cd753baf188f38683f0",
+          "legacyId": 6100492,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Genoa",
+          "_id": "6a7b9cd753baf188f38683f1",
+          "legacyId": 6100495,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Monza",
+          "_id": "6a7b9cd853baf188f38683f2",
+          "legacyId": 6101579,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Verona",
+          "_id": "6a7b9cd853baf188f38683f3",
+          "legacyId": 6100504,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Lecce",
+          "_id": "6a7b9cd853baf188f38683f4",
+          "legacyId": 6100867,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Udinese",
+          "_id": "6a7b9cd853baf188f38683f5",
+          "legacyId": 6100494,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Cagliari",
+          "_id": "6a7b9cd953baf188f38683f6",
+          "legacyId": 6100490,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Empoli",
+          "_id": "6a7b9cd953baf188f38683f7",
+          "legacyId": 6100511,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Frosinone",
+          "_id": "6a7b9cd953baf188f38683f8",
+          "legacyId": 6100512,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Sassuolo",
+          "_id": "6a7b9cd953baf188f38683f9",
+          "legacyId": 6100488,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Salernitana",
+          "_id": "6a7b9cda53baf188f38683fa",
+          "legacyId": 6100514,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Inter",
+          "_id": "6abad5e5261715b627ce0660",
+          "legacyId": 14401000,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "AC Milan",
+          "_id": "6abad5e5261715b627ce0661",
+          "legacyId": 14401001,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Juventus",
+          "_id": "6abad5e5261715b627ce0662",
+          "legacyId": 14401002,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Atalanta",
+          "_id": "6abad5e6261715b627ce0663",
+          "legacyId": 14401003,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Bologna",
+          "_id": "6abad5e6261715b627ce0664",
+          "legacyId": 14401004,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "AS Roma",
+          "_id": "6abad5e6261715b627ce0665",
+          "legacyId": 14401005,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Lazio",
+          "_id": "6abad5e6261715b627ce0666",
+          "legacyId": 14401006,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Fiorentina",
+          "_id": "6abad5e6261715b627ce0667",
+          "legacyId": 14401007,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Torino",
+          "_id": "6abad5e7261715b627ce0668",
+          "legacyId": 14401008,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Napoli",
+          "_id": "6abad5e7261715b627ce0669",
+          "legacyId": 14401009,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Genoa",
+          "_id": "6abad5e7261715b627ce066a",
+          "legacyId": 14401010,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Monza",
+          "_id": "6abad5e7261715b627ce066b",
+          "legacyId": 14401011,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Verona",
+          "_id": "6abad5e8261715b627ce066c",
+          "legacyId": 14401012,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Lecce",
+          "_id": "6abad5e8261715b627ce066d",
+          "legacyId": 14401013,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Udinese",
+          "_id": "6abad5e8261715b627ce066e",
+          "legacyId": 14401014,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Cagliari",
+          "_id": "6abad5e8261715b627ce066f",
+          "legacyId": 14401015,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Empoli",
+          "_id": "6abad5e9261715b627ce0670",
+          "legacyId": 14401016,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Frosinone",
+          "_id": "6abad5e9261715b627ce0671",
+          "legacyId": 14401017,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Sassuolo",
+          "_id": "6abad5e9261715b627ce0672",
+          "legacyId": 14401018,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Salernitana",
+          "_id": "6abad5e9261715b627ce0673",
+          "legacyId": 14401019,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "eredivisie",
+      "name": "Eredivisie",
+      "sport": "football",
+      "season": "2026",
+      "expected": 18,
+      "records": 36,
+      "current": 18,
+      "stale": 18,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_FOOTBALL_KEY",
+        "present": true
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "PSV",
+          "_id": "6abad5d9261715b627ce064b",
+          "legacyId": 9702000,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Feyenoord",
+          "_id": "6abad5da261715b627ce064c",
+          "legacyId": 9702001,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "FC Twente",
+          "_id": "6abad5da261715b627ce064d",
+          "legacyId": 9702002,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "AZ Alkmaar",
+          "_id": "6abad5da261715b627ce064e",
+          "legacyId": 9702003,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Ajax",
+          "_id": "6abad5db261715b627ce064f",
+          "legacyId": 9702004,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "NEC Nijmegen",
+          "_id": "6abad5db261715b627ce0650",
+          "legacyId": 9702005,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "FC Utrecht",
+          "_id": "6abad5db261715b627ce0651",
+          "legacyId": 9702006,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Sparta Rotterdam",
+          "_id": "6abad5db261715b627ce0652",
+          "legacyId": 9702007,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Go Ahead Eagles",
+          "_id": "6abad5dc261715b627ce0653",
+          "legacyId": 9702008,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Fortuna Sittard",
+          "_id": "6abad5dc261715b627ce0654",
+          "legacyId": 9702009,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "SC Heerenveen",
+          "_id": "6abad5dc261715b627ce0655",
+          "legacyId": 9702010,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "PEC Zwolle",
+          "_id": "6abad5dc261715b627ce0656",
+          "legacyId": 9702011,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Almere City",
+          "_id": "6abad5dc261715b627ce0658",
+          "legacyId": 9702012,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Heracles Almelo",
+          "_id": "6abad5dd261715b627ce0659",
+          "legacyId": 9702013,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "RKC Waalwijk",
+          "_id": "6abad5dd261715b627ce065a",
+          "legacyId": 9702014,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Excelsior Rotterdam",
+          "_id": "6abad5dd261715b627ce065b",
+          "legacyId": 9702015,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "FC Volendam",
+          "_id": "6abad5dd261715b627ce065c",
+          "legacyId": 9702016,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Vitesse",
+          "_id": "6abad5de261715b627ce065d",
+          "legacyId": 9702017,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "nba-oeste",
+      "name": "NBA — Conferência Oeste",
+      "sport": "nba",
+      "season": "2026",
+      "expected": 15,
+      "records": 30,
+      "current": 15,
+      "stale": 15,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_NBA_KEY",
+        "present": false
+      },
+      "status": "REVISAR",
+      "staleRecords": [
+        {
+          "nome": "Oklahoma City Thunder",
+          "_id": "6a7b9ce653baf188f38683ff",
+          "legacyId": 100000025,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Denver Nuggets",
+          "_id": "6a7b9ce753baf188f3868400",
+          "legacyId": 100000009,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Minnesota Timberwolves",
+          "_id": "6a7b9ce753baf188f3868401",
+          "legacyId": 100000022,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Utah Jazz",
+          "_id": "6a7b9ce753baf188f3868402",
+          "legacyId": 100000040,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Portland Trail Blazers",
+          "_id": "6a7b9ce753baf188f3868403",
+          "legacyId": 100000029,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "LA Clippers",
+          "_id": "6a7b9ce853baf188f3868404",
+          "legacyId": 100000016,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Phoenix Suns",
+          "_id": "6a7b9ce853baf188f3868405",
+          "legacyId": 100000028,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Los Angeles Lakers",
+          "_id": "6a7b9ce853baf188f3868406",
+          "legacyId": 100000017,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Sacramento Kings",
+          "_id": "6a7b9ce853baf188f3868407",
+          "legacyId": 100000030,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Golden State Warriors",
+          "_id": "6a7b9ce953baf188f3868408",
+          "legacyId": 100000011,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Dallas Mavericks",
+          "_id": "6a7b9ce953baf188f3868409",
+          "legacyId": 100000008,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "New Orleans Pelicans",
+          "_id": "6a7b9ce953baf188f386840a",
+          "legacyId": 100000023,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Houston Rockets",
+          "_id": "6a7b9ce953baf188f386840b",
+          "legacyId": 100000014,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "Memphis Grizzlies",
+          "_id": "6a7b9cea53baf188f386840c",
+          "legacyId": 100000019,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        },
+        {
+          "nome": "San Antonio Spurs",
+          "_id": "6a7b9cea53baf188f386840d",
+          "legacyId": 100000031,
+          "season": "2023",
+          "cotasEmitidas": 0,
+          "cotasDisponiveis": 1000,
+          "refs": {
+            "positionUsers": 0,
+            "orders": 1,
+            "investmentHistory": 0,
+            "institutionState": 1
+          },
+          "classification": "PRESERVAR_E_INVESTIGAR"
+        }
+      ]
+    },
+    {
+      "id": "nba-leste",
+      "name": "NBA — Conferência Leste",
+      "sport": "nba",
+      "season": "2026",
+      "expected": 15,
+      "records": 15,
+      "current": 15,
+      "stale": 0,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_NBA_KEY",
+        "present": false
+      },
+      "status": "OK",
+      "staleRecords": []
+    },
+    {
+      "id": "nfl-afc",
+      "name": "NFL — AFC",
+      "sport": "nfl",
+      "season": "2026",
+      "expected": 16,
+      "records": 16,
+      "current": 16,
+      "stale": 0,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_NFL_KEY",
+        "present": false
+      },
+      "status": "OK",
+      "staleRecords": []
+    },
+    {
+      "id": "nfl-nfc",
+      "name": "NFL — NFC",
+      "sport": "nfl",
+      "season": "2026",
+      "expected": 16,
+      "records": 16,
+      "current": 16,
+      "stale": 0,
+      "duplicateProviders": [],
+      "duplicateLegacy": [],
+      "credential": {
+        "variable": "API_NFL_KEY",
+        "present": false
+      },
+      "status": "OK",
+      "staleRecords": []
+    }
+  ],
+  "globalWarnings": []
+}

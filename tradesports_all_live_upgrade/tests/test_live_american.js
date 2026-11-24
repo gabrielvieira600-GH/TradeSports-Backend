@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('assert');
+// This unit test validates a projection without requiring database/API credentials.
+const fs=require('fs'); const vm=require('vm'); const path=require('path');
+const filename=path.join(__dirname,'../files/services/liveAmericanTable.js');
+const sandbox={module:{exports:{}},exports:{},console,process,Date,Map,Set,Promise,require:(id)=>{if(id==='axios')return {};if(id==='mongoose')return {};if(id==='../models/Club')return {};if(id==='../config/sportsMarkets')return {};if(id==='../config/marketMode')return {getMarketMode:()=> 'IPO'};if(id==='../utils/liquidationPrice')return {calcularPrecoPorPosicao:()=>5}; throw Error('Unexpected dependency: '+id);}};
+vm.runInNewContext(fs.readFileSync(filename,'utf8'),sandbox,{filename}); const mod=sandbox.module.exports;
+const nba=[{id:1,cf:'east',win:9,loss:2,tie:0,official:2},{id:2,cf:'east',win:10,loss:3,tie:0,official:1}];
+const game={id:123,season:2026,status:{short:'2'},teams:{home:{id:1},visitors:{id:2}},scores:{home:{points:95},visitors:{points:86}}};
+const changed=mod.liveOverlay(nba,[game],'nba',2026);
+assert.strictEqual(changed.live,true);
+assert.strictEqual(changed.rows.find(x=>x.id===1).win,10);
+assert.strictEqual(changed.rows.find(x=>x.id===2).loss,4);
+mod.rankRows(changed.rows,true);
+assert.strictEqual(changed.rows.find(x=>x.id===1).posicao,1);
+const base=mod.liveOverlay(nba,[],'nba',2026);
+assert.strictEqual(base.live,false);
+assert.strictEqual(base.rows.find(x=>x.id===1).win,9);
+const nfl=[{id:10,cf:'afc',win:6,loss:3,tie:0,official:2},{id:11,cf:'afc',win:6,loss:2,tie:1,official:1}];
+const tied={id:777,season:2026,status:{short:'Q2'},teams:{home:{id:10},away:{id:11}},scores:{home:{total:17},away:{total:17}}};
+const liveNFL=mod.liveOverlay(nfl,[tied],'nfl',2026);
+assert.strictEqual(liveNFL.rows.find(x=>x.id===10).tie,1);
+assert.strictEqual(liveNFL.rows.find(x=>x.id===11).tie,2);
+console.log('OK: NBA/NFL: liderança ao vivo, empates e dados sem jogos ativos.');

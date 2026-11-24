@@ -387,10 +387,10 @@ async function reconciliarQuotaComOrdensExecutadas({
   if (session) consulta = consulta.session(session);
   const ordensSecundario = await consulta;
 
-  // Cada compra IPO já concluída conta uma ordem; devolução IPO não consome.
+  // Toda compra ou venda IPO executada consome uma ordem. Conta cada operação uma vez.
   let consultaIPO = Investment.countDocuments({
     usuarioId: usuario._id,
-    tipo: 'IPO',
+    tipo: { $in: ['IPO', 'IPO_RETURN'] },
     data: { $gte: janela.periodoInicio, $lt: janela.periodoFim },
   });
   if (session) consultaIPO = consultaIPO.session(session);

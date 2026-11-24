@@ -11,6 +11,7 @@ const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 const { getMarketMode } = require('../config/marketMode');
 const { ensureLiquidityState } = require('../services/institutionalLiquidity');
 const Order = require('../models/Order');
+const { assertFreshForClub } = require('../services/liveSportsTable');
 const RankingSeason = require('../models/RankingSeason');
 const { obterPlanoEfetivo } = require('../utils/planFeatures');
 const {
@@ -156,6 +157,9 @@ async function comprarCota(req, res) {
     }
 
     let resposta;
+    // Reavalia resultados e posições antes de permitir negociar pelo preço vigente.
+    const clubePreflight = await Club.findOne({ legacyId: legacyClubeId }).lean();
+    if (clubePreflight) await assertFreshForClub(clubePreflight);
 
     await session.withTransaction(async () => {
       const usuario = mongoose.Types.ObjectId.isValid(String(userId))
@@ -188,6 +192,10 @@ async function comprarCota(req, res) {
       validarEstadoIpo(clube, liquidityState);
 
       const precoUnitario = getPrecoClube(clube);
+      const precoEsperado = Number(req.body?.precoEsperado);
+      if (!Number.isFinite(precoEsperado) || Math.abs(precoEsperado - precoUnitario) > 0.001) {
+        throw new Error('PRECO_ATUALIZADO');
+      }
 
       if (!Number.isFinite(precoUnitario) || precoUnitario <= 0) {
         throw new Error('PRECO_INVALIDO');
@@ -333,6 +341,10 @@ clube.cotasDisponiveis = Number(clube.cotasDisponiveis || 0) - quantidade;
     return res.json(resposta);
   } catch (err) {
     console.error('Erro ao comprar cota IPO:', err);
+    if (err?.liveData) return res.status(503).json({ codigo: 'DADOS_ESPORTIVOS_INDISPONIVEIS',
+      erro: 'Preço indisponível: não foi possível confirmar a classificação atualizada.' });
+    if (err?.message === 'PRECO_ATUALIZADO') return res.status(409).json({ codigo: 'PRECO_ATUALIZADO',
+      erro: 'O preço mudou com a classificação. Confira o novo preço e confirme novamente.' });
 
     if (err?.message === 'LIMITE_SEMANAL_ORDENS_ATINGIDO') {
       return res.status(403).json({
@@ -396,6 +408,9 @@ async function devolverCotaIPO(req, res) {
     }
 
     let resposta;
+    // Reavalia resultados e posições antes de permitir negociar pelo preço vigente.
+    const clubePreflight = await Club.findOne({ legacyId: legacyClubeId }).lean();
+    if (clubePreflight) await assertFreshForClub(clubePreflight);
 
     await session.withTransaction(async () => {
       const usuario = await User.findById(userId).session(session);
@@ -429,9 +444,30 @@ async function devolverCotaIPO(req, res) {
       validarEstadoIpo(clube, liquidityState);
 
       const precoUnitario = getPrecoClube(clube);
+      const precoEsperado = Number(req.body?.precoEsperado);
+      if (!Number.isFinite(precoEsperado) || Math.abs(precoEsperado - precoUnitario) > 0.001) {
+        throw new Error('PRECO_ATUALIZADO');
+      }
 
       if (!Number.isFinite(precoUnitario) || precoUnitario <= 0) {
         throw new Error('PRECO_INVALIDO');
+      }
+
+      // A venda ao sistema também é uma ordem executada e compartilha a franquia Lite.
+      const temporadaIPO = await RankingSeason.findOne({ status: 'ativa' })
+        .sort({ iniciadaEm: -1, createdAt: -1 }).session(session);
+      if (!temporadaIPO) throw new Error('TEMPORADA_NAO_ATIVA');
+      if (temporadaIPO.mercadoAberto === false) throw new Error('MERCADO_FECHADO');
+      const planoIPO = obterPlanoEfetivo(usuario);
+      let quotaIPO = null;
+      let periodoQuotaIPO = null;
+      if (planoIPO === 'lite') {
+        const limiteLite = Number(temporadaIPO.limiteOrdensLiteSemanal ?? temporadaIPO.limiteOrdensLitePorRodada ?? LIMITE_SEMANAL_LITE_PADRAO);
+        await reconciliarQuotaComOrdensExecutadas({ usuario, temporada: temporadaIPO, session, limiteLite });
+        const consumida = await consumirOrdemQuotaSemanal({ usuario, temporada: temporadaIPO, session, limiteLite });
+        quotaIPO = { limite: consumida.limite, utilizadas: consumida.utilizadas,
+          restantes: consumida.restantes, limiteAtingido: consumida.limiteAtingido };
+        periodoQuotaIPO = consumida.janela.periodoChave;
       }
 
       atualizarCarteiraDevolucao(usuario, clube, quantidade);
@@ -474,6 +510,8 @@ async function devolverCotaIPO(req, res) {
               fee: 0,
               taxa: 0,
               operacao: 'DEVOLUCAO_IPO',
+              quotaLiteContabilizada: planoIPO === 'lite',
+              quotaLitePeriodo: periodoQuotaIPO,
             },
           },
         ],
@@ -502,6 +540,8 @@ async function devolverCotaIPO(req, res) {
 
       resposta = {
         mensagem: 'Venda ao sistema executada pelo preço atual da classificação.',
+        plano: { tipo: planoIPO, ordensIlimitadas: planoIPO === 'premium' },
+        franquiaOrdens: quotaIPO,
         tipo: 'IPO_RETURN',
         taxa: 0,
         valorBruto: total,
@@ -529,8 +569,17 @@ async function devolverCotaIPO(req, res) {
     return res.json(resposta);
   } catch (err) {
     console.error('Erro ao devolver cotas ao IPO:', err);
-
+    if (err?.message === 'LIMITE_SEMANAL_ORDENS_ATINGIDO') {
+      return res.status(403).json({ codigo: 'LIMITE_ORDENS_ATINGIDO',
+        erro: 'Você atingiu o limite semanal de ordens do Plano Lite.',
+        limite: err.limite, utilizadas: err.utilizadas, restantes: 0, renovaEm: err.renovaEm });
+    }
+    if (err?.liveData) return res.status(503).json({ codigo: 'DADOS_ESPORTIVOS_INDISPONIVEIS',
+      erro: 'Preço indisponível: não foi possível confirmar a classificação atualizada.' });
     const mapa = {
+      PRECO_ATUALIZADO: [409, 'O preço mudou com a classificação. Confira o novo preço e confirme novamente.'],
+      TEMPORADA_NAO_ATIVA: [409, 'Nenhuma temporada ativa para vender cotas IPO.'],
+      MERCADO_FECHADO: [409, 'Mercado fechado para negociação.'],
       USUARIO_NAO_ENCONTRADO: [404, 'Usuário não encontrado.'],
       CLUBE_NAO_ENCONTRADO: [404, 'Clube não encontrado.'],
       IPO_ENCERRADO: [400, 'O IPO deste clube já foi encerrado.'],

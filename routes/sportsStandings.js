@@ -7,6 +7,8 @@ const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 const { loadCachedTable } = require('../services/sportsTableCache');
 const MarketControl = require('../models/MarketControl');
 const { getMarketMode } = require('../config/marketMode');
+const { currentSeasonFilter, assertCurrentRoster } = require('../utils/currentSeasonScope');
+const liveSports = require('../services/liveSportsTable');
 
 const router = express.Router();
 
@@ -151,7 +153,8 @@ async function buscarNFL(config) {
 }
 
 async function sincronizar(config, classificacao) {
-  const existentes = await Club.find({ 'metadata.ligaId': config.id });
+  const existentes = await Club.find(currentSeasonFilter(config));
+  assertCurrentRoster(existentes,config);
   const porApiId = new Map(existentes.map((c) => [Number(c.metadata?.providerTeamId), c]));
   const resultado = [];
   for (const item of classificacao.filter((x) => x.apiId && x.nome && x.posicao)) {
@@ -159,8 +162,9 @@ async function sincronizar(config, classificacao) {
     const uclClub = config.id === 'champions-league' ? ucl2026.identify(item.nome) : null;
     if (config.id === 'champions-league' && !uclClub) throw new Error(`Clube desconhecido na UCL: ${item.nome}`);
     const legacyId = uclClub ? ucl2026.toLegacyId(uclClub) : config.namespace + item.apiId;
-    if (config.id === 'champions-league') clube = await Club.findOne({ legacyId });
-    else if (!clube) clube = await Club.findOne({ legacyId });
+    if (config.id === 'champions-league') clube = existentes.find(c => Number(c.legacyId) === Number(legacyId));
+    else if (!clube) clube = existentes.find(c => Number(c.legacyId) === Number(legacyId));
+    if (!clube) throw new Error('CLUBE_NAO_CADASTRADO_NA_TEMPORADA_ATUAL_'+config.id+':'+item.nome);
     const precoInicial = calcularPrecoPorPosicao(item.posicao, config.participantes);
     const update = {
       legacyId, nome: clube?.nome || item.nome, nomeApi: item.nome, escudo: item.escudo || clube?.escudo || '',
@@ -177,7 +181,8 @@ async function sincronizar(config, classificacao) {
           grupo: item.grupo,
         } },
     };
-    clube = await Club.findOneAndUpdate({ legacyId }, { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
+    clube = await Club.findOneAndUpdate({_id:clube._id, ...currentSeasonFilter(config)}, { $set: update }, { upsert: false, new: true }).lean();
+    if(!clube) throw new Error('CLUBE_ATUAL_MUDOU_DURANTE_SINCRONIZACAO');
     resultado.push({
       id: clube.legacyId, legacyId: clube.legacyId, nome: clube.nome, escudo: clube.escudo,
       posicao: item.posicao, pontos: item.pontos, jogos: item.jogos, vitorias: item.vitorias,
@@ -193,6 +198,28 @@ async function sincronizar(config, classificacao) {
 router.get('/tabelas/:mercadoId', async (req, res) => {
   const configBase = mercados[req.params.mercadoId];
   if (!configBase) return res.status(404).json({ erro: 'Mercado esportivo não encontrado.' });
+  // Partidas atuais e concluídas governam o preço do IPO durante a fase de liga.
+  // Em falha, exibimos a última tabela como contingência, mas o backend recusa
+  // negociações sem dados frescos (assertFreshForClub).
+  if (liveSports.enabled(configBase.id)) {
+    res.set('Cache-Control', 'no-store, max-age=0');
+    try {
+      const status = await liveSports.refreshCompetition(configBase);
+      const data = await loadCachedTable(Club, configBase.id);
+      return res.json({ data, mercado: configBase.id, nome: configBase.nome,
+        temporada: configBase.season, participantes: configBase.participantes,
+        atualizadoEm: new Date(status.at).toISOString(), live: status.live,
+        classificacaoProvisoria: Boolean(status.provisional),
+        origem: 'partidas', contingencia: false, precosAtualizados: true });
+    } catch (erro) {
+      console.error('[LIVE TABLE:'+configBase.id+']', erro.message);
+      const data = await loadCachedTable(Club, configBase.id);
+      return res.json({ data, mercado: configBase.id, nome: configBase.nome,
+        temporada: configBase.season, contingencia: true,
+        precosAtualizados: false, mercadoBloqueadoPorDados: true,
+        aviso: 'Dados ao vivo indisponíveis. Negociações deste mercado temporariamente bloqueadas.' });
+    }
+  }
   let config = { ...configBase };
   let classificacao = [];
   let fonteReserva = false;

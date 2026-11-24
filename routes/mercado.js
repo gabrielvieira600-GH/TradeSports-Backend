@@ -26,6 +26,7 @@ const Investment = require('../models/Investment');
 const RankingSeason = require('../models/RankingSeason');
 const RewardedAdEvent = require('../models/RewardedAdEvent');
 const { isUnifiedLiquidity, getMarketMode } = require('../config/marketMode');
+const { assertFreshForClub } = require('../services/liveSportsTable');
 const {
   ensureLiquidityState,
   validateBuybackLimit,
@@ -437,7 +438,11 @@ router.get('/livro', async (req, res) => {
       return res.status(400).json({ erro: 'clubeId invÃ¡lido.' });
     }
 
-    const clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    let clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    if (clubeDocumento) {
+      await assertFreshForClub(clubeDocumento);
+      clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    }
     const clube = clubeDocumento?.toObject();
 
     if (!clube) {
@@ -512,7 +517,11 @@ router.get('/livro/:clubeId', authOpcional, async (req, res) => {
 
     const clubeLegacyId = Number(req.params.clubeId);
 
-    const clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    let clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    if (clubeDocumento) {
+      await assertFreshForClub(clubeDocumento);
+      clubeDocumento = await Club.findOne({ legacyId: clubeLegacyId });
+    }
 
     const clube = clubeDocumento?.toObject();
 
@@ -1311,6 +1320,9 @@ router.post('/ordem', auth, async (req, res) => {
 
     const usuariosParaVerificarMilestone =
       new Set();
+
+    const clubeAntesDeNegociar = await Club.findOne({ legacyId: clubeLegacyId }).lean();
+    if (clubeAntesDeNegociar) await assertFreshForClub(clubeAntesDeNegociar);
 
     await session.withTransaction(async () => {
       let liquidityStateForOrder = null;
@@ -2256,6 +2268,10 @@ router.post('/ordem', auth, async (req, res) => {
       'Erro ao enviar ordem:',
       err
     );
+    if (err?.liveData) return res.status(503).json({
+      codigo: 'DADOS_ESPORTIVOS_INDISPONIVEIS',
+      erro: 'Classificação ao vivo indisponível. Ordens temporariamente bloqueadas.'
+    });
 
     if (
       err.message ===

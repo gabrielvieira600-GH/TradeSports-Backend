@@ -44,7 +44,6 @@ ClubSchema.pre('save', function (next) {
   next();
 });
 
-ClubSchema.index({ nomeApi: 1 });
 ClubSchema.index({ posicao: 1 });
 
 module.exports = mongoose.models.Club || mongoose.model('Club', ClubSchema);

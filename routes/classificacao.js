@@ -26,6 +26,8 @@ const ledger = require('../utils/ledger');
 
 const { loadCachedTable } = require('../services/sportsTableCache');
 const { getMarketMode } = require('../config/marketMode');
+const liveSports = require('../services/liveSportsTable');
+const sportsMarkets = require('../config/sportsMarkets');
 
 function normalizarNome(str) {
 
@@ -566,6 +568,21 @@ async function distribuirDividendosSeElegivel(rodadaAtual) {
 }
 
 router.get('/tabela-brasileirao', async (req, res) => {
+
+  if (liveSports.enabled('brasileirao-a')) {
+    res.set('Cache-Control', 'no-store, max-age=0');
+    try {
+      const snapshot = await liveSports.refreshCompetition(sportsMarkets['brasileirao-a']);
+      const data = await loadCachedTable(Club,'brasileirao-a');
+      return res.json({data,atualizadoEm:new Date(snapshot.at).toISOString(),live:snapshot.live,
+        origem:'partidas',contingencia:false,precosAtualizados:true});
+    } catch (erro) {
+      console.error('[LIVE BRASILEIRAO]',erro.message);
+      const data = await loadCachedTable(Club,'brasileirao-a');
+      return res.json({data,contingencia:true,mercadoBloqueadoPorDados:true,
+        precosAtualizados:false,aviso:'Dados ao vivo indisponíveis. Negociação bloqueada até atualização.'});
+    }
+  }
 
   try {
 
