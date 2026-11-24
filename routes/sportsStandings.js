@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const Club = require('../models/Club');
 const mercados = require('../config/sportsMarkets');
+const ucl2026 = require('../config/ucl2026');
 const { calcularPrecoPorPosicao } = require('../utils/liquidationPrice');
 const { loadCachedTable } = require('../services/sportsTableCache');
 const MarketControl = require('../models/MarketControl');
@@ -103,7 +104,8 @@ async function buscarFootball(config) {
     headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY, Accept: 'application/json' },
     timeout: 15000,
   });
-  const lista = data?.response?.[0]?.league?.standings?.[0];
+  if (config.id === 'champions-league') { const league = data?.response?.[0]?.league; if (!league || Number(league.id) !== 2 || (league.season != null && String(league.season).trim() !== '' && Number(league.season) !== 2026)) throw new Error('Champions: API sem classificação válida da liga 2/2026.'); }
+  const lista = config.id === 'champions-league' ? ucl2026.selectStandings(data?.response?.[0]?.league?.standings) : data?.response?.[0]?.league?.standings?.[0];
   if (!Array.isArray(lista)) throw new Error('A fonte esportiva não retornou uma classificação válida.');
   return lista.map((item) => ({
     apiId: numero(item?.team?.id), nome: texto(item?.team?.name), escudo: texto(item?.team?.logo),
@@ -154,12 +156,15 @@ async function sincronizar(config, classificacao) {
   const resultado = [];
   for (const item of classificacao.filter((x) => x.apiId && x.nome && x.posicao)) {
     let clube = porApiId.get(item.apiId);
-    const legacyId = config.namespace + item.apiId;
-    if (!clube) clube = await Club.findOne({ legacyId });
+    const uclClub = config.id === 'champions-league' ? ucl2026.identify(item.nome) : null;
+    if (config.id === 'champions-league' && !uclClub) throw new Error(`Clube desconhecido na UCL: ${item.nome}`);
+    const legacyId = uclClub ? ucl2026.toLegacyId(uclClub) : config.namespace + item.apiId;
+    if (config.id === 'champions-league') clube = await Club.findOne({ legacyId });
+    else if (!clube) clube = await Club.findOne({ legacyId });
     const precoInicial = calcularPrecoPorPosicao(item.posicao, config.participantes);
     const update = {
       legacyId, nome: clube?.nome || item.nome, nomeApi: item.nome, escudo: item.escudo || clube?.escudo || '',
-      posicao: item.posicao, preco: clube?.preco ?? precoInicial, precoAtual: clube?.precoAtual ?? precoInicial,
+      posicao: item.posicao, preco: clube?.preco ?? precoInicial, precoAtual: getMarketMode() === 'IPO' && !Boolean(clube?.ipoEncerrado) ? precoInicial : (clube?.precoAtual ?? precoInicial),
       cotasDisponiveis: clube?.cotasDisponiveis ?? 1000, cotasEmitidas: clube?.cotasEmitidas ?? 0,
       ipoEncerrado: clube?.ipoEncerrado ?? false, splitFactorCumulativo: clube?.splitFactorCumulativo || 1,
       travadoAte: clube?.travadoAte || 0,
@@ -195,7 +200,7 @@ router.get('/tabelas/:mercadoId', async (req, res) => {
     classificacao = config.esporte === 'football' ? await buscarFootball(config)
       : config.esporte === 'nba' ? await buscarNBA(config) : await buscarNFL(config);
     const temporadaNumerica = Number(config.season);
-    if (!classificacao.length && Number.isInteger(temporadaNumerica)) {
+    if (!classificacao.length && Number.isInteger(temporadaNumerica) && configBase.id !== 'champions-league') {
       config = { ...config, season: config.esporte === 'nba' ? String(temporadaNumerica - 1) : temporadaNumerica - 1 };
       classificacao = config.esporte === 'football' ? await buscarFootball(config)
         : config.esporte === 'nba' ? await buscarNBA(config) : await buscarNFL(config);
@@ -211,6 +216,21 @@ router.get('/tabelas/:mercadoId', async (req, res) => {
 
   if (classificacao.length) {
     try {
+      if (configBase.id === 'champions-league') {
+        if (Number(configBase.season) !== 2026) throw new Error('Temporada UCL incorreta.');
+        const validados = ucl2026.validateStandings(classificacao);
+        // A classificação pública não deve cadastrar cotas automaticamente antes do seed auditado.
+        const existentesUcl = await Club.find({'metadata.ligaId': 'champions-league'})
+          .select('legacyId metadata.providerTeamId').lean();
+        if (existentesUcl.length !== 36) throw new Error('Champions ainda não possui 36 clubes auditados no MongoDB. Execute o seed primeiro.');
+        const porLegacy = new Map(existentesUcl.map(c => [Number(c.legacyId), Number(c.metadata?.providerTeamId)]));
+        for (const item of validados) {
+          const id = ucl2026.toLegacyId(item);
+          if (porLegacy.get(id) !== Number(item.apiId)) {
+            throw new Error('Identidade de clube mudou na API: ' + item.nome + '. Bloqueando atualização para evitar cruzamento de cotas.');
+          }
+        }
+      }
       const data = await sincronizar(configBase, classificacao);
       return res.json({ data, mercado: configBase.id, nome: configBase.nome, temporada: configBase.season,
         participantes: configBase.participantes, atualizadoEm: new Date().toISOString(),

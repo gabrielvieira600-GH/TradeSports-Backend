@@ -4,6 +4,7 @@ module.exports = {
   'brasileirao-a': { id: 'brasileirao-a', nome: 'Brasileirão Série A', esporte: 'football', league: 71, season: Number(process.env.API_FOOTBALL_SEASON_BR_A || process.env.API_FOOTBALL_SEASON || 2024), participantes: 20, namespace: 7100000 },
   'brasileirao-b': { id: 'brasileirao-b', nome: 'Brasileirão Série B', esporte: 'football', league: 72, season: Number(process.env.API_FOOTBALL_SEASON_BR_B || 2024), participantes: 20, namespace: 7200000 },
   'premier-league': { id: 'premier-league', nome: 'Premier League', esporte: 'football', league: 39, season: Number(process.env.API_FOOTBALL_SEASON_PREMIER || 2023), participantes: 20, namespace: 3900000 },
+  'champions-league': { id: 'champions-league', nome: 'UEFA Champions League — Fase de Liga', esporte: 'football', league: 2, season: Number(process.env.API_FOOTBALL_SEASON_UCL || 2026), participantes: 36, namespace: 220000000, fase: 'league', rodadas: 8 },
   'la-liga': { id: 'la-liga', nome: 'La Liga', esporte: 'football', league: 140, season: Number(process.env.API_FOOTBALL_SEASON_LALIGA || 2023), participantes: 20, namespace: 14000000 },
   bundesliga: { id: 'bundesliga', nome: 'Bundesliga', esporte: 'football', league: 78, season: Number(process.env.API_FOOTBALL_SEASON_BUNDESLIGA || 2023), participantes: 18, namespace: 7800000 },
   'ligue-1': { id: 'ligue-1', nome: 'Ligue 1', esporte: 'football', league: 61, season: Number(process.env.API_FOOTBALL_SEASON_LIGUE1 || 2023), participantes: 18, namespace: 6100000 },
