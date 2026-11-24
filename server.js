@@ -125,6 +125,9 @@ const allowedOrigins = [
   "https://tradesports.com.br",
   "https://trade-sports-frontend-ok.vercel.app",
   "https://trade-sports-frontend-ok-om3a.vercel.app",
+  // URLs de preview especificas confirmadas nos logs do Render em 24/11/2026.
+  "https://trade-sports-frontend-ok-om3a-oxgoka2s7.vercel.app",
+  "https://trade-sports-frontend-aycvhdwne-gabrielvieira600-ghs-projects.vercel.app",
   "http://localhost:3000",
 ].filter(Boolean);
 
@@ -135,7 +138,8 @@ const corsOptions = {
     return callback(new Error(`CORS bloqueado para origin: ${origin}`));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
+  // Defesa em profundidade: aceitar Cache-Control mesmo se um cliente antigo o enviar.
+  allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "Cache-Control"],
   credentials: false,
   optionsSuccessStatus: 204,
 };
